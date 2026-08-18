@@ -1,0 +1,13 @@
+backend/data/
+backend/server
+backend/tmp/
+backend/internal/httpserver/data/
+frontend/node_modules/
+frontend/dist/
+web/node_modules/
+web/dist/
+*.exe
+.DS_Store
+.env
+.env.local
+*.log

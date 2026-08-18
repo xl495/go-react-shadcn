@@ -195,6 +195,60 @@ func TestAdminLoginJWTAndAdminAPI(t *testing.T) {
 	}
 }
 
+func TestGetUserDetailAllowDeny(t *testing.T) {
+	app := testApp(t)
+	adminTok := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	limitedTok := loginOK(t, app, seed.OperatorUsername, seed.OperatorPassword)
+
+	listed := doJSON(t, app, http.MethodGet, "/api/v1/users", adminTok, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("list users: %d %s", listed.Code, listed.Body.String())
+	}
+	var users []userDTO
+	if err := json.Unmarshal(decodeEnv(t, listed).Data, &users); err != nil {
+		t.Fatal(err)
+	}
+	var admin userDTO
+	for _, u := range users {
+		if u.Username == seed.AdminUsername {
+			admin = u
+		}
+	}
+	if admin.ID == 0 {
+		t.Fatal("seeded admin missing from list")
+	}
+
+	got := doJSON(t, app, http.MethodGet, "/api/v1/users/"+itoa(admin.ID), adminTok, nil)
+	if got.Code != http.StatusOK {
+		t.Fatalf("admin get user: %d %s", got.Code, got.Body.String())
+	}
+	var detail userDTO
+	if err := json.Unmarshal(decodeEnv(t, got).Data, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Username != seed.AdminUsername {
+		t.Fatalf("username=%q", detail.Username)
+	}
+	if detail.Phone == "" || detail.Avatar == "" {
+		t.Fatalf("expected phone and avatar, got phone=%q avatar=%q", detail.Phone, detail.Avatar)
+	}
+
+	denied := doJSON(t, app, http.MethodGet, "/api/v1/users/"+itoa(admin.ID), limitedTok, nil)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("operator get user should 403, got %d %s", denied.Code, denied.Body.String())
+	}
+
+	if w := doJSON(t, app, http.MethodGet, "/api/v1/dicts", adminTok, nil); w.Code != http.StatusOK {
+		t.Fatalf("admin dicts: %d %s", w.Code, w.Body.String())
+	}
+	if w := doJSON(t, app, http.MethodGet, "/api/v1/configs", adminTok, nil); w.Code != http.StatusOK {
+		t.Fatalf("admin configs: %d %s", w.Code, w.Body.String())
+	}
+	if w := doJSON(t, app, http.MethodGet, "/api/v1/logs", adminTok, nil); w.Code != http.StatusOK {
+		t.Fatalf("admin logs: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestViewerDeniedAdminAPI(t *testing.T) {
 	app := testApp(t)
 	token := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)

@@ -11,6 +11,7 @@ import { LogsPage } from "@/pages/Logs"
 import { PermissionsPage } from "@/pages/Permissions"
 import { RolesPage } from "@/pages/Roles"
 import { SettingsPage } from "@/pages/Settings"
+import { UserDetailPage } from "@/pages/UserDetail"
 import { UsersPage } from "@/pages/Users"
 
 export function App() {
@@ -34,6 +35,14 @@ export function App() {
               element={
                 <RequirePerm perm={P.userList}>
                   <UsersPage />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="/users/:id"
+              element={
+                <RequirePerm perm={P.userList}>
+                  <UserDetailPage />
                 </RequirePerm>
               }
             />

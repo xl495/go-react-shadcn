@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { Can } from "@/components/auth/Can"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -197,9 +198,7 @@ export function UsersPage() {
               <TableHead>{t("app.status")}</TableHead>
               <TableHead>{t("users.lastLogin")}</TableHead>
               <TableHead>{t("users.createdAt")}</TableHead>
-              {can(P.userUpdate) || can(P.userDelete) ? (
-                <TableHead className="text-right">{t("app.actions")}</TableHead>
-              ) : null}
+              <TableHead className="text-right">{t("app.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -237,22 +236,23 @@ export function UsersPage() {
                   ) : null}
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs">{formatDateTime(u.createdAt)}</TableCell>
-                {can(P.userUpdate) || can(P.userDelete) ? (
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Can perm={P.userUpdate}>
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
-                          {t("app.edit")}
-                        </Button>
-                      </Can>
-                      <Can perm={P.userDelete}>
-                        <Button variant="ghost" size="sm" onClick={() => remove(u)}>
-                          {t("app.delete")}
-                        </Button>
-                      </Can>
-                    </div>
-                  </TableCell>
-                ) : null}
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button asChild variant="ghost" size="sm">
+                      <Link to={`/users/${u.id}`}>{t("users.detail")}</Link>
+                    </Button>
+                    <Can perm={P.userUpdate}>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
+                        {t("app.edit")}
+                      </Button>
+                    </Can>
+                    <Can perm={P.userDelete}>
+                      <Button variant="ghost" size="sm" onClick={() => remove(u)}>
+                        {t("app.delete")}
+                      </Button>
+                    </Can>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -153,6 +153,15 @@ func toPermissionDTO(p models.Permission) permissionDTO {
 	}
 }
 
+func (a *App) handleGetUser(c *gin.Context) {
+	var user models.User
+	if err := a.DB.Preload("Roles.Permissions").First(&user, c.Param("id")).Error; err != nil {
+		fail(c, http.StatusNotFound, 40410, "user not found")
+		return
+	}
+	ok(c, toUserDTO(user))
+}
+
 func (a *App) handleListUsers(c *gin.Context) {
 	var users []models.User
 	if err := a.DB.Preload("Roles").Order("id asc").Find(&users).Error; err != nil {

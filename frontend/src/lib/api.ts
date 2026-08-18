@@ -98,6 +98,7 @@ export const api = {
     }),
   stats: () => request<DashboardStats>("/api/v1/dashboard/stats"),
   users: () => request<User[]>("/api/v1/users"),
+  getUser: (id: number) => request<User>(`/api/v1/users/${id}`),
   createUser: (body: {
     username: string
     password: string

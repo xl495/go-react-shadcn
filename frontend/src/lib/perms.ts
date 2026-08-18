@@ -1,6 +1,7 @@
 export const P = {
   dashboard: "dashboard:read",
   userList: "user:list",
+  userDetail: "user:detail",
   userCreate: "user:create",
   userUpdate: "user:update",
   userDelete: "user:delete",

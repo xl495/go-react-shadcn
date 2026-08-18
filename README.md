@@ -33,7 +33,8 @@ make dev
 
 ```bash
 cd backend && go run ./cmd/server
-cd frontend && npm run dev
+cd frontend && npm run dev          # 管理端 :5173
+cd web && npm run dev               # Web 端 :5174
 ```
 
 调试登录时让验证码接口回传答案（仅本地验证用）：

@@ -12,6 +12,7 @@ import {
   Shield,
   Users,
 } from "lucide-react"
+import { Breadcrumbs } from "@/components/layout/Breadcrumbs"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { Avatar } from "@/components/ui/avatar"
 import { useAuth } from "@/lib/auth"
@@ -24,18 +25,22 @@ export function AppShell() {
   const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
-  const links = [
+  const mainLinks = [
     { to: "/", label: t("nav.dashboard"), icon: LayoutDashboard, perm: P.dashboard },
     { to: "/users", label: t("nav.users"), icon: Users, perm: P.userList },
     { to: "/roles", label: t("nav.roles"), icon: Shield, perm: P.roleList },
     { to: "/permissions", label: t("nav.permissions"), icon: KeyRound, perm: P.permList },
+  ]
+  const systemLinks = [
     { to: "/dicts", label: t("nav.dicts"), icon: BookMarked, perm: P.dictList },
     { to: "/configs", label: t("nav.configs"), icon: Settings2, perm: P.configList },
     { to: "/logs", label: t("nav.logs"), icon: ClipboardList, perm: P.logList },
   ]
-  const visible = links.filter((l) => can(l.perm))
+  const visibleMain = mainLinks.filter((l) => can(l.perm))
+  const visibleSystem = systemLinks.filter((l) => can(l.perm))
+  const all = [...visibleMain, ...visibleSystem]
   const current =
-    visible.find((l) => (l.to === "/" ? location.pathname === "/" : location.pathname.startsWith(l.to)))
+    all.find((l) => (l.to === "/" ? location.pathname === "/" : location.pathname.startsWith(l.to)))
       ?.label ??
     (location.pathname.startsWith("/settings") ? t("nav.settings") : t("nav.dashboard"))
   const displayName = user?.nickname || user?.username || ""
@@ -47,30 +52,25 @@ export function AppShell() {
           <span className="text-sm font-semibold tracking-tight">Latch</span>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 p-2">
-          {visible.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end={l.to === "/"}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-                  isActive
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-                )
-              }
-            >
-              <l.icon className="size-4" />
-              {l.label}
-            </NavLink>
+          {visibleMain.map((l) => (
+            <NavItem key={l.to} to={l.to} label={l.label} icon={l.icon} />
           ))}
+          {visibleSystem.length > 0 ? (
+            <div className="mt-3">
+              <p className="px-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                {t("nav.system")}
+              </p>
+              {visibleSystem.map((l) => (
+                <NavItem key={l.to} to={l.to} label={l.label} icon={l.icon} />
+              ))}
+            </div>
+          ) : null}
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b bg-background px-6">
           <div>
-            <p className="text-[11px] text-muted-foreground">{t("app.console")}</p>
+            <Breadcrumbs />
             <h1 className="text-sm font-medium">{current}</h1>
           </div>
           <div className="flex items-center gap-3">
@@ -92,6 +92,34 @@ export function AppShell() {
         </main>
       </div>
     </div>
+  )
+}
+
+function NavItem({
+  to,
+  label,
+  icon: Icon,
+}: {
+  to: string
+  label: string
+  icon: typeof Users
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={to === "/"}
+      className={({ isActive }) =>
+        cn(
+          "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+          isActive
+            ? "bg-foreground text-background"
+            : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+        )
+      }
+    >
+      <Icon className="size-4" />
+      {label}
+    </NavLink>
   )
 }
 

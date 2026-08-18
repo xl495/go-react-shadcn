@@ -40,6 +40,7 @@ func catalog() []catalogPerm {
 		{"查看自己", "me:read", "/api/v1/auth/me", "GET", KindAPI, "读取当前登录用户"},
 		{"仪表盘", "dashboard:read", "/api/v1/dashboard/stats", "GET", KindMenu, "读取仪表盘统计"},
 		{"用户菜单", "user:list", "/api/v1/users", "GET", KindMenu, "进入用户页"},
+		{"用户详情", "user:detail", "/api/v1/users/:id", "GET", KindAPI, "读取单个用户"},
 		{"新建用户", "user:create", "/api/v1/users", "POST", KindButton, "用户页-新建按钮"},
 		{"更新用户", "user:update", "/api/v1/users/:id", "PUT", KindButton, "用户页-更新按钮"},
 		{"删除用户", "user:delete", "/api/v1/users/:id", "DELETE", KindButton, "用户页-删除按钮"},

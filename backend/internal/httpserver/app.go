@@ -60,7 +60,7 @@ func (a *App) buildRouter() *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{a.Cfg.CORSOrigin, "http://127.0.0.1:5173"},
+		AllowOrigins:     []string{a.Cfg.CORSOrigin, "http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:5174", "http://localhost:5174"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
@@ -87,6 +87,7 @@ func (a *App) buildRouter() *gin.Engine {
 	authed.GET("/dashboard/stats", a.handleDashboard)
 
 	authed.GET("/users", a.handleListUsers)
+	authed.GET("/users/:id", a.handleGetUser)
 	authed.POST("/users", a.handleCreateUser)
 	authed.PUT("/users/:id", a.handleUpdateUser)
 	authed.DELETE("/users/:id", a.handleDeleteUser)
