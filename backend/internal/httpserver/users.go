@@ -185,6 +185,11 @@ func (a *App) handleCreateUser(c *gin.Context) {
 	if status == "" {
 		status = "active"
 	}
+	if !a.requireDictValue(c, seed.DictUserStatus, status) ||
+		!a.requireDictValue(c, seed.DictGender, req.Gender) ||
+		!a.requireDictValue(c, seed.DictDepartment, req.Department) {
+		return
+	}
 	hash, err := passwd.Hash(req.Password)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, 50011, "failed to hash password")
@@ -236,6 +241,9 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 		user.PasswordHash = hash
 	}
 	if req.Status != nil && *req.Status != "" {
+		if !a.requireDictValue(c, seed.DictUserStatus, *req.Status) {
+			return
+		}
 		user.Status = *req.Status
 	}
 	if req.Nickname != nil {
@@ -251,9 +259,15 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 		user.Phone = *req.Phone
 	}
 	if req.Gender != nil {
+		if !a.requireDictValue(c, seed.DictGender, *req.Gender) {
+			return
+		}
 		user.Gender = *req.Gender
 	}
 	if req.Department != nil {
+		if !a.requireDictValue(c, seed.DictDepartment, *req.Department) {
+			return
+		}
 		user.Department = *req.Department
 	}
 	if req.Title != nil {

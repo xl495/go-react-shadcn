@@ -22,6 +22,10 @@ const (
 	RoleAdmin        = "admin"
 	RoleViewer       = "viewer"
 	RoleOperator     = "operator"
+	DictUserStatus   = "sys_user_status"
+	DictGender       = "sys_gender"
+	DictDepartment   = "sys_department"
+	DictYesNo        = "sys_yes_no"
 )
 
 const (
@@ -134,21 +138,21 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	}
 	adminUser, err := ensureUser(db, AdminUsername, AdminPassword, seedProfile{
 		Nickname: "系统管理员", Avatar: adminAvatar, Email: "admin@latch.local", Phone: "13800000001",
-		Gender: "male", Department: "技术部", Title: "负责人", Remark: "种子管理员账号",
+		Gender: "male", Department: "tech", Title: "负责人", Remark: "种子管理员账号",
 	})
 	if err != nil {
 		return err
 	}
 	viewerUser, err := ensureUser(db, ViewerUsername, ViewerPassword, seedProfile{
 		Nickname: "李访客", Avatar: viewerAvatar, Email: "viewer@latch.local", Phone: "13800000003",
-		Gender: "female", Department: "市场部", Title: "观察员", Remark: "只读演示账号",
+		Gender: "female", Department: "market", Title: "观察员", Remark: "只读演示账号",
 	})
 	if err != nil {
 		return err
 	}
 	operatorUser, err := ensureUser(db, OperatorUsername, OperatorPassword, seedProfile{
 		Nickname: "张操作", Avatar: operatorAvatar, Email: "operator@latch.local", Phone: "13800000002",
-		Gender: "male", Department: "运营部", Title: "运营专员", Remark: "按钮级权限演示",
+		Gender: "male", Department: "ops", Title: "运营专员", Remark: "按钮级权限演示",
 	})
 	if err != nil {
 		return err
@@ -336,9 +340,10 @@ func ensureDicts(db *gorm.DB) error {
 		Code, Name string
 		Items      []item
 	}{
-		{"sys_user_status", "用户状态", []item{{"启用", "active"}, {"停用", "disabled"}}},
-		{"sys_gender", "性别", []item{{"男", "male"}, {"女", "female"}, {"其他", "other"}}},
-		{"sys_yes_no", "是否", []item{{"是", "1"}, {"否", "0"}}},
+		{DictUserStatus, "用户状态", []item{{"启用", "active"}, {"停用", "disabled"}}},
+		{DictGender, "性别", []item{{"男", "male"}, {"女", "female"}, {"其他", "other"}}},
+		{DictDepartment, "部门", []item{{"技术部", "tech"}, {"运营部", "ops"}, {"市场部", "market"}}},
+		{DictYesNo, "是否", []item{{"是", "1"}, {"否", "0"}}},
 	}
 	for _, typ := range catalog {
 		var dt models.DictType

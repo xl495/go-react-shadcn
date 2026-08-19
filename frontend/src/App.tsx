@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
+import { lazy, Suspense } from "react"
 import { AppShell } from "@/components/layout/AppShell"
 import { AuthProvider, RequireAuth, RequirePerm } from "@/lib/auth"
 import { I18nProvider } from "@/lib/i18n"

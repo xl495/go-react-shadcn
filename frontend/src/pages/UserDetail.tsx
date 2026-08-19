@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "@/lib/api"
+import { DICT, useDict } from "@/lib/dict"
 import { formatDateTime } from "@/lib/format"
 import { roleLabel, translateApiError, useI18n } from "@/lib/i18n"
 import { Avatar } from "@/components/ui/avatar"
@@ -12,6 +13,9 @@ import type { User } from "@/lib/types"
 export function UserDetailPage() {
   const { id } = useParams()
   const { t } = useI18n()
+  const genderDict = useDict(DICT.gender)
+  const statusDict = useDict(DICT.userStatus)
+  const deptDict = useDict(DICT.department)
   const [user, setUser] = useState<User | null>(null)
   const [error, setError] = useState("")
 
@@ -48,13 +52,10 @@ export function UserDetailPage() {
           <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
             <Field label={t("users.phone")} value={user.phone} />
             <Field label={t("users.email")} value={user.email} />
-            <Field label={t("users.gender")} value={user.gender} />
-            <Field label={t("users.department")} value={user.department} />
+            <Field label={t("users.gender")} value={genderDict.label(user.gender)} />
+            <Field label={t("users.department")} value={deptDict.label(user.department)} />
             <Field label={t("users.jobTitle")} value={user.title} />
-            <Field
-              label={t("app.status")}
-              value={user.status === "active" ? t("app.active") : t("app.disabled")}
-            />
+            <Field label={t("app.status")} value={statusDict.label(user.status)} />
             <Field
               label={t("users.roles")}
               value={(user.roles ?? []).map((r) => roleLabel(r.code, r.name, t)).join(" · ")}

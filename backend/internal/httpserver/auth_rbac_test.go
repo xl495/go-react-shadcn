@@ -493,7 +493,8 @@ func TestProfileAndPassword(t *testing.T) {
 		"nickname":   "访客改名",
 		"email":      "viewer2@latch.local",
 		"phone":      "13900000000",
-		"department": "市场部",
+		"gender":     "female",
+		"department": "market",
 		"title":      "观察员",
 		"remark":     "updated",
 	})
@@ -505,7 +506,7 @@ func TestProfileAndPassword(t *testing.T) {
 	if err := json.Unmarshal(updEnv.Data, &after); err != nil {
 		t.Fatal(err)
 	}
-	if after.Nickname != "访客改名" || after.Email != "viewer2@latch.local" {
+	if after.Nickname != "访客改名" || after.Email != "viewer2@latch.local" || after.Department != "market" {
 		t.Fatalf("profile not saved: %+v", after)
 	}
 
@@ -531,6 +532,99 @@ func TestProfileAndPassword(t *testing.T) {
 	if w := login(t, app, seed.ViewerUsername, "new-pass-1", id, ans); w.Code != http.StatusOK {
 		t.Fatalf("new password login: %d %s", w.Code, w.Body.String())
 	}
+}
+
+func TestUserFieldsBoundToDict(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+
+	gender := lookupDictValues(t, app, admin, seed.DictGender)
+	status := lookupDictValues(t, app, admin, seed.DictUserStatus)
+	dept := lookupDictValues(t, app, admin, seed.DictDepartment)
+	if len(gender) < 2 || len(status) < 2 || len(dept) < 3 {
+		t.Fatalf("seeded user dicts incomplete gender=%v status=%v dept=%v", gender, status, dept)
+	}
+
+	list := doJSON(t, app, http.MethodGet, "/api/v1/users", admin, nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("users: %d %s", list.Code, list.Body.String())
+	}
+	var users []userDTO
+	if err := json.Unmarshal(decodeEnv(t, list).Data, &users); err != nil {
+		t.Fatal(err)
+	}
+	if len(users) == 0 {
+		t.Fatal("expected seeded users")
+	}
+	for _, u := range users {
+		if u.Gender != "" && !gender[u.Gender] {
+			t.Fatalf("user %s gender %q not in %s", u.Username, u.Gender, seed.DictGender)
+		}
+		if u.Status == "" || !status[u.Status] {
+			t.Fatalf("user %s status %q not in %s", u.Username, u.Status, seed.DictUserStatus)
+		}
+		if u.Department != "" && !dept[u.Department] {
+			t.Fatalf("user %s department %q not in %s", u.Username, u.Department, seed.DictDepartment)
+		}
+	}
+
+	detail := doJSON(t, app, http.MethodGet, "/api/v1/users/"+itoa(users[0].ID), admin, nil)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("user detail: %d %s", detail.Code, detail.Body.String())
+	}
+	var one userDTO
+	if err := json.Unmarshal(decodeEnv(t, detail).Data, &one); err != nil {
+		t.Fatal(err)
+	}
+	if one.Gender != "" && !gender[one.Gender] {
+		t.Fatalf("detail gender %q not in dict", one.Gender)
+	}
+	if one.Department != "" && !dept[one.Department] {
+		t.Fatalf("detail department %q not in dict", one.Department)
+	}
+
+	bad := doJSON(t, app, http.MethodPut, "/api/v1/auth/profile", admin, map[string]string{
+		"nickname": "x", "gender": "not-a-gender", "department": "tech",
+	})
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid gender should 400, got %d %s", bad.Code, bad.Body.String())
+	}
+
+	okUpd := doJSON(t, app, http.MethodPut, "/api/v1/auth/profile", admin, map[string]string{
+		"nickname": "系统管理员", "email": "admin@latch.local", "phone": "13800000001",
+		"gender": "male", "department": "ops", "title": "负责人",
+	})
+	if okUpd.Code != http.StatusOK {
+		t.Fatalf("valid dict profile: %d %s", okUpd.Code, okUpd.Body.String())
+	}
+
+	badCreate := doJSON(t, app, http.MethodPost, "/api/v1/users", admin, map[string]any{
+		"username": "dict-user", "password": "pass-1234", "status": "nope",
+	})
+	if badCreate.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status should 400, got %d %s", badCreate.Code, badCreate.Body.String())
+	}
+}
+
+func lookupDictValues(t *testing.T, app *App, token, code string) map[string]bool {
+	t.Helper()
+	w := doJSON(t, app, http.MethodGet, "/api/v1/dicts/by/"+code, token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("lookup %s: %d %s", code, w.Code, w.Body.String())
+	}
+	var pack struct {
+		Items []struct {
+			Value string `json:"value"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(decodeEnv(t, w).Data, &pack); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]bool{}
+	for _, it := range pack.Items {
+		out[it.Value] = true
+	}
+	return out
 }
 
 func TestFoundationDictConfigLogs(t *testing.T) {

@@ -271,6 +271,7 @@ export const en = {
     "50032": "Failed to detach permission",
     "50033": "Failed to delete permission",
     "50040": "Failed to load stats",
+    "40015": "Invalid dictionary value",
     "40040": "Invalid request body",
     "40041": "Current password is incorrect",
     "40042": "Old and new password are required",

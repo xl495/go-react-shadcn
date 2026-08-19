@@ -1,18 +1,22 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { DICT, useDict } from "@/lib/dict"
 import { formatDateTime } from "@/lib/format"
 import { translateApiError, useI18n } from "@/lib/i18n"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { AvatarField } from "@/components/ui/avatar-field"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DictSelect } from "@/components/ui/dict-select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export function SettingsPage() {
   const { user, updateUser } = useAuth()
   const { t } = useI18n()
+  const genderDict = useDict(DICT.gender)
+  const deptDict = useDict(DICT.department)
   const [profile, setProfile] = useState({
     nickname: user?.nickname ?? "",
     email: user?.email ?? "",
@@ -30,6 +34,18 @@ export function SettingsPage() {
   const [pwdErr, setPwdErr] = useState("")
   const [saving, setSaving] = useState(false)
   const [changing, setChanging] = useState(false)
+
+  useEffect(() => {
+    setProfile({
+      nickname: user?.nickname ?? "",
+      email: user?.email ?? "",
+      phone: user?.phone ?? "",
+      gender: user?.gender ?? "",
+      department: user?.department ?? "",
+      title: user?.title ?? "",
+      remark: user?.remark ?? "",
+    })
+  }, [user])
 
   async function onSaveProfile(e: FormEvent) {
     e.preventDefault()
@@ -96,7 +112,6 @@ export function SettingsPage() {
                 ["nickname", "users.nickname"],
                 ["phone", "users.phone"],
                 ["email", "users.email"],
-                ["department", "users.department"],
                 ["title", "users.jobTitle"],
                 ["remark", "users.remark"],
               ] as const
@@ -110,20 +125,24 @@ export function SettingsPage() {
                 />
               </div>
             ))}
-            <div className="grid gap-1.5">
-              <Label htmlFor="gender">{t("users.gender")}</Label>
-              <select
-                id="gender"
-                className="h-9 rounded-md border border-input bg-card px-3 text-sm"
-                value={profile.gender}
-                onChange={(e) => setProfile((p) => ({ ...p, gender: e.target.value }))}
-              >
-                <option value="">{t("users.genderUnset")}</option>
-                <option value="male">{t("users.genderMale")}</option>
-                <option value="female">{t("users.genderFemale")}</option>
-                <option value="other">{t("users.genderOther")}</option>
-              </select>
-            </div>
+            <DictSelect
+              id="gender"
+              label={t("users.gender")}
+              value={profile.gender}
+              items={genderDict.items}
+              allowEmpty
+              emptyLabel={t("users.genderUnset")}
+              onChange={(value) => setProfile((p) => ({ ...p, gender: value }))}
+            />
+            <DictSelect
+              id="department"
+              label={t("users.department")}
+              value={profile.department}
+              items={deptDict.items}
+              allowEmpty
+              emptyLabel={t("app.optional")}
+              onChange={(value) => setProfile((p) => ({ ...p, department: value }))}
+            />
             {profileErr ? <p className="text-sm text-destructive sm:col-span-2">{profileErr}</p> : null}
             {profileMsg ? <p className="text-sm text-foreground sm:col-span-2">{profileMsg}</p> : null}
             <div className="sm:col-span-2">

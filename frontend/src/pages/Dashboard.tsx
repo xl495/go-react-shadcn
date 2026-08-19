@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { DICT, useDict } from "@/lib/dict"
 import { formatDateTime } from "@/lib/format"
 import { roleLabel, translateApiError, useI18n } from "@/lib/i18n"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,6 +10,7 @@ import type { DashboardStats } from "@/lib/types"
 export function DashboardPage() {
   const { user } = useAuth()
   const { t } = useI18n()
+  const deptDict = useDict(DICT.department)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [error, setError] = useState("")
 
@@ -48,7 +50,7 @@ export function DashboardPage() {
           <Field label={t("users.lastLogin")} value={formatDateTime(user?.lastLoginAt)} />
           <Field label={t("users.email")} value={user?.email} />
           <Field label={t("users.phone")} value={user?.phone} />
-          <Field label={t("users.department")} value={user?.department} />
+          <Field label={t("users.department")} value={deptDict.label(user?.department)} />
           <Field label={t("users.jobTitle")} value={user?.title} />
         </CardContent>
       </Card>

@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/passwd"
+	"go-react-shadcn/internal/seed"
 )
 
 type loginRequest struct {
@@ -119,6 +120,10 @@ func (a *App) handleUpdateProfile(c *gin.Context) {
 	var req updateProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, 40040, "invalid request body")
+		return
+	}
+	if !a.requireDictValue(c, seed.DictGender, req.Gender) ||
+		!a.requireDictValue(c, seed.DictDepartment, req.Department) {
 		return
 	}
 	user.Nickname = req.Nickname

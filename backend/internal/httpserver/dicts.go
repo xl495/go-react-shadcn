@@ -182,3 +182,24 @@ func (a *App) handleLookupDict(c *gin.Context) {
 	}
 	ok(c, gin.H{"code": typ.Code, "name": typ.Name, "items": items})
 }
+
+func (a *App) dictValueOK(code, value string) bool {
+	if value == "" {
+		return true
+	}
+	var n int64
+	if err := a.DB.Model(&models.DictItem{}).
+		Where("type_code = ? AND value = ? AND status = ?", code, value, "active").
+		Count(&n).Error; err != nil {
+		return false
+	}
+	return n > 0
+}
+
+func (a *App) requireDictValue(c *gin.Context, code, value string) bool {
+	if a.dictValueOK(code, value) {
+		return true
+	}
+	fail(c, http.StatusBadRequest, 40015, "invalid dictionary value")
+	return false
+}

@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Navigate, useLocation } from "react-router-dom"
-import { setToken } from "@/lib/api"
+import { ApiError, api, getToken, setToken } from "@/lib/api"
 import type { User } from "@/lib/types"
 
 const USER_KEY = "latch.user"
@@ -28,6 +28,29 @@ function readUser(): User | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(readUser)
+
+  useEffect(() => {
+    if (!getToken()) return
+    let cancelled = false
+    api
+      .me()
+      .then((next) => {
+        if (cancelled) return
+        localStorage.setItem(USER_KEY, JSON.stringify(next))
+        setUser(next)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        if (err instanceof ApiError && (err.status === 401 || err.code === 40101 || err.code === 40102)) {
+          setToken(null)
+          localStorage.removeItem(USER_KEY)
+          setUser(null)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const value = useMemo<AuthState>(() => {
     const codes = new Set<string>(user?.permissionCodes ?? [])

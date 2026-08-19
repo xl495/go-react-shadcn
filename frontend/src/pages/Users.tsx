@@ -3,12 +3,14 @@ import { Link } from "react-router-dom"
 import { Can } from "@/components/auth/Can"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { DICT, useDict } from "@/lib/dict"
 import { formatDateTime } from "@/lib/format"
 import { roleLabel, translateApiError, useI18n } from "@/lib/i18n"
 import { P } from "@/lib/perms"
 import { Avatar } from "@/components/ui/avatar"
 import { AvatarField } from "@/components/ui/avatar-field"
 import { Badge } from "@/components/ui/badge"
+import { DictSelect } from "@/components/ui/dict-select"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -46,6 +48,9 @@ const emptyForm = {
 export function UsersPage() {
   const { can } = useAuth()
   const { t } = useI18n()
+  const genderDict = useDict(DICT.gender)
+  const statusDict = useDict(DICT.userStatus)
+  const deptDict = useDict(DICT.department)
   const [users, setUsers] = useState<User[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [error, setError] = useState("")
@@ -75,12 +80,22 @@ export function UsersPage() {
     const q = query.trim().toLowerCase()
     if (!q) return users
     return users.filter((u) =>
-      [u.username, u.nickname, u.email, u.phone, u.department, u.title]
+      [
+        u.username,
+        u.nickname,
+        u.email,
+        u.phone,
+        u.title,
+        u.department,
+        genderDict.label(u.gender),
+        deptDict.label(u.department),
+        statusDict.label(u.status),
+      ]
         .join(" ")
         .toLowerCase()
         .includes(q),
     )
-  }, [users, query])
+  }, [users, query, genderDict.items, deptDict.items, statusDict.items])
 
   function openCreate() {
     setEditing(null)
@@ -212,8 +227,8 @@ export function UsersPage() {
                 <TableCell>{u.nickname || "—"}</TableCell>
                 <TableCell>{u.phone || "—"}</TableCell>
                 <TableCell>{u.email || "—"}</TableCell>
-                <TableCell>{genderLabel(u.gender, t)}</TableCell>
-                <TableCell>{u.department || "—"}</TableCell>
+                <TableCell>{genderDict.label(u.gender)}</TableCell>
+                <TableCell>{deptDict.label(u.department)}</TableCell>
                 <TableCell>{u.title || "—"}</TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
@@ -226,7 +241,7 @@ export function UsersPage() {
                 </TableCell>
                 <TableCell>
                   <Badge variant={u.status === "active" ? "default" : "muted"}>
-                    {u.status === "active" ? t("app.active") : t("app.disabled")}
+                    {statusDict.label(u.status)}
                   </Badge>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs">
@@ -302,7 +317,6 @@ export function UsersPage() {
                 ["nickname", "users.nickname"],
                 ["phone", "users.phone"],
                 ["email", "users.email"],
-                ["department", "users.department"],
                 ["title", "users.jobTitle"],
                 ["remark", "users.remark"],
               ] as const
@@ -316,32 +330,31 @@ export function UsersPage() {
                 />
               </div>
             ))}
-            <div className="grid gap-1.5">
-              <Label htmlFor="gd">{t("users.gender")}</Label>
-              <select
-                id="gd"
-                className="h-9 rounded-md border border-input bg-card px-3 text-sm"
-                value={form.gender}
-                onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}
-              >
-                <option value="">{t("users.genderUnset")}</option>
-                <option value="male">{t("users.genderMale")}</option>
-                <option value="female">{t("users.genderFemale")}</option>
-                <option value="other">{t("users.genderOther")}</option>
-              </select>
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="st">{t("app.status")}</Label>
-              <select
-                id="st"
-                className="h-9 rounded-md border border-input bg-card px-3 text-sm"
-                value={form.status}
-                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-              >
-                <option value="active">{t("app.active")}</option>
-                <option value="disabled">{t("app.disabled")}</option>
-              </select>
-            </div>
+            <DictSelect
+              id="gd"
+              label={t("users.gender")}
+              value={form.gender}
+              items={genderDict.items}
+              allowEmpty
+              emptyLabel={t("users.genderUnset")}
+              onChange={(value) => setForm((f) => ({ ...f, gender: value }))}
+            />
+            <DictSelect
+              id="dept"
+              label={t("users.department")}
+              value={form.department}
+              items={deptDict.items}
+              allowEmpty
+              emptyLabel={t("app.optional")}
+              onChange={(value) => setForm((f) => ({ ...f, department: value }))}
+            />
+            <DictSelect
+              id="st"
+              label={t("app.status")}
+              value={form.status}
+              items={statusDict.items}
+              onChange={(value) => setForm((f) => ({ ...f, status: value }))}
+            />
             {(can(P.userRoles) || !editing) && (
               <div className="grid gap-2 sm:col-span-2">
                 <Label>{t("users.roles")}</Label>
@@ -362,11 +375,4 @@ export function UsersPage() {
       </Dialog>
     </div>
   )
-}
-
-function genderLabel(value: string, t: (key: string) => string) {
-  if (value === "male") return t("users.genderMale")
-  if (value === "female") return t("users.genderFemale")
-  if (value === "other") return t("users.genderOther")
-  return "—"
 }
