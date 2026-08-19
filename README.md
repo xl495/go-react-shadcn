@@ -1,62 +1,62 @@
-# Latch · React 19 + Gin + Casbin 登录权限系统
+# Latch · React 19 + Gin + Casbin Permission System
 
-图形验证码登录、JWT 鉴权、Casbin RBAC、SQLite 持久化。管理端覆盖用户/角色/权限、数据字典、系统参数与操作日志。
+Graphical CAPTCHA login, JWT auth, Casbin RBAC, and SQLite persistence. The admin panel covers users, roles, permissions, dictionaries, system config, and audit logs.
 
-## 目录
+## Structure
 
 ```
-backend/     Go 1.24 + Gin + GORM/SQLite + Casbin + JWT + 图形验证码
+backend/     Go 1.24 + Gin + GORM/SQLite + Casbin + JWT + CAPTCHA
 frontend/    React 19 + Vite + Tailwind v4 + shadcn v4
 ```
 
-## 种子账号
+### Seed Accounts
 
-| 账号     | 密码         | 权限                                              |
-| -------- | ------------ | ------------------------------------------------- |
-| admin    | admin123     | 全部菜单与按钮                                    |
-| operator | operator123  | 能进用户/角色/权限/字典/参数/日志页，但只有「新建用户」按钮 |
-| viewer   | viewer123    | 仅仪表盘                                          |
+| Username | Password     | Access                                                        |
+| -------- | ------------ | ------------------------------------------------------------- |
+| admin    | admin123     | All menus & buttons                                           |
+| operator | operator123  | User/Role/Permission/Dict/Config/Log pages, only "Create User" button |
+| viewer   | viewer123    | Dashboard only                                                |
 
-权限分三类：`menu`（侧栏）、`button`（页面按钮）、`api`（纯接口）。前端按 `permissionCodes` 隐藏按钮，后端 Casbin 仍拦截对应 HTTP 方法。
+Permissions have three types: `menu` (sidebar), `button` (page actions), `api` (endpoint only). The frontend hides buttons via `permissionCodes`; the backend still enforces via Casbin.
 
-界面支持 **简体中文 / 繁體中文 / English**。登录页右上角和侧栏可切换，选择会记在本地；接口错误按错误码翻译，种子角色/权限按编码翻译。
+The UI supports **Simplified Chinese / Traditional Chinese / English**. Switch from the login page or sidebar; the choice is stored locally. API errors are translated by error code; seed roles/permissions are translated by code.
 
-## 启动
+### Getting Started
 
-前后端并发：
+Run both frontend and backend concurrently:
 
 ```bash
 make dev
 ```
 
-分别启动：
+Or start them separately:
 
 ```bash
 cd backend && go run ./cmd/server
-cd frontend && npm run dev          # 管理端 :5173
-cd web && npm run dev               # Web 端 :5174
+cd frontend && npm run dev          # Admin panel :5173
+cd web && npm run dev               # Web app :5174
 ```
 
-调试登录时让验证码接口回传答案（仅本地验证用）：
+To have the CAPTCHA endpoint return the answer (local debugging only):
 
 ```bash
 CAPTCHA_DEBUG=1 go run ./cmd/server
 ```
 
-生产构建：
+Production build:
 
 ```bash
 cd frontend && npm run build
 ```
 
-## 认证流程
+### Auth Flow
 
-1. `GET /api/v1/auth/captcha` 下发一次性图形验证码（`captchaId` + base64 图）。
-2. `POST /api/v1/auth/login` 必须同时匹配用户名、密码与验证码，才签发 HS256 JWT。
-3. 受保护接口带 `Authorization: Bearer <token>`。Casbin 用用户名 + Gin `FullPath` + Method 判定。
-4. 角色权限写入 SQLite `casbin_rule`，`PUT /api/v1/roles/:id/permissions` 后立即改变 Enforce 结果。
+1. `GET /api/v1/auth/captcha` returns a one-time CAPTCHA (`captchaId` + base64 image).
+2. `POST /api/v1/auth/login` requires username, password, and CAPTCHA to issue an HS256 JWT.
+3. Protected endpoints require `Authorization: Bearer <token>`. Casbin checks username + Gin `FullPath` + HTTP method.
+4. Role permissions are stored in SQLite `casbin_rule`. `PUT /api/v1/roles/:id/permissions` takes effect immediately.
 
-## 测试
+### Testing
 
 ```bash
 cd backend && go test ./...
