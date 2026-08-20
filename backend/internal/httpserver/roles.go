@@ -6,18 +6,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/seed"
+	"gorm.io/gorm"
 )
 
 type createRoleRequest struct {
 	Name          string `json:"name"`
 	Code          string `json:"code"`
 	Description   string `json:"description"`
+	DataScope     string `json:"dataScope"`
 	PermissionIDs []uint `json:"permissionIds"`
 }
 
 type updateRoleRequest struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
+	DataScope   *string `json:"dataScope"`
 }
 
 type assignPermissionsRequest struct {
@@ -25,8 +28,12 @@ type assignPermissionsRequest struct {
 }
 
 func (a *App) handleListRoles(c *gin.Context) {
+	p := parsePage(c, 50, 500)
+	q := a.DB.Model(&models.Role{})
+	var total int64
+	_ = q.Count(&total).Error
 	var roles []models.Role
-	if err := a.DB.Preload("Permissions").Order("id asc").Find(&roles).Error; err != nil {
+	if err := a.DB.Preload("Permissions").Order("id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&roles).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50020, "failed to list roles")
 		return
 	}
@@ -34,7 +41,7 @@ func (a *App) handleListRoles(c *gin.Context) {
 	for _, r := range roles {
 		out = append(out, toRoleDTO(r, true))
 	}
-	ok(c, out)
+	ok(c, pageResult[roleDTO]{Items: out, Total: total, Page: p.Page, PageSize: p.PageSize})
 }
 
 func (a *App) handleCreateRole(c *gin.Context) {
@@ -43,18 +50,27 @@ func (a *App) handleCreateRole(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40020, "name and code required")
 		return
 	}
-	role := models.Role{Name: req.Name, Code: req.Code, Description: req.Description}
-	if err := a.DB.Create(&role).Error; err != nil {
-		fail(c, http.StatusConflict, 40920, "role code already exists")
-		return
+	dataScope := req.DataScope
+	if dataScope == "" {
+		dataScope = models.DataScopeSelf
 	}
+	role := models.Role{Name: req.Name, Code: req.Code, Description: req.Description, DataScope: dataScope}
 	perms, err := a.loadPermissions(req.PermissionIDs)
 	if err != nil {
 		fail(c, http.StatusBadRequest, 40021, "invalid permission ids")
 		return
 	}
-	if err := a.DB.Model(&role).Association("Permissions").Replace(perms); err != nil {
-		fail(c, http.StatusInternalServerError, 50021, "failed to assign permissions")
+	if err := a.withTx(func(tx *gorm.DB) error {
+		if err := tx.Create(&role).Error; err != nil {
+			return err
+		}
+		return tx.Model(&role).Association("Permissions").Replace(perms)
+	}); err != nil {
+		if isUniqueViolation(err) {
+			fail(c, http.StatusConflict, 40920, "role code already exists")
+			return
+		}
+		fail(c, http.StatusInternalServerError, 50021, "failed to create role")
 		return
 	}
 	if err := seed.SyncRolePolicies(a.Enforcer, role.Code, perms); err != nil {
@@ -81,6 +97,9 @@ func (a *App) handleUpdateRole(c *gin.Context) {
 	}
 	if req.Description != nil {
 		role.Description = *req.Description
+	}
+	if req.DataScope != nil && *req.DataScope != "" {
+		role.DataScope = *req.DataScope
 	}
 	if err := a.DB.Save(&role).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50023, "failed to update role")

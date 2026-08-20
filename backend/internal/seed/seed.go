@@ -72,7 +72,15 @@ func catalog() []catalogPerm {
 		{"更新参数", "config:update", "/api/v1/configs/:id", "PUT", KindButton, ""},
 		{"删除参数", "config:delete", "/api/v1/configs/:id", "DELETE", KindButton, ""},
 		{"日志菜单", "log:list", "/api/v1/logs", "GET", KindMenu, "进入操作日志页"},
+		{"登录日志", "log:login:list", "/api/v1/logs/login", "GET", KindAPI, "查询登录日志"},
+		{"API日志", "log:api:list", "/api/v1/logs/api", "GET", KindAPI, "查询 API 日志"},
 		{"清空日志", "log:clear", "/api/v1/logs", "DELETE", KindButton, ""},
+		{"滚动清理", "log:purge", "/api/v1/logs/purge", "POST", KindButton, "按保留天数清理"},
+		{"部门列表", "dept:list", "/api/v1/departments", "GET", KindAPI, "查询部门树"},
+		{"新建部门", "dept:create", "/api/v1/departments", "POST", KindButton, ""},
+		{"更新部门", "dept:update", "/api/v1/departments/:id", "PUT", KindButton, ""},
+		{"删除部门", "dept:delete", "/api/v1/departments/:id", "DELETE", KindButton, ""},
+		{"菜单树", "menu:read", "/api/v1/auth/menus", "GET", KindAPI, "读取当前用户菜单"},
 	}
 }
 
@@ -80,7 +88,16 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
-	perms, err := ensureCatalog(db)
+	if _, err := ensureCatalog(db); err != nil {
+		return err
+	}
+	if err := syncMenuMeta(db); err != nil {
+		return err
+	}
+	if err := ensureDepartments(db); err != nil {
+		return err
+	}
+	perms, err := loadAllPerms(db)
 	if err != nil {
 		return err
 	}
@@ -191,6 +208,40 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	if err := ensureConfigs(db); err != nil {
 		return err
 	}
+	return syncUserDepartmentIDs(db)
+}
+
+func lookupDepartmentID(db *gorm.DB, code string) *uint {
+	if code == "" {
+		return nil
+	}
+	var dept models.Department
+	if err := db.Where("code = ?", code).First(&dept).Error; err != nil {
+		return nil
+	}
+	return &dept.ID
+}
+
+func syncUserDepartmentIDs(db *gorm.DB) error {
+	var users []models.User
+	if err := db.Find(&users).Error; err != nil {
+		return err
+	}
+	for _, u := range users {
+		if u.Department == "" {
+			continue
+		}
+		id := lookupDepartmentID(db, u.Department)
+		if id == nil {
+			continue
+		}
+		if u.DepartmentID != nil && *u.DepartmentID == *id {
+			continue
+		}
+		if err := db.Model(&models.User{}).Where("id = ?", u.ID).Update("department_id", *id).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -266,10 +317,17 @@ func ensureCatalog(db *gorm.DB) ([]models.Permission, error) {
 }
 
 func ensureRole(db *gorm.DB, name, code, desc string) (models.Role, error) {
+	scope := models.DataScopeSelf
+	switch code {
+	case RoleAdmin:
+		scope = models.DataScopeAll
+	case RoleOperator:
+		scope = models.DataScopeDept
+	}
 	var role models.Role
 	err := db.Where("code = ?", code).First(&role).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		role = models.Role{Name: name, Code: code, Description: desc}
+		role = models.Role{Name: name, Code: code, Description: desc, DataScope: scope}
 		return role, db.Create(&role).Error
 	}
 	if err != nil {
@@ -277,6 +335,7 @@ func ensureRole(db *gorm.DB, name, code, desc string) (models.Role, error) {
 	}
 	role.Name = name
 	role.Description = desc
+	role.DataScope = scope
 	return role, db.Save(&role).Error
 }
 
@@ -298,6 +357,9 @@ func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (mo
 			Phone: profile.Phone, Gender: profile.Gender,
 			Department: profile.Department, Title: profile.Title, Remark: profile.Remark,
 		}
+		if id := lookupDepartmentID(db, profile.Department); id != nil {
+			user.DepartmentID = id
+		}
 		return user, db.Create(&user).Error
 	}
 	if err != nil {
@@ -309,6 +371,9 @@ func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (mo
 	user.Gender = profile.Gender
 	user.Department = profile.Department
 	user.Title = profile.Title
+	if id := lookupDepartmentID(db, profile.Department); id != nil {
+		user.DepartmentID = id
+	}
 	if user.Avatar == "" {
 		user.Avatar = profile.Avatar
 	}
@@ -421,6 +486,70 @@ func syncRolePolicies(enforcer *casbin.Enforcer, roleCode string, perms []models
 	}
 	for _, p := range perms {
 		if _, err := enforcer.AddPolicy(roleCode, p.Path, p.Method); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func loadAllPerms(db *gorm.DB) ([]models.Permission, error) {
+	var perms []models.Permission
+	return perms, db.Order("id asc").Find(&perms).Error
+}
+
+func syncMenuMeta(db *gorm.DB) error {
+	type row struct {
+		route, icon, component string
+		sort                   int
+	}
+	meta := map[string]row{
+		"dashboard:read": {"/", "LayoutDashboard", "DashboardPage", 10},
+		"user:list":      {"/users", "Users", "UsersPage", 20},
+		"role:list":      {"/roles", "Shield", "RolesPage", 30},
+		"perm:list":      {"/permissions", "KeyRound", "PermissionsPage", 40},
+		"dict:list":      {"/dicts", "BookMarked", "DictsPage", 50},
+		"config:list":    {"/configs", "Settings2", "ConfigsPage", 60},
+		"log:list":       {"/logs", "ClipboardList", "LogsPage", 70},
+	}
+	for code, m := range meta {
+		if err := db.Model(&models.Permission{}).Where("code = ?", code).Updates(map[string]any{
+			"route_path": m.route,
+			"icon":       m.icon,
+			"component":  m.component,
+			"sort":       m.sort,
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureDepartments(db *gorm.DB) error {
+	type seedDept struct {
+		name, code string
+		sort       int
+	}
+	for _, d := range []seedDept{
+		{"总部", "hq", 1},
+		{"技术部", "tech", 2},
+		{"运营部", "ops", 3},
+		{"市场部", "market", 4},
+	} {
+		var row models.Department
+		err := db.Where("code = ?", d.code).First(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			row = models.Department{Name: d.name, Code: d.code, Sort: d.sort, Status: "active"}
+			if err := db.Create(&row).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		row.Name = d.name
+		row.Sort = d.sort
+		if err := db.Save(&row).Error; err != nil {
 			return err
 		}
 	}

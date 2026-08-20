@@ -15,29 +15,79 @@ import {
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { Avatar } from "@/components/ui/avatar"
+import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { roleLabel, useI18n } from "@/lib/i18n"
 import { P } from "@/lib/perms"
 import { cn } from "@/lib/utils"
+import type { MenuNode } from "@/lib/types"
+
+const ICONS: Record<string, typeof LayoutDashboard> = {
+  LayoutDashboard,
+  Users,
+  Shield,
+  KeyRound,
+  BookMarked,
+  Settings2,
+  ClipboardList,
+}
+
+type NavLinkDef = { to: string; label: string; icon: typeof LayoutDashboard; perm: string }
+
+function flattenMenus(nodes: MenuNode[]): MenuNode[] {
+  const out: MenuNode[] = []
+  for (const n of nodes) {
+    if (n.kind === "menu" && n.routePath && !n.hidden) out.push(n)
+    if (n.children?.length) out.push(...flattenMenus(n.children))
+  }
+  return out.sort((a, b) => a.sort - b.sort)
+}
 
 export function AppShell() {
   const { user, logout, can } = useAuth()
   const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
-  const mainLinks = [
+  const [dynamicLinks, setDynamicLinks] = useState<NavLinkDef[]>([])
+
+  const fallbackMain: NavLinkDef[] = [
     { to: "/", label: t("nav.dashboard"), icon: LayoutDashboard, perm: P.dashboard },
     { to: "/users", label: t("nav.users"), icon: Users, perm: P.userList },
     { to: "/roles", label: t("nav.roles"), icon: Shield, perm: P.roleList },
     { to: "/permissions", label: t("nav.permissions"), icon: KeyRound, perm: P.permList },
   ]
-  const systemLinks = [
+  const fallbackSystem: NavLinkDef[] = [
     { to: "/dicts", label: t("nav.dicts"), icon: BookMarked, perm: P.dictList },
     { to: "/configs", label: t("nav.configs"), icon: Settings2, perm: P.configList },
     { to: "/logs", label: t("nav.logs"), icon: ClipboardList, perm: P.logList },
   ]
-  const visibleMain = mainLinks.filter((l) => can(l.perm))
-  const visibleSystem = systemLinks.filter((l) => can(l.perm))
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    api
+      .menus()
+      .then((nodes) => {
+        if (cancelled) return
+        const links = flattenMenus(nodes).map((n) => ({
+          to: n.routePath,
+          label: n.name,
+          icon: ICONS[n.icon] ?? LayoutDashboard,
+          perm: n.code,
+        }))
+        setDynamicLinks(links)
+      })
+      .catch(() => {
+        if (!cancelled) setDynamicLinks([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  const useDynamic = dynamicLinks.length > 0
+  const visibleMain = (useDynamic ? dynamicLinks.slice(0, 4) : fallbackMain).filter((l) => can(l.perm))
+  const visibleSystem = (useDynamic ? dynamicLinks.slice(4) : fallbackSystem).filter((l) => can(l.perm))
   const all = [...visibleMain, ...visibleSystem]
   const current =
     all.find((l) => (l.to === "/" ? location.pathname === "/" : location.pathname.startsWith(l.to)))

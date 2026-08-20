@@ -12,18 +12,21 @@ import (
 	"go-react-shadcn/internal/config"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/rbac"
+	"go-react-shadcn/internal/security"
 	"go-react-shadcn/internal/seed"
 	"go-react-shadcn/internal/token"
 	"gorm.io/gorm"
 )
 
 type App struct {
-	Cfg      config.Config
-	DB       *gorm.DB
-	Captcha  *captcha.Service
-	Tokens   *token.Service
-	Enforcer *casbin.Enforcer
-	Router   *gin.Engine
+	Cfg        config.Config
+	DB         *gorm.DB
+	Captcha    *captcha.Service
+	Tokens     *token.Service
+	Enforcer   *casbin.Enforcer
+	LoginGuard *security.LoginGuard
+	Router     *gin.Engine
+	metrics    *httpMetrics
 }
 
 func New(cfg config.Config, db *gorm.DB) (*App, error) {
@@ -45,11 +48,13 @@ func New(cfg config.Config, db *gorm.DB) (*App, error) {
 		return nil, fmt.Errorf("seed: %w", err)
 	}
 	app := &App{
-		Cfg:      cfg,
-		DB:       db,
-		Captcha:  captcha.New(cfg.CaptchaDebug),
-		Tokens:   token.New(cfg.JWTSecret, cfg.JWTTTL),
-		Enforcer: enforcer,
+		Cfg:        cfg,
+		DB:         db,
+		Captcha:    captcha.New(cfg.CaptchaDebug),
+		Tokens:     token.New(cfg.JWTSecret, cfg.JWTTTL),
+		Enforcer:   enforcer,
+		LoginGuard: security.NewLoginGuard(),
+		metrics:    newHTTPMetrics(),
 	}
 	app.Router = app.buildRouter()
 	return app, nil
@@ -59,24 +64,31 @@ func (a *App) buildRouter() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(a.traceMiddleware())
+	r.Use(a.logAPIRequests())
+	r.Use(a.observeRequests())
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{a.Cfg.CORSOrigin, "http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:5174", "http://localhost:5174"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Trace-Id"},
+		ExposeHeaders:    []string{"X-Trace-Id"},
 		AllowCredentials: true,
 	}))
 	r.Static("/uploads", a.Cfg.UploadDir)
+	r.GET("/health", a.handleHealth)
+	r.GET("/metrics", a.handleMetrics)
+	r.GET("/openapi.yaml", a.handleOpenAPI)
 
 	api := r.Group("/api/v1")
-	api.GET("/health", func(c *gin.Context) {
-		ok(c, gin.H{"status": "up"})
-	})
+	api.GET("/health", a.handleHealth)
+	api.GET("/openapi.yaml", a.handleOpenAPI)
 	api.GET("/auth/captcha", a.handleCaptcha)
 	api.POST("/auth/login", a.handleLogin)
 
 	self := api.Group("")
 	self.Use(a.requireJWT(), a.logMutations())
 	self.GET("/auth/me", a.handleMe)
+	self.GET("/auth/menus", a.handleMenus)
 	self.PUT("/auth/profile", a.handleUpdateProfile)
 	self.PUT("/auth/password", a.handleChangePassword)
 	self.POST("/auth/avatar", a.handleUploadOwnAvatar)
@@ -105,6 +117,11 @@ func (a *App) buildRouter() *gin.Engine {
 	authed.PUT("/permissions/:id", a.handleUpdatePermission)
 	authed.DELETE("/permissions/:id", a.handleDeletePermission)
 
+	authed.GET("/departments", a.handleListDepartments)
+	authed.POST("/departments", a.handleCreateDepartment)
+	authed.PUT("/departments/:id", a.handleUpdateDepartment)
+	authed.DELETE("/departments/:id", a.handleDeleteDepartment)
+
 	authed.GET("/dicts", a.handleListDicts)
 	authed.POST("/dicts", a.handleCreateDict)
 	authed.PUT("/dicts/:id", a.handleUpdateDict)
@@ -120,7 +137,10 @@ func (a *App) buildRouter() *gin.Engine {
 	authed.DELETE("/configs/:id", a.handleDeleteConfig)
 
 	authed.GET("/logs", a.handleListLogs)
+	authed.GET("/logs/login", a.handleListLoginLogs)
+	authed.GET("/logs/api", a.handleListAPILogs)
 	authed.DELETE("/logs", a.handleClearLogs)
+	authed.POST("/logs/purge", a.handlePurgeLogs)
 
 	return r
 }

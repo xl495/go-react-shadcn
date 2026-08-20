@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Can } from "@/components/auth/Can"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { permLabel, roleDesc, roleLabel, translateApiError, useI18n } from "@/lib/i18n"
 import { P } from "@/lib/perms"
+import { usePermissions, useRoles } from "@/lib/queries"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -16,13 +18,15 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import type { Permission, Role } from "@/lib/types"
+import type { Role } from "@/lib/types"
 
 export function RolesPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const [roles, setRoles] = useState<Role[]>([])
-  const [perms, setPerms] = useState<Permission[]>([])
+  const qc = useQueryClient()
+  const { data: rolesPage, error: rolesError } = useRoles({ pageSize: 500 })
+  const { data: perms = [] } = usePermissions()
+  const roles = rolesPage?.items ?? []
   const [error, setError] = useState("")
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
@@ -30,19 +34,14 @@ export function RolesPage() {
   const [description, setDescription] = useState("")
   const [permissionIds, setPermissionIds] = useState<number[]>([])
 
-  async function reload() {
-    const r = await api.roles()
-    setRoles(r)
-    try {
-      setPerms(await api.permissions())
-    } catch {
-      setPerms([])
-    }
-  }
-
   useEffect(() => {
-    reload().catch((e: Error) => setError(translateApiError(e, t)))
-  }, [])
+    if (rolesError) setError(translateApiError(rolesError as Error, t))
+  }, [rolesError, t])
+
+  async function reload() {
+    await qc.invalidateQueries({ queryKey: ["roles"] })
+    await qc.invalidateQueries({ queryKey: ["permissions"] })
+  }
 
   function toggle(id: number) {
     setPermissionIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))

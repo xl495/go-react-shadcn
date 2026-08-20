@@ -15,6 +15,12 @@ type permissionRequest struct {
 	Method      string `json:"method"`
 	Kind        string `json:"kind"`
 	Description string `json:"description"`
+	ParentID    *uint  `json:"parentId"`
+	Sort        int    `json:"sort"`
+	Icon        string `json:"icon"`
+	RoutePath   string `json:"routePath"`
+	Component   string `json:"component"`
+	Hidden      bool   `json:"hidden"`
 }
 
 func normalizeKind(k string) string {
@@ -46,12 +52,10 @@ func (a *App) handleCreatePermission(c *gin.Context) {
 		return
 	}
 	perm := models.Permission{
-		Name:        req.Name,
-		Code:        req.Code,
-		Path:        req.Path,
-		Method:      normalizeMethod(req.Method),
-		Kind:        normalizeKind(req.Kind),
-		Description: req.Description,
+		Name: req.Name, Code: req.Code, Path: req.Path,
+		Method: normalizeMethod(req.Method), Kind: normalizeKind(req.Kind),
+		Description: req.Description, ParentID: req.ParentID, Sort: req.Sort,
+		Icon: req.Icon, RoutePath: req.RoutePath, Component: req.Component, Hidden: req.Hidden,
 	}
 	if err := a.DB.Create(&perm).Error; err != nil {
 		fail(c, http.StatusConflict, 40930, "permission code already exists")
@@ -86,6 +90,12 @@ func (a *App) handleUpdatePermission(c *gin.Context) {
 	if req.Description != "" || req.Name != "" {
 		perm.Description = req.Description
 	}
+	perm.ParentID = req.ParentID
+	perm.Sort = req.Sort
+	perm.Icon = req.Icon
+	perm.RoutePath = req.RoutePath
+	perm.Component = req.Component
+	perm.Hidden = req.Hidden
 	if err := a.DB.Save(&perm).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50031, "failed to update permission")
 		return

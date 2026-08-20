@@ -77,6 +77,42 @@ func decodeEnv(t *testing.T, w *httptest.ResponseRecorder) envelope {
 	return env
 }
 
+type pageEnvelope[T any] struct {
+	Items    []T   `json:"items"`
+	Total    int64 `json:"total"`
+	Page     int   `json:"page"`
+	PageSize int   `json:"pageSize"`
+}
+
+func decodePage[T any](t *testing.T, w *httptest.ResponseRecorder) pageEnvelope[T] {
+	t.Helper()
+	var page pageEnvelope[T]
+	if err := json.Unmarshal(decodeEnv(t, w).Data, &page); err != nil {
+		t.Fatalf("decode page: %v body=%s", err, w.Body.String())
+	}
+	return page
+}
+
+func decodeUserPage(t *testing.T, w *httptest.ResponseRecorder) []userDTO {
+	t.Helper()
+	return decodePage[userDTO](t, w).Items
+}
+
+func decodeOpLogPage(t *testing.T, w *httptest.ResponseRecorder) []models.OpLog {
+	t.Helper()
+	return decodePage[models.OpLog](t, w).Items
+}
+
+func decodeLoginLogPage(t *testing.T, w *httptest.ResponseRecorder) []models.LoginLog {
+	t.Helper()
+	return decodePage[models.LoginLog](t, w).Items
+}
+
+func decodeRolePage(t *testing.T, w *httptest.ResponseRecorder) []roleDTO {
+	t.Helper()
+	return decodePage[roleDTO](t, w).Items
+}
+
 func issueCaptcha(t *testing.T, app *App) (id, answer, image string) {
 	t.Helper()
 	w := doJSON(t, app, http.MethodGet, "/api/v1/auth/captcha", "", nil)
@@ -134,6 +170,85 @@ func loginOK(t *testing.T, app *App, username, password string) string {
 	return data.Token
 }
 
+func TestHealthEndpoint(t *testing.T) {
+	app := testApp(t)
+	w := doJSON(t, app, http.MethodGet, "/health", "", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("health status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"ok"`) {
+		t.Fatalf("health body missing ok: %s", w.Body.String())
+	}
+	env := decodeEnv(t, w)
+	if env.Message != "ok" {
+		t.Fatalf("message=%q", env.Message)
+	}
+	var data struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(env.Data, &data); err != nil {
+		t.Fatalf("health data: %v", err)
+	}
+	if data.Status != "ok" {
+		t.Fatalf("status=%q", data.Status)
+	}
+
+	api := doJSON(t, app, http.MethodGet, "/api/v1/health", "", nil)
+	if api.Code != http.StatusOK || !strings.Contains(api.Body.String(), `"ok"`) {
+		t.Fatalf("api health: %d %s", api.Code, api.Body.String())
+	}
+}
+
+func TestOperationLogsRecordLoginAndMutations(t *testing.T) {
+	app := testApp(t)
+	token := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+
+	created := doJSON(t, app, http.MethodPost, "/api/v1/configs", token, map[string]string{
+		"key": "app.audit_probe", "value": "1", "name": "audit probe", "group": "app",
+	})
+	if created.Code != http.StatusOK {
+		t.Fatalf("create config: %d %s", created.Code, created.Body.String())
+	}
+
+	listed := doJSON(t, app, http.MethodGet, "/api/v1/logs/login?username="+seed.AdminUsername+"&status=success", token, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("list login logs: %d %s", listed.Code, listed.Body.String())
+	}
+	loginLogs := decodeLoginLogPage(t, listed)
+	if len(loginLogs) == 0 {
+		t.Fatal("expected login audit row")
+	}
+	foundLogin := false
+	for _, row := range loginLogs {
+		if row.Username == seed.AdminUsername && row.Status == "success" {
+			foundLogin = true
+			break
+		}
+	}
+	if !foundLogin {
+		t.Fatalf("login log missing: %+v", loginLogs)
+	}
+
+	cfgLogs := doJSON(t, app, http.MethodGet, "/api/v1/logs?module=config", token, nil)
+	if cfgLogs.Code != http.StatusOK {
+		t.Fatalf("list config logs: %d %s", cfgLogs.Code, cfgLogs.Body.String())
+	}
+	rows := decodeOpLogPage(t, cfgLogs)
+	foundWrite := false
+	for _, row := range rows {
+		if row.Username == seed.AdminUsername && row.Action == "create" && row.Path == "/api/v1/configs" && row.Status == http.StatusOK {
+			foundWrite = true
+			break
+		}
+	}
+	if !foundWrite {
+		t.Fatalf("config mutation log missing: %+v", rows)
+	}
+	if n := app.countLogs(seed.AdminUsername, "config", "create"); n < 1 {
+		t.Fatalf("db config logs=%d", n)
+	}
+}
+
 func TestCaptchaIssued(t *testing.T) {
 	app := testApp(t)
 	id, answer, image := issueCaptcha(t, app)
@@ -185,11 +300,7 @@ func TestAdminLoginJWTAndAdminAPI(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("admin users status=%d body=%s", w.Code, w.Body.String())
 	}
-	env := decodeEnv(t, w)
-	var users []models.User
-	if err := json.Unmarshal(env.Data, &users); err != nil {
-		t.Fatalf("users: %v", err)
-	}
+	users := decodeUserPage(t, w)
 	if len(users) < 2 {
 		t.Fatalf("expected seeded users, got %d", len(users))
 	}
@@ -204,10 +315,7 @@ func TestGetUserDetailAllowDeny(t *testing.T) {
 	if listed.Code != http.StatusOK {
 		t.Fatalf("list users: %d %s", listed.Code, listed.Body.String())
 	}
-	var users []userDTO
-	if err := json.Unmarshal(decodeEnv(t, listed).Data, &users); err != nil {
-		t.Fatal(err)
-	}
+	users := decodeUserPage(t, listed)
 	var admin userDTO
 	for _, u := range users {
 		if u.Username == seed.AdminUsername {
@@ -300,11 +408,7 @@ func TestAssigningPermissionChangesCasbinEnforce(t *testing.T) {
 	if rolesResp.Code != http.StatusOK {
 		t.Fatalf("roles status=%d body=%s", rolesResp.Code, rolesResp.Body.String())
 	}
-	rolesEnv := decodeEnv(t, rolesResp)
-	var roles []roleDTO
-	if err := json.Unmarshal(rolesEnv.Data, &roles); err != nil {
-		t.Fatal(err)
-	}
+	roles := decodeRolePage(t, rolesResp)
 	var viewer roleDTO
 	var meID, dashID uint
 	for _, r := range roles {
@@ -549,10 +653,7 @@ func TestUserFieldsBoundToDict(t *testing.T) {
 	if list.Code != http.StatusOK {
 		t.Fatalf("users: %d %s", list.Code, list.Body.String())
 	}
-	var users []userDTO
-	if err := json.Unmarshal(decodeEnv(t, list).Data, &users); err != nil {
-		t.Fatal(err)
-	}
+	users := decodeUserPage(t, list)
 	if len(users) == 0 {
 		t.Fatal("expected seeded users")
 	}
@@ -710,12 +811,17 @@ func TestFoundationDictConfigLogs(t *testing.T) {
 		t.Fatalf("config list missing update: %s", listed.Body.String())
 	}
 
+	loginLogs := doJSON(t, app, http.MethodGet, "/api/v1/logs/login?username="+seed.AdminUsername, admin, nil)
+	if loginLogs.Code != http.StatusOK {
+		t.Fatalf("login logs: %d %s", loginLogs.Code, loginLogs.Body.String())
+	}
+	if len(decodeLoginLogPage(t, loginLogs)) == 0 {
+		t.Fatalf("expected login log after loginOK")
+	}
+
 	logs := doJSON(t, app, http.MethodGet, "/api/v1/logs", admin, nil)
 	if logs.Code != http.StatusOK {
 		t.Fatalf("logs: %d %s", logs.Code, logs.Body.String())
-	}
-	if !strings.Contains(logs.Body.String(), `"login"`) && !strings.Contains(logs.Body.String(), "auth") {
-		t.Fatalf("expected login/auth log after loginOK: %s", logs.Body.String())
 	}
 	if !strings.Contains(logs.Body.String(), "biz_level") && !strings.Contains(logs.Body.String(), "/api/v1/dicts") {
 		t.Fatalf("expected dict mutation log: %s", logs.Body.String())

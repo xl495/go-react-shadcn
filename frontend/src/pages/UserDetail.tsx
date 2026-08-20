@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
-import { api } from "@/lib/api"
 import { DICT, useDict } from "@/lib/dict"
 import { formatDateTime } from "@/lib/format"
 import { roleLabel, translateApiError, useI18n } from "@/lib/i18n"
+import { useUser } from "@/lib/queries"
 import { Avatar } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import type { User } from "@/lib/types"
+import { PageFallback } from "@/components/PageFallback"
 
 export function UserDetailPage() {
   const { id } = useParams()
@@ -16,20 +15,15 @@ export function UserDetailPage() {
   const genderDict = useDict(DICT.gender)
   const statusDict = useDict(DICT.userStatus)
   const deptDict = useDict(DICT.department)
-  const [user, setUser] = useState<User | null>(null)
-  const [error, setError] = useState("")
+  const userId = Number(id)
+  const { data: user, error, isLoading } = useUser(userId)
 
-  useEffect(() => {
-    const n = Number(id)
-    if (!n) {
-      setError(t("errors.40410"))
-      return
-    }
-    api
-      .getUser(n)
-      .then(setUser)
-      .catch((e: Error) => setError(translateApiError(e, t)))
-  }, [id, t])
+  if (!userId) {
+    return <p className="text-sm text-destructive">{t("errors.40410")}</p>
+  }
+  if (isLoading) return <PageFallback />
+  if (error) return <p className="text-sm text-destructive">{translateApiError(error as Error, t)}</p>
+  if (!user) return null
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -39,50 +33,34 @@ export function UserDetailPage() {
           <Link to="/users">{t("users.backToList")}</Link>
         </Button>
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {user ? (
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-4">
-            <Avatar name={user.nickname || user.username} src={user.avatar} className="size-16 text-lg" />
-            <div>
-              <CardTitle>{user.nickname || user.username}</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">{user.username}</p>
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
-            <Field label={t("users.phone")} value={user.phone} />
-            <Field label={t("users.email")} value={user.email} />
-            <Field label={t("users.gender")} value={genderDict.label(user.gender)} />
-            <Field label={t("users.department")} value={deptDict.label(user.department)} />
-            <Field label={t("users.jobTitle")} value={user.title} />
-            <Field label={t("app.status")} value={statusDict.label(user.status)} />
-            <Field
-              label={t("users.roles")}
-              value={(user.roles ?? []).map((r) => roleLabel(r.code, r.name, t)).join(" · ")}
-            />
-            <Field label={t("users.lastLogin")} value={formatDateTime(user.lastLoginAt)} />
-            <Field label="IP" value={user.lastLoginIp} />
-            <Field label={t("users.createdAt")} value={formatDateTime(user.createdAt)} />
-            <div className="sm:col-span-2">
-              <Field label={t("users.remark")} value={user.remark} />
-            </div>
-            {user.avatar ? (
-              <div className="sm:col-span-2">
-                <p className="text-xs text-muted-foreground">{t("users.avatar")}</p>
-                <p className="mt-0.5 font-mono text-xs break-all">{user.avatar}</p>
-              </div>
-            ) : null}
-            <div className="sm:col-span-2">
-              <Badge variant="muted">ID {user.id}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-4">
+          <Avatar src={user.avatar} name={user.nickname || user.username} className="size-14" />
+          <div>
+            <CardTitle>{user.nickname || user.username}</CardTitle>
+            <p className="text-sm text-muted-foreground">@{user.username}</p>
+          </div>
+          <Badge className="ml-auto">{statusDict.label(user.status)}</Badge>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+          <Field label={t("users.email")} value={user.email} />
+          <Field label={t("users.phone")} value={user.phone} />
+          <Field label={t("users.gender")} value={genderDict.label(user.gender)} />
+          <Field label={t("users.department")} value={deptDict.label(user.department)} />
+          <Field label={t("users.jobTitle")} value={user.title} />
+          <Field label={t("users.lastLogin")} value={formatDateTime(user.lastLoginAt)} />
+          <Field
+            label={t("users.roles")}
+            value={(user.roles ?? []).map((r) => roleLabel(r.code, r.name, t)).join(" · ")}
+          />
+          <Field label={t("users.remark")} value={user.remark} />
+        </CardContent>
+      </Card>
     </div>
   )
 }
 
-function Field({ label, value }: { label: string; value?: string | null }) {
+function Field({ label, value }: { label: string; value?: string }) {
   return (
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>

@@ -1,22 +1,15 @@
-import { useEffect, useState } from "react"
-import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { DICT, useDict } from "@/lib/dict"
 import { formatDateTime } from "@/lib/format"
 import { roleLabel, translateApiError, useI18n } from "@/lib/i18n"
+import { useDashboardStats } from "@/lib/queries"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import type { DashboardStats } from "@/lib/types"
 
 export function DashboardPage() {
   const { user } = useAuth()
   const { t } = useI18n()
   const deptDict = useDict(DICT.department)
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [error, setError] = useState("")
-
-  useEffect(() => {
-    api.stats().then(setStats).catch((e) => setError(translateApiError(e, t)))
-  }, [t])
+  const { data: stats, error } = useDashboardStats()
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -26,7 +19,9 @@ export function DashboardPage() {
           {t("dashboard.hello", { name: user?.nickname || user?.username || "" })}
         </p>
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="text-sm text-destructive">{translateApiError(error as Error, t)}</p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat title={t("dashboard.users")} value={stats?.users} hint={t("dashboard.usersHint")} />
         <Stat title={t("dashboard.roles")} value={stats?.roles} hint={t("dashboard.rolesHint")} />

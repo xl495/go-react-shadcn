@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import { Can } from "@/components/auth/Can"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -7,6 +8,7 @@ import { DICT, useDict } from "@/lib/dict"
 import { formatDateTime } from "@/lib/format"
 import { roleLabel, translateApiError, useI18n } from "@/lib/i18n"
 import { P } from "@/lib/perms"
+import { useRoles, useUsers } from "@/lib/queries"
 import { Avatar } from "@/components/ui/avatar"
 import { AvatarField } from "@/components/ui/avatar-field"
 import { Badge } from "@/components/ui/badge"
@@ -30,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { Role, User } from "@/lib/types"
+import type { User } from "@/lib/types"
 
 const emptyForm = {
   username: "",
@@ -48,11 +50,15 @@ const emptyForm = {
 export function UsersPage() {
   const { can } = useAuth()
   const { t } = useI18n()
+  const qc = useQueryClient()
   const genderDict = useDict(DICT.gender)
   const statusDict = useDict(DICT.userStatus)
   const deptDict = useDict(DICT.department)
-  const [users, setUsers] = useState<User[]>([])
-  const [roles, setRoles] = useState<Role[]>([])
+  const { data: usersPage, error: usersError } = useUsers({ pageSize: 500 })
+  const needRoles = can(P.roleList) || can(P.userRoles) || can(P.userCreate) || can(P.userUpdate)
+  const { data: rolesPage } = useRoles({ pageSize: 500 }, needRoles)
+  const users = usersPage?.items ?? []
+  const roles = rolesPage?.items ?? []
   const [error, setError] = useState("")
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
@@ -60,21 +66,14 @@ export function UsersPage() {
   const [form, setForm] = useState(emptyForm)
   const [roleIds, setRoleIds] = useState<number[]>([])
 
-  async function reload() {
-    const u = await api.users()
-    setUsers(u)
-    if (can(P.roleList) || can(P.userRoles) || can(P.userCreate) || can(P.userUpdate)) {
-      try {
-        setRoles(await api.roles())
-      } catch {
-        setRoles([])
-      }
-    }
-  }
-
   useEffect(() => {
-    reload().catch((e: Error) => setError(translateApiError(e, t)))
-  }, [])
+    if (usersError) setError(translateApiError(usersError as Error, t))
+  }, [usersError, t])
+
+  async function reload() {
+    await qc.invalidateQueries({ queryKey: ["users"] })
+    if (needRoles) await qc.invalidateQueries({ queryKey: ["roles"] })
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

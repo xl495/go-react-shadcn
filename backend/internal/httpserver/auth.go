@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/passwd"
+	"go-react-shadcn/internal/security"
 	"go-react-shadcn/internal/seed"
 )
 
@@ -38,51 +39,93 @@ func (a *App) handleLogin(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40001, "invalid request body")
 		return
 	}
-	if req.CaptchaID == "" || req.CaptchaCode == "" {
-		fail(c, http.StatusBadRequest, 40002, "captcha required")
+
+	ip := c.ClientIP()
+	if !a.LoginGuard.AllowIP(ip) {
+		a.recordLoginLog(c, req.Username, "failed", "ip rate limited")
+		fail(c, http.StatusTooManyRequests, 42901, "too many login attempts from this ip")
 		return
 	}
-	if !a.Captcha.Verify(req.CaptchaID, req.CaptchaCode) {
-		a.recordLog(c, "auth", "login", "invalid captcha")
-		fail(c, http.StatusBadRequest, 40003, "invalid captcha")
-		return
+
+	if a.captchaEnabled() {
+		if req.CaptchaID == "" || req.CaptchaCode == "" {
+			fail(c, http.StatusBadRequest, 40002, "captcha required")
+			return
+		}
+		if !a.Captcha.Verify(req.CaptchaID, req.CaptchaCode) {
+			a.recordLoginLog(c, req.Username, "failed", "invalid captcha")
+			fail(c, http.StatusBadRequest, 40003, "invalid captcha")
+			return
+		}
 	}
+
 	if req.Username == "" || req.Password == "" {
+		a.recordLoginLog(c, req.Username, "failed", "missing credentials")
 		fail(c, http.StatusUnauthorized, 40103, "invalid credentials")
 		return
 	}
 
 	var user models.User
 	if err := a.DB.Preload("Roles.Permissions").Where("username = ?", req.Username).First(&user).Error; err != nil {
-		fail(c, http.StatusUnauthorized, 40103, "invalid credentials")
-		return
-	}
-	if user.Status != "active" || !passwd.Match(user.PasswordHash, req.Password) {
-		a.recordLog(c, "auth", "login", "invalid credentials:"+req.Username)
+		a.recordLoginLog(c, req.Username, "failed", "user not found")
 		fail(c, http.StatusUnauthorized, 40103, "invalid credentials")
 		return
 	}
 
 	now := time.Now()
+	if security.IsLocked(user.LockedUntil, now) {
+		a.recordLoginLog(c, user.Username, "failed", "account locked")
+		fail(c, http.StatusForbidden, 40310, "account locked")
+		return
+	}
+
+	if user.Status != "active" || !passwd.Match(user.PasswordHash, req.Password) {
+		user.FailedLoginCount++
+		updates := map[string]any{"failed_login_count": user.FailedLoginCount}
+		if until := a.LoginGuard.LockedUntil(now, user.FailedLoginCount); until != nil {
+			updates["locked_until"] = until
+		}
+		_ = a.DB.Model(&user).Updates(updates).Error
+		a.recordLoginLog(c, user.Username, "failed", "invalid credentials")
+		fail(c, http.StatusUnauthorized, 40103, "invalid credentials")
+		return
+	}
+
+	if isAnomalousLogin(user, ip) {
+		a.recordLoginLog(c, user.Username, "warning", "anomalous ip:"+ip+" prev:"+user.LastLoginIP)
+	}
+
 	user.LastLoginAt = &now
-	user.LastLoginIP = c.ClientIP()
+	user.LastLoginIP = ip
+	user.FailedLoginCount = 0
+	user.LockedUntil = nil
 	_ = a.DB.Model(&user).Updates(map[string]any{
-		"last_login_at": user.LastLoginAt,
-		"last_login_ip": user.LastLoginIP,
+		"last_login_at":      user.LastLoginAt,
+		"last_login_ip":      user.LastLoginIP,
+		"failed_login_count": 0,
+		"locked_until":       nil,
 	}).Error
 
 	roles := roleCodes(user.Roles)
-	tok, exp, err := a.Tokens.Issue(user.ID, user.Username, roles)
+	tok, exp, err := a.Tokens.Issue(user.ID, user.Username, roles, user.TokenVersion)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, 50003, "failed to issue token")
 		return
 	}
+	a.recordLoginLog(c, user.Username, "success", "")
 	ok(c, loginData{
 		Token:     tok,
 		ExpiresAt: exp,
 		User:      toUserDTO(user),
 	})
-	a.recordLog(c, "auth", "login", "ok:"+user.Username)
+}
+
+func (a *App) captchaEnabled() bool {
+	var cfg models.SysConfig
+	if err := a.DB.Where(`"key" = ?`, "app.captcha_enabled").First(&cfg).Error; err != nil {
+		return true
+	}
+	return cfg.Value == "1" || cfg.Value == "true"
 }
 
 func (a *App) handleMe(c *gin.Context) {
@@ -131,6 +174,7 @@ func (a *App) handleUpdateProfile(c *gin.Context) {
 	user.Phone = req.Phone
 	user.Gender = req.Gender
 	user.Department = req.Department
+	a.applyDepartmentLink(&user)
 	user.Title = req.Title
 	user.Remark = req.Remark
 	if err := a.DB.Save(&user).Error; err != nil {
@@ -156,6 +200,10 @@ func (a *App) handleChangePassword(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40042, "old and new password required")
 		return
 	}
+	if len(req.NewPassword) < 8 {
+		fail(c, http.StatusBadRequest, 40043, "password must be at least 8 characters")
+		return
+	}
 	if !passwd.Match(user.PasswordHash, req.OldPassword) {
 		fail(c, http.StatusBadRequest, 40041, "current password is wrong")
 		return
@@ -165,7 +213,10 @@ func (a *App) handleChangePassword(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, 50011, "failed to hash password")
 		return
 	}
-	if err := a.DB.Model(&user).Update("password_hash", hash).Error; err != nil {
+	if err := a.DB.Model(&user).Updates(map[string]any{
+		"password_hash": hash,
+		"token_version": user.TokenVersion + 1,
+	}).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50042, "failed to change password")
 		return
 	}

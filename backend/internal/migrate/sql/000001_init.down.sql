@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS casbin_rule;
+DROP TABLE IF EXISTS op_logs;
+DROP TABLE IF EXISTS sys_configs;
+DROP TABLE IF EXISTS dict_items;
+DROP TABLE IF EXISTS dict_types;
+DROP TABLE IF EXISTS role_permissions;
+DROP TABLE IF EXISTS user_roles;
+DROP TABLE IF EXISTS permissions;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS users;

@@ -61,3 +61,17 @@ cd frontend && npm run build
 ```bash
 cd backend && go test ./...
 ```
+
+### Docker
+
+```bash
+docker compose up --build -d
+```
+
+Admin UI is on `:5173`, API on `:8080`. `GET /health` returns `{ "message": "ok" }`.
+
+### Operations
+
+- Schema changes live in `backend/internal/migrate/sql` and run on server start.
+- Mutating API calls and login attempts are written to `op_logs` and listed at `/logs`.
+- `GET /metrics` exposes a Prometheus-style request counter.

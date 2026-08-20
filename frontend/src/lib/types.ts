@@ -6,6 +6,12 @@ export type Permission = {
   method: string
   kind: string
   description: string
+  parentId?: number | null
+  sort?: number
+  icon?: string
+  routePath?: string
+  component?: string
+  hidden?: boolean
 }
 
 export type Role = {
@@ -13,6 +19,7 @@ export type Role = {
   name: string
   code: string
   description: string
+  dataScope?: string
   permissions?: Permission[]
 }
 
@@ -86,6 +93,7 @@ export type SysConfig = {
 
 export type OpLog = {
   id: number
+  traceId?: string
   username: string
   module: string
   action: string
@@ -95,5 +103,64 @@ export type OpLog = {
   ip: string
   latencyMs: number
   detail: string
+  description?: string
+  oldValue?: string
+  newValue?: string
   createdAt: string
+}
+
+export type LoginLog = {
+  id: number
+  username: string
+  ip: string
+  userAgent: string
+  location: string
+  status: string
+  failReason: string
+  createdAt: string
+}
+
+export type APILog = {
+  id: number
+  traceId: string
+  username: string
+  method: string
+  path: string
+  status: number
+  latencyMs: number
+  requestBody: string
+  responseBody: string
+  errorStack: string
+  createdAt: string
+}
+
+export type PageResult<T> = {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export type MenuNode = {
+  id: number
+  name: string
+  code: string
+  kind: string
+  routePath: string
+  component: string
+  icon: string
+  sort: number
+  hidden: boolean
+  children?: MenuNode[]
+}
+
+export type Department = {
+  id: number
+  name: string
+  code: string
+  parentId?: number | null
+  sort: number
+  leader: string
+  status: string
+  children?: Department[]
 }

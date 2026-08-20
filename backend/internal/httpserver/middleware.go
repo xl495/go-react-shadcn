@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/token"
 )
 
@@ -20,6 +21,15 @@ func (a *App) requireJWT() gin.HandlerFunc {
 		raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 		claims, err := a.Tokens.Parse(raw)
 		if err != nil {
+			fail(c, http.StatusUnauthorized, 40102, "invalid or expired token")
+			return
+		}
+		var user models.User
+		if err := a.DB.Select("id", "token_version", "status").First(&user, claims.UserID).Error; err != nil {
+			fail(c, http.StatusUnauthorized, 40102, "invalid or expired token")
+			return
+		}
+		if user.Status != "active" || user.TokenVersion != claims.TokenVersion {
 			fail(c, http.StatusUnauthorized, 40102, "invalid or expired token")
 			return
 		}

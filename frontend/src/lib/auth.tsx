@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Navigate, useLocation } from "react-router-dom"
-import { ApiError, api, getToken, setToken } from "@/lib/api"
+import { ApiError, api, getToken, setToken, setUnauthorizedHandler } from "@/lib/api"
+import { queryClient } from "@/lib/query-client"
 import type { User } from "@/lib/types"
 
 const USER_KEY = "latch.user"
@@ -28,6 +29,18 @@ function readUser(): User | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(readUser)
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setToken(null)
+      localStorage.removeItem(USER_KEY)
+      setUser(null)
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login"
+      }
+    })
+    return () => setUnauthorizedHandler(null)
+  }, [])
 
   useEffect(() => {
     if (!getToken()) return
@@ -72,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(null)
         localStorage.removeItem(USER_KEY)
         setUser(null)
+        queryClient.clear()
       },
       updateUser: (next) => {
         localStorage.setItem(USER_KEY, JSON.stringify(next))
@@ -98,7 +112,8 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
 export function RequirePerm({ perm, children }: { perm: string; children: ReactNode }) {
   const { can } = useAuth()
-  if (!can(perm)) return <Navigate to="/" replace />
+  const location = useLocation()
+  if (!can(perm)) return <Navigate to="/403" replace state={{ perm, from: location.pathname }} />
   return children
 }
 

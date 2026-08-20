@@ -14,11 +14,10 @@ import (
 )
 
 var avatarTypes = map[string]string{
-	"image/jpeg":    ".jpg",
-	"image/png":     ".png",
-	"image/webp":    ".webp",
-	"image/gif":     ".gif",
-	"image/svg+xml": ".svg",
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+	"image/gif":  ".gif",
 }
 
 func (a *App) handleUploadOwnAvatar(c *gin.Context) {
@@ -36,6 +35,12 @@ func (a *App) handleUploadUserAvatar(c *gin.Context) {
 }
 
 func (a *App) saveUserAvatar(c *gin.Context, userID uint) {
+	var existing models.User
+	if err := a.DB.Select("avatar").First(&existing, userID).Error; err != nil {
+		fail(c, http.StatusNotFound, 40410, "user not found")
+		return
+	}
+	oldAvatar := existing.Avatar
 	file, err := c.FormFile("file")
 	if err != nil {
 		fail(c, http.StatusBadRequest, 40050, "avatar file required")
@@ -56,14 +61,8 @@ func (a *App) saveUserAvatar(c *gin.Context, userID uint) {
 	ctype := http.DetectContentType(head[:n])
 	ext, known := avatarTypes[ctype]
 	if !known {
-		name := strings.ToLower(file.Filename)
-		switch {
-		case strings.HasSuffix(name, ".svg"):
-			ext = ".svg"
-		default:
-			fail(c, http.StatusBadRequest, 40052, "unsupported image type")
-			return
-		}
+		fail(c, http.StatusBadRequest, 40052, "unsupported image type")
+		return
 	}
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		fail(c, http.StatusInternalServerError, 50050, "failed to read avatar")
@@ -90,8 +89,12 @@ func (a *App) saveUserAvatar(c *gin.Context, userID uint) {
 
 	url := "/uploads/avatars/" + filename
 	if err := a.DB.Model(&models.User{}).Where("id = ?", userID).Update("avatar", url).Error; err != nil {
+		_ = os.Remove(dstPath)
 		fail(c, http.StatusInternalServerError, 50050, "failed to store avatar")
 		return
+	}
+	if oldAvatar != "" && oldAvatar != url {
+		removeUploadedFile(a.Cfg.UploadDir, oldAvatar)
 	}
 	var user models.User
 	if err := a.DB.Preload("Roles.Permissions").First(&user, userID).Error; err != nil {
@@ -99,4 +102,13 @@ func (a *App) saveUserAvatar(c *gin.Context, userID uint) {
 		return
 	}
 	ok(c, toUserDTO(user))
+}
+
+func removeUploadedFile(uploadDir, url string) {
+	if url == "" || !strings.HasPrefix(url, "/uploads/") {
+		return
+	}
+	rel := strings.TrimPrefix(url, "/uploads/")
+	path := filepath.Join(uploadDir, filepath.FromSlash(rel))
+	_ = os.Remove(path)
 }

@@ -1,97 +1,45 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
+import { BrowserRouter, Route, Routes } from "react-router-dom"
 import { lazy, Suspense } from "react"
+import { QueryClientProvider } from "@tanstack/react-query"
+import { ErrorBoundary } from "@/components/ErrorBoundary"
+import { DynamicAuthRoutes } from "@/components/layout/DynamicAuthRoutes"
+import { PageFallback } from "@/components/PageFallback"
 import { AppShell } from "@/components/layout/AppShell"
-import { AuthProvider, RequireAuth, RequirePerm } from "@/lib/auth"
+import { AuthProvider, RequireAuth } from "@/lib/auth"
 import { I18nProvider } from "@/lib/i18n"
-import { P } from "@/lib/perms"
-import { ConfigsPage } from "@/pages/Configs"
-import { DashboardPage } from "@/pages/Dashboard"
-import { DictsPage } from "@/pages/Dicts"
-import { LoginPage } from "@/pages/Login"
-import { LogsPage } from "@/pages/Logs"
-import { PermissionsPage } from "@/pages/Permissions"
-import { RolesPage } from "@/pages/Roles"
-import { SettingsPage } from "@/pages/Settings"
-import { UserDetailPage } from "@/pages/UserDetail"
-import { UsersPage } from "@/pages/Users"
+import { queryClient } from "@/lib/query-client"
+
+const LoginPage = lazy(() => import("@/pages/Login").then((m) => ({ default: m.LoginPage })))
+const ForbiddenPage = lazy(() => import("@/pages/Errors").then((m) => ({ default: m.ForbiddenPage })))
+const NotFoundPage = lazy(() => import("@/pages/Errors").then((m) => ({ default: m.NotFoundPage })))
 
 export function App() {
   return (
-    <I18nProvider>
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            element={
-              <RequireAuth>
-                <AppShell />
-              </RequireAuth>
-            }
-          >
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route
-              path="/users"
-              element={
-                <RequirePerm perm={P.userList}>
-                  <UsersPage />
-                </RequirePerm>
-              }
-            />
-            <Route
-              path="/users/:id"
-              element={
-                <RequirePerm perm={P.userList}>
-                  <UserDetailPage />
-                </RequirePerm>
-              }
-            />
-            <Route
-              path="/roles"
-              element={
-                <RequirePerm perm={P.roleList}>
-                  <RolesPage />
-                </RequirePerm>
-              }
-            />
-            <Route
-              path="/permissions"
-              element={
-                <RequirePerm perm={P.permList}>
-                  <PermissionsPage />
-                </RequirePerm>
-              }
-            />
-            <Route
-              path="/dicts"
-              element={
-                <RequirePerm perm={P.dictList}>
-                  <DictsPage />
-                </RequirePerm>
-              }
-            />
-            <Route
-              path="/configs"
-              element={
-                <RequirePerm perm={P.configList}>
-                  <ConfigsPage />
-                </RequirePerm>
-              }
-            />
-            <Route
-              path="/logs"
-              element={
-                <RequirePerm perm={P.logList}>
-                  <LogsPage />
-                </RequirePerm>
-              }
-            />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
-    </I18nProvider>
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <AuthProvider>
+          <ErrorBoundary>
+            <BrowserRouter>
+              <Suspense fallback={<PageFallback />}>
+                <Routes>
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route
+                    element={
+                      <RequireAuth>
+                        <AppShell />
+                      </RequireAuth>
+                    }
+                  >
+                    <DynamicAuthRoutes />
+                  </Route>
+                  <Route path="/403" element={<ForbiddenPage />} />
+                  <Route path="*" element={<NotFoundPage />} />
+                </Routes>
+              </Suspense>
+            </BrowserRouter>
+          </ErrorBoundary>
+        </AuthProvider>
+      </I18nProvider>
+    </QueryClientProvider>
   )
 }

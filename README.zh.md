@@ -61,3 +61,17 @@ cd frontend && npm run build
 ```bash
 cd backend && go test ./...
 ```
+
+### Docker
+
+```bash
+docker compose up --build -d
+```
+
+管理端 `:5173`，接口 `:8080`。`GET /health` 返回包含 `ok` 的 JSON。
+
+### 运维
+
+- 表结构变更放在 `backend/internal/migrate/sql`，服务启动时自动执行。
+- 登录与写操作会写入 `op_logs`，管理端 `/logs` 可查。
+- `GET /metrics` 提供 Prometheus 风格请求计数。

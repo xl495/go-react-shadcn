@@ -1,10 +1,14 @@
 import type {
+  APILog,
   CaptchaChallenge,
   DashboardStats,
   DictItem,
   DictType,
+  LoginLog,
   LoginResult,
+  MenuNode,
   OpLog,
+  PageResult,
   Permission,
   Role,
   SysConfig,
@@ -24,6 +28,13 @@ export class ApiError extends Error {
 }
 
 type Envelope<T> = { code: number; message: string; data?: T }
+
+type UnauthorizedHandler = () => void
+let onUnauthorized: UnauthorizedHandler | null = null
+
+export function setUnauthorizedHandler(fn: UnauthorizedHandler | null) {
+  onUnauthorized = fn
+}
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -46,7 +57,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { ...init, headers })
   const json = (await res.json()) as Envelope<T>
   if (!res.ok || json.code !== 0) {
-    throw new ApiError(res.status, json.code, json.message || "request failed")
+    const err = new ApiError(res.status, json.code, json.message || "request failed")
+    if (err.status === 401 || err.code === 40101 || err.code === 40102) {
+      onUnauthorized?.()
+    }
+    throw err
   }
   return json.data as T
 }
@@ -61,9 +76,20 @@ async function uploadAvatar(path: string, file: File): Promise<User> {
   const res = await fetch(path, { method: "POST", headers, body })
   const json = (await res.json()) as Envelope<User>
   if (!res.ok || json.code !== 0) {
-    throw new ApiError(res.status, json.code, json.message || "request failed")
+    const err = new ApiError(res.status, json.code, json.message || "request failed")
+    if (err.status === 401 || err.code === 40101 || err.code === 40102) onUnauthorized?.()
+    throw err
   }
   return json.data as User
+}
+
+function qs(params: Record<string, string | number | undefined>) {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") q.set(k, String(v))
+  }
+  const s = q.toString()
+  return s ? `?${s}` : ""
 }
 
 export const api = {
@@ -79,6 +105,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   me: () => request<User>("/api/v1/auth/me"),
+  menus: () => request<MenuNode[]>("/api/v1/auth/menus"),
   updateProfile: (body: {
     nickname: string
     email: string
@@ -97,7 +124,8 @@ export const api = {
       body: JSON.stringify(body),
     }),
   stats: () => request<DashboardStats>("/api/v1/dashboard/stats"),
-  users: () => request<User[]>("/api/v1/users"),
+  users: (params?: { page?: number; pageSize?: number; q?: string }) =>
+    request<PageResult<User>>(`/api/v1/users${qs(params ?? {})}`),
   getUser: (id: number) => request<User>(`/api/v1/users/${id}`),
   createUser: (body: {
     username: string
@@ -134,15 +162,17 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ roleIds }),
     }),
-  roles: () => request<Role[]>("/api/v1/roles"),
+  roles: (params?: { page?: number; pageSize?: number }) =>
+    request<PageResult<Role>>(`/api/v1/roles${qs(params ?? {})}`),
   createRole: (body: {
     name: string
     code: string
     description?: string
+    dataScope?: string
     permissionIds: number[]
   }) =>
     request<Role>("/api/v1/roles", { method: "POST", body: JSON.stringify(body) }),
-  updateRole: (id: number, body: { name?: string; description?: string }) =>
+  updateRole: (id: number, body: { name?: string; description?: string; dataScope?: string }) =>
     request<Role>(`/api/v1/roles/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteRole: (id: number) =>
     request<{ deleted: number }>(`/api/v1/roles/${id}`, { method: "DELETE" }),
@@ -201,13 +231,16 @@ export const api = {
     request<SysConfig>(`/api/v1/configs/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteConfig: (id: number) =>
     request<{ deleted: number }>(`/api/v1/configs/${id}`, { method: "DELETE" }),
-  logs: (params?: { username?: string; module?: string; limit?: number }) => {
-    const q = new URLSearchParams()
-    if (params?.username) q.set("username", params.username)
-    if (params?.module) q.set("module", params.module)
-    if (params?.limit) q.set("limit", String(params.limit))
-    const qs = q.toString()
-    return request<OpLog[]>(`/api/v1/logs${qs ? `?${qs}` : ""}`)
-  },
-  clearLogs: () => request<{ cleared: boolean }>("/api/v1/logs", { method: "DELETE" }),
+  logs: (params?: { username?: string; module?: string; action?: string; page?: number; pageSize?: number }) =>
+    request<PageResult<OpLog>>(`/api/v1/logs${qs(params ?? {})}`),
+  loginLogs: (params?: { username?: string; status?: string; page?: number; pageSize?: number }) =>
+    request<PageResult<LoginLog>>(`/api/v1/logs/login${qs(params ?? {})}`),
+  apiLogs: (params?: { traceId?: string; path?: string; page?: number; pageSize?: number }) =>
+    request<PageResult<APILog>>(`/api/v1/logs/api${qs(params ?? {})}`),
+  clearLogs: (kind: "op" | "login" | "api" = "op") =>
+    request<{ cleared: boolean }>(`/api/v1/logs?kind=${kind}`, { method: "DELETE" }),
+  purgeLogs: (days = 30) =>
+    request<{ purged: boolean; retentionDays: number }>(`/api/v1/logs/purge?days=${days}`, {
+      method: "POST",
+    }),
 }

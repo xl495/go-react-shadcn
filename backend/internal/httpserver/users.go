@@ -2,11 +2,13 @@ package httpserver
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/passwd"
 	"go-react-shadcn/internal/seed"
+	"gorm.io/gorm"
 )
 
 type userDTO struct {
@@ -34,6 +36,7 @@ type roleDTO struct {
 	Name        string          `json:"name"`
 	Code        string          `json:"code"`
 	Description string          `json:"description"`
+	DataScope   string          `json:"dataScope"`
 	Permissions []permissionDTO `json:"permissions,omitempty"`
 }
 
@@ -45,6 +48,12 @@ type permissionDTO struct {
 	Method      string `json:"method"`
 	Kind        string `json:"kind"`
 	Description string `json:"description"`
+	ParentID    *uint  `json:"parentId,omitempty"`
+	Sort        int    `json:"sort"`
+	Icon        string `json:"icon"`
+	RoutePath   string `json:"routePath"`
+	Component   string `json:"component"`
+	Hidden      bool   `json:"hidden"`
 }
 
 type userProfileFields struct {
@@ -131,7 +140,7 @@ func collectCodes(u models.User) []string {
 }
 
 func toRoleDTO(r models.Role, withPerms bool) roleDTO {
-	dto := roleDTO{ID: r.ID, Name: r.Name, Code: r.Code, Description: r.Description}
+	dto := roleDTO{ID: r.ID, Name: r.Name, Code: r.Code, Description: r.Description, DataScope: r.DataScope}
 	if withPerms {
 		dto.Permissions = make([]permissionDTO, 0, len(r.Permissions))
 		for _, p := range r.Permissions {
@@ -143,13 +152,9 @@ func toRoleDTO(r models.Role, withPerms bool) roleDTO {
 
 func toPermissionDTO(p models.Permission) permissionDTO {
 	return permissionDTO{
-		ID:          p.ID,
-		Name:        p.Name,
-		Code:        p.Code,
-		Path:        p.Path,
-		Method:      p.Method,
-		Kind:        p.Kind,
-		Description: p.Description,
+		ID: p.ID, Name: p.Name, Code: p.Code, Path: p.Path, Method: p.Method,
+		Kind: p.Kind, Description: p.Description, ParentID: p.ParentID,
+		Sort: p.Sort, Icon: p.Icon, RoutePath: p.RoutePath, Component: p.Component, Hidden: p.Hidden,
 	}
 }
 
@@ -163,8 +168,26 @@ func (a *App) handleGetUser(c *gin.Context) {
 }
 
 func (a *App) handleListUsers(c *gin.Context) {
+	claims := currentUser(c)
+	var actor models.User
+	if err := a.DB.Preload("Roles").First(&actor, claims.UserID).Error; err != nil {
+		fail(c, http.StatusUnauthorized, 40101, "missing bearer token")
+		return
+	}
+	p := parsePage(c, 20, 200)
+	q := a.applyUserDataScope(a.DB.Model(&models.User{}), actor)
+	if s := c.Query("status"); s != "" {
+		q = q.Where("status = ?", s)
+	}
+	if kw := strings.TrimSpace(c.Query("q")); kw != "" {
+		like := "%" + kw + "%"
+		q = q.Where("username LIKE ? OR nickname LIKE ? OR email LIKE ?", like, like, like)
+	}
+	var total int64
+	_ = q.Count(&total).Error
 	var users []models.User
-	if err := a.DB.Preload("Roles").Order("id asc").Find(&users).Error; err != nil {
+	order := p.OrderClause(map[string]string{"id": "id", "username": "username"}, "id")
+	if err := q.Preload("Roles.Permissions").Order(order).Offset(p.Offset()).Limit(p.PageSize).Find(&users).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50010, "failed to list users")
 		return
 	}
@@ -172,13 +195,17 @@ func (a *App) handleListUsers(c *gin.Context) {
 	for _, u := range users {
 		out = append(out, toUserDTO(u))
 	}
-	ok(c, out)
+	ok(c, pageResult[userDTO]{Items: out, Total: total, Page: p.Page, PageSize: p.PageSize})
 }
 
 func (a *App) handleCreateUser(c *gin.Context) {
 	var req createUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.Username == "" || req.Password == "" {
 		fail(c, http.StatusBadRequest, 40010, "username and password required")
+		return
+	}
+	if len(req.Password) < 8 {
+		fail(c, http.StatusBadRequest, 40015, "password must be at least 8 characters")
 		return
 	}
 	status := req.Status
@@ -195,22 +222,28 @@ func (a *App) handleCreateUser(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, 50011, "failed to hash password")
 		return
 	}
-	user := models.User{
-		Username: req.Username, PasswordHash: hash, Status: status,
-		Nickname: req.Nickname, Avatar: req.Avatar, Email: req.Email, Phone: req.Phone,
-		Gender: req.Gender, Department: req.Department, Title: req.Title, Remark: req.Remark,
-	}
-	if err := a.DB.Create(&user).Error; err != nil {
-		fail(c, http.StatusConflict, 40910, "username already exists")
-		return
-	}
 	roles, err := a.loadRoles(req.RoleIDs)
 	if err != nil {
 		fail(c, http.StatusBadRequest, 40011, "invalid role ids")
 		return
 	}
-	if err := a.DB.Model(&user).Association("Roles").Replace(roles); err != nil {
-		fail(c, http.StatusInternalServerError, 50012, "failed to assign roles")
+	user := models.User{
+		Username: req.Username, PasswordHash: hash, Status: status,
+		Nickname: req.Nickname, Avatar: req.Avatar, Email: req.Email, Phone: req.Phone,
+		Gender: req.Gender, Department: req.Department, Title: req.Title, Remark: req.Remark,
+	}
+	a.applyDepartmentLink(&user)
+	if err := a.withTx(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return tx.Model(&user).Association("Roles").Replace(roles)
+	}); err != nil {
+		if isUniqueViolation(err) {
+			fail(c, http.StatusConflict, 40910, "username already exists")
+			return
+		}
+		fail(c, http.StatusInternalServerError, 50012, "failed to create user")
 		return
 	}
 	if err := seed.SyncUserRoles(a.Enforcer, user.Username, roles); err != nil {
@@ -232,6 +265,7 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40012, "invalid request body")
 		return
 	}
+	oldDTO := toUserDTO(user)
 	if req.Password != nil && *req.Password != "" {
 		hash, err := passwd.Hash(*req.Password)
 		if err != nil {
@@ -269,6 +303,7 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 			return
 		}
 		user.Department = *req.Department
+		a.applyDepartmentLink(&user)
 	}
 	if req.Title != nil {
 		user.Title = *req.Title
@@ -280,6 +315,7 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, 50014, "failed to update user")
 		return
 	}
+	a.recordOpLog(c, "user", "update", "update user "+user.Username, "", oldDTO, toUserDTO(user))
 	ok(c, toUserDTO(user))
 }
 
@@ -293,6 +329,7 @@ func (a *App) handleDeleteUser(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40013, "cannot delete seeded user")
 		return
 	}
+	removeUploadedFile(a.Cfg.UploadDir, user.Avatar)
 	if err := seed.RemoveUser(a.Enforcer, user.Username); err != nil {
 		fail(c, http.StatusInternalServerError, 50015, "failed to sync rbac")
 		return
