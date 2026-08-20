@@ -38,10 +38,21 @@ func isUniqueViolation(err error) bool {
 func (a *App) handleListDepartments(c *gin.Context) {
 	var rows []models.Department
 	if err := a.DB.Order("sort asc, id asc").Find(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50090, "failed to list departments")
+		fail(c, http.StatusInternalServerError, CodeListDepts, "failed to list departments")
 		return
 	}
-	ok(c, buildDeptTree(rows, nil))
+	tree := buildDeptTree(rows, nil)
+	p := parsePage(c, 50, 500)
+	total := int64(len(tree))
+	start := p.Offset()
+	if start > len(tree) {
+		start = len(tree)
+	}
+	end := start + p.PageSize
+	if end > len(tree) {
+		end = len(tree)
+	}
+	ok(c, pageResult[models.Department]{Items: tree[start:end], Total: total, Page: p.Page, PageSize: p.PageSize})
 }
 
 func buildDeptTree(rows []models.Department, parentID *uint) []models.Department {

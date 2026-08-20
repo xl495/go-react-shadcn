@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Navigate, useLocation } from "react-router-dom"
-import { ApiError, api, getToken, setToken, setUnauthorizedHandler } from "@/api/client"
+import { ApiError, getToken, setToken, setUnauthorizedHandler } from "@/api/client"
+import { useMe } from "@/hooks/queries"
 import { queryClient } from "@/providers/query-client"
 import type { User } from "@/types"
 
@@ -27,14 +28,19 @@ function readUser(): User | null {
   }
 }
 
+function isAuthError(err: unknown) {
+  return err instanceof ApiError && (err.status === 401 || err.code === 40101 || err.code === 40102)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(readUser)
+  const [cachedUser, setCachedUser] = useState<User | null>(readUser)
+  const meQuery = useMe(!!getToken())
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setToken(null)
       localStorage.removeItem(USER_KEY)
-      setUser(null)
+      setCachedUser(null)
       if (!window.location.pathname.startsWith("/login")) {
         window.location.href = "/login"
       }
@@ -43,27 +49,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!getToken()) return
-    let cancelled = false
-    api
-      .me()
-      .then((next) => {
-        if (cancelled) return
-        localStorage.setItem(USER_KEY, JSON.stringify(next))
-        setUser(next)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        if (err instanceof ApiError && (err.status === 401 || err.code === 40101 || err.code === 40102)) {
-          setToken(null)
-          localStorage.removeItem(USER_KEY)
-          setUser(null)
-        }
-      })
-    return () => {
-      cancelled = true
+    if (meQuery.data) {
+      localStorage.setItem(USER_KEY, JSON.stringify(meQuery.data))
     }
-  }, [])
+  }, [meQuery.data])
+
+  useEffect(() => {
+    if (!isAuthError(meQuery.error)) return
+    setToken(null)
+    localStorage.removeItem(USER_KEY)
+  }, [meQuery.error])
+
+  const user = isAuthError(meQuery.error) ? null : (meQuery.data ?? cachedUser)
 
   const value = useMemo<AuthState>(() => {
     const codes = new Set<string>(user?.permissionCodes ?? [])
@@ -79,17 +76,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login: (token, next) => {
         setToken(token)
         localStorage.setItem(USER_KEY, JSON.stringify(next))
-        setUser(next)
+        setCachedUser(next)
       },
       logout: () => {
         setToken(null)
         localStorage.removeItem(USER_KEY)
-        setUser(null)
+        setCachedUser(null)
         queryClient.clear()
       },
       updateUser: (next) => {
         localStorage.setItem(USER_KEY, JSON.stringify(next))
-        setUser(next)
+        setCachedUser(next)
+        queryClient.setQueryData(["auth", "me"], next)
       },
     }
   }, [user])
@@ -116,4 +114,3 @@ export function RequirePerm({ perm, children }: { perm: string; children: ReactN
   if (!can(perm)) return <Navigate to="/403" replace state={{ perm, from: location.pathname }} />
   return children
 }
-

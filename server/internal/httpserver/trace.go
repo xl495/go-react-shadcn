@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -14,18 +15,6 @@ import (
 )
 
 const ctxTraceKey = "traceId"
-
-type responseCapture struct {
-	gin.ResponseWriter
-	body *bytes.Buffer
-}
-
-func (w *responseCapture) Write(b []byte) (int, error) {
-	if len(b) > 0 {
-		_, _ = w.body.Write(b)
-	}
-	return w.ResponseWriter.Write(b)
-}
 
 func traceID(c *gin.Context) string {
 	if v, ok := c.Get(ctxTraceKey); ok {
@@ -44,8 +33,27 @@ func (a *App) traceMiddleware() gin.HandlerFunc {
 		}
 		c.Set(ctxTraceKey, id)
 		c.Header("X-Trace-Id", id)
+		start := time.Now()
 		c.Next()
+		slog.Info("http",
+			"trace_id", id,
+			"method", c.Request.Method,
+			"path", c.FullPath(),
+			"status", c.Writer.Status(),
+			"latency_ms", time.Since(start).Milliseconds(),
+		)
 	}
+}
+
+func peekBody(r io.ReadCloser, max int) (string, io.ReadCloser) {
+	if r == nil {
+		return "", r
+	}
+	limited := io.LimitReader(r, int64(max+1))
+	raw, _ := io.ReadAll(limited)
+	_ = r.Close()
+	rest := io.NopCloser(bytes.NewReader(raw))
+	return truncateText(string(raw), max), rest
 }
 
 func (a *App) logAPIRequests() gin.HandlerFunc {
@@ -63,37 +71,30 @@ func (a *App) logAPIRequests() gin.HandlerFunc {
 
 		var reqBody string
 		if c.Request.Body != nil && c.Request.Method != http.MethodGet {
-			raw, _ := io.ReadAll(c.Request.Body)
-			c.Request.Body = io.NopCloser(bytes.NewReader(raw))
-			reqBody = truncateText(string(raw), maxBody)
+			reqBody, c.Request.Body = peekBody(c.Request.Body, maxBody)
 		}
-
-		capture := &responseCapture{ResponseWriter: c.Writer, body: &bytes.Buffer{}}
-		c.Writer = capture
 		c.Next()
 
 		username := ""
 		if u := currentUser(c); u != nil {
 			username = u.Username
 		}
-		respBody := truncateText(capture.body.String(), maxBody)
 		errStack := ""
 		if c.Writer.Status() >= 500 {
 			if errs := c.Errors.String(); errs != "" {
 				errStack = truncateText(errs, maxBody)
 			}
 		}
-		_ = a.DB.Create(&models.APILog{
-			TraceID:      traceID(c),
-			Username:     username,
-			Method:       c.Request.Method,
-			Path:         path,
-			Status:       c.Writer.Status(),
-			LatencyMs:    time.Since(start).Milliseconds(),
-			RequestBody:  reqBody,
-			ResponseBody: respBody,
-			ErrorStack:   errStack,
-		}).Error
+		a.apiLogs.enqueue(models.APILog{
+			TraceID:     traceID(c),
+			Username:    username,
+			Method:      c.Request.Method,
+			Path:        path,
+			Status:      c.Writer.Status(),
+			LatencyMs:   time.Since(start).Milliseconds(),
+			RequestBody: reqBody,
+			ErrorStack:  errStack,
+		})
 	}
 }
 
@@ -125,6 +126,9 @@ func (a *App) lookupLocation(ip string) string {
 func (a *App) purgeOldLogs(retentionDays int) error {
 	if retentionDays <= 0 {
 		return nil
+	}
+	if a.apiLogs != nil {
+		a.apiLogs.Flush()
 	}
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 	for _, model := range []any{&models.LoginLog{}, &models.OpLog{}, &models.APILog{}} {

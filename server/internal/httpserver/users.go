@@ -279,6 +279,7 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 			return
 		}
 		user.Status = *req.Status
+		a.sessions.invalidate(user.ID)
 	}
 	if req.Nickname != nil {
 		user.Nickname = *req.Nickname
@@ -330,12 +331,14 @@ func (a *App) handleDeleteUser(c *gin.Context) {
 		return
 	}
 	removeUploadedFile(a.Cfg.UploadDir, user.Avatar)
-	if err := seed.RemoveUser(a.Enforcer, user.Username); err != nil {
-		fail(c, http.StatusInternalServerError, 50015, "failed to sync rbac")
+	if err := a.withTx(func(tx *gorm.DB) error {
+		return tx.Select("Roles").Delete(&user).Error
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, CodeDeleteUser, "failed to delete user")
 		return
 	}
-	if err := a.DB.Select("Roles").Delete(&user).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50016, "failed to delete user")
+	if err := seed.RemoveUser(a.Enforcer, user.Username); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSyncRBAC, "failed to sync rbac")
 		return
 	}
 	ok(c, gin.H{"deleted": user.ID})
@@ -357,8 +360,10 @@ func (a *App) handleAssignUserRoles(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40011, "invalid role ids")
 		return
 	}
-	if err := a.DB.Model(&user).Association("Roles").Replace(roles); err != nil {
-		fail(c, http.StatusInternalServerError, 50012, "failed to assign roles")
+	if err := a.withTx(func(tx *gorm.DB) error {
+		return tx.Model(&user).Association("Roles").Replace(roles)
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, CodeAssignRoles, "failed to assign roles")
 		return
 	}
 	if err := seed.SyncUserRoles(a.Enforcer, user.Username, roles); err != nil {

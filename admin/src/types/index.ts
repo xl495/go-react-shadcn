@@ -1,138 +1,22 @@
-export type Permission = {
-  id: number
-  name: string
-  code: string
-  path: string
-  method: string
-  kind: string
-  description: string
-  parentId?: number | null
-  sort?: number
-  icon?: string
-  routePath?: string
-  component?: string
-  hidden?: boolean
-}
+import type { components } from "./generated/api-schema"
 
-export type Role = {
-  id: number
-  name: string
-  code: string
-  description: string
-  dataScope?: string
-  permissions?: Permission[]
-}
+type Schema = components["schemas"]
 
-export type User = {
-  id: number
-  username: string
-  nickname: string
-  avatar: string
-  email: string
-  phone: string
-  gender: string
-  department: string
-  title: string
-  remark: string
-  status: string
-  lastLoginAt?: string | null
-  lastLoginIp?: string
-  roles: Role[]
-  permissionCodes?: string[]
-  createdAt?: string
-  updatedAt?: string
-}
-
-export type LoginResult = {
-  token: string
-  expiresAt: string
-  user: User
-}
-
-export type CaptchaChallenge = {
-  captchaId: string
-  image: string
-  answer?: string
-}
-
-export type DashboardStats = {
-  users: number
-  roles: number
-  permissions: number
-  dicts: number
-  configs: number
-  logs: number
-}
-
-export type DictType = {
-  id: number
-  code: string
-  name: string
-  status: string
-  remark: string
-}
-
-export type DictItem = {
-  id: number
-  typeCode: string
-  label: string
-  value: string
-  sort: number
-  status: string
-  remark: string
-}
-
-export type SysConfig = {
-  id: number
-  key: string
-  value: string
-  name: string
-  group: string
-  remark: string
-}
-
-export type OpLog = {
-  id: number
-  traceId?: string
-  username: string
-  module: string
-  action: string
-  method: string
-  path: string
-  status: number
-  ip: string
-  latencyMs: number
-  detail: string
-  description?: string
-  oldValue?: string
-  newValue?: string
-  createdAt: string
-}
-
-export type LoginLog = {
-  id: number
-  username: string
-  ip: string
-  userAgent: string
-  location: string
-  status: string
-  failReason: string
-  createdAt: string
-}
-
-export type APILog = {
-  id: number
-  traceId: string
-  username: string
-  method: string
-  path: string
-  status: number
-  latencyMs: number
-  requestBody: string
-  responseBody: string
-  errorStack: string
-  createdAt: string
-}
+export type User = Schema["User"]
+export type Role = Schema["Role"]
+export type Permission = Schema["Permission"]
+export type MenuNode = Schema["MenuNode"]
+export type OpLog = Schema["OpLog"]
+export type LoginLog = Schema["LoginLog"]
+export type APILog = Schema["APILog"]
+export type Department = Schema["Department"]
+export type DictType = Schema["DictType"]
+export type DictItem = Schema["DictItem"]
+export type SysConfig = Schema["SysConfig"]
+export type DashboardStats = Schema["DashboardStats"]
+export type CaptchaChallenge = Schema["CaptchaChallenge"]
+export type LoginResult = Schema["LoginResult"]
+export type DictLookup = Schema["DictLookup"]
 
 export type PageResult<T> = {
   items: T[]
@@ -141,26 +25,6 @@ export type PageResult<T> = {
   pageSize: number
 }
 
-export type MenuNode = {
-  id: number
-  name: string
-  code: string
-  kind: string
-  routePath: string
-  component: string
-  icon: string
-  sort: number
-  hidden: boolean
-  children?: MenuNode[]
-}
-
-export type Department = {
-  id: number
-  name: string
-  code: string
-  parentId?: number | null
-  sort: number
-  leader: string
-  status: string
-  children?: Department[]
+export function emptyPage<T>(page = 1, pageSize = 10): PageResult<T> {
+  return { items: [], total: 0, page, pageSize }
 }

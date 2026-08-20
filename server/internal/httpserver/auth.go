@@ -217,8 +217,9 @@ func (a *App) handleChangePassword(c *gin.Context) {
 		"password_hash": hash,
 		"token_version": user.TokenVersion + 1,
 	}).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50042, "failed to change password")
+		fail(c, http.StatusInternalServerError, CodeChangePassword, "failed to change password")
 		return
 	}
+	a.sessions.invalidate(user.ID)
 	ok(c, gin.H{"changed": true})
 }

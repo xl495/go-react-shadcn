@@ -76,7 +76,7 @@ func catalog() []catalogPerm {
 		{"API日志", "log:api:list", "/api/v1/logs/api", "GET", KindAPI, "查询 API 日志"},
 		{"清空日志", "log:clear", "/api/v1/logs", "DELETE", KindButton, ""},
 		{"滚动清理", "log:purge", "/api/v1/logs/purge", "POST", KindButton, "按保留天数清理"},
-		{"部门列表", "dept:list", "/api/v1/departments", "GET", KindAPI, "查询部门树"},
+		{"部门列表", "dept:list", "/api/v1/departments", "GET", KindMenu, "查询部门树"},
 		{"新建部门", "dept:create", "/api/v1/departments", "POST", KindButton, ""},
 		{"更新部门", "dept:update", "/api/v1/departments/:id", "PUT", KindButton, ""},
 		{"删除部门", "dept:delete", "/api/v1/departments/:id", "DELETE", KindButton, ""},
@@ -505,6 +505,7 @@ func syncMenuMeta(db *gorm.DB) error {
 	meta := map[string]row{
 		"dashboard:read": {"/", "LayoutDashboard", "DashboardPage", 10},
 		"user:list":      {"/users", "Users", "UsersPage", 20},
+		"dept:list":      {"/departments", "Building2", "DepartmentsPage", 25},
 		"role:list":      {"/roles", "Shield", "RolesPage", 30},
 		"perm:list":      {"/permissions", "KeyRound", "PermissionsPage", 40},
 		"dict:list":      {"/dicts", "BookMarked", "DictsPage", 50},

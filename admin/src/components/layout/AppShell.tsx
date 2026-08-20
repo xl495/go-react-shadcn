@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
   BookMarked,
+  Building2,
   ChevronDown,
   ClipboardList,
   KeyRound,
@@ -25,6 +26,7 @@ import type { MenuNode } from "@/types"
 const ICONS: Record<string, typeof LayoutDashboard> = {
   LayoutDashboard,
   Users,
+  Building2,
   Shield,
   KeyRound,
   BookMarked,
@@ -60,6 +62,7 @@ export function AppShell() {
   const fallbackMain: NavLinkDef[] = [
     { to: "/", label: t("nav.dashboard"), icon: LayoutDashboard, perm: P.dashboard },
     { to: "/users", label: t("nav.users"), icon: Users, perm: P.userList },
+    { to: "/departments", label: t("nav.departments"), icon: Building2, perm: P.deptList },
     { to: "/roles", label: t("nav.roles"), icon: Shield, perm: P.roleList },
     { to: "/permissions", label: t("nav.permissions"), icon: KeyRound, perm: P.permList },
   ]
@@ -69,9 +72,12 @@ export function AppShell() {
     { to: "/logs", label: t("nav.logs"), icon: ClipboardList, perm: P.logList },
   ]
 
+  const systemPaths = new Set(["/dicts", "/configs", "/logs"])
   const useDynamic = dynamicLinks.length > 0
-  const visibleMain = (useDynamic ? dynamicLinks.slice(0, 4) : fallbackMain).filter((l) => can(l.perm))
-  const visibleSystem = (useDynamic ? dynamicLinks.slice(4) : fallbackSystem).filter((l) => can(l.perm))
+  const sourceMain = useDynamic ? dynamicLinks.filter((l) => !systemPaths.has(l.to)) : fallbackMain
+  const sourceSystem = useDynamic ? dynamicLinks.filter((l) => systemPaths.has(l.to)) : fallbackSystem
+  const visibleMain = sourceMain.filter((l) => can(l.perm))
+  const visibleSystem = sourceSystem.filter((l) => can(l.perm))
   const all = [...visibleMain, ...visibleSystem]
   const current =
     all.find((l) => (l.to === "/" ? location.pathname === "/" : location.pathname.startsWith(l.to)))

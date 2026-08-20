@@ -6,23 +6,50 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
+var latencyBuckets = []float64{5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000}
+
+type hist struct {
+	count uint64
+	sum   float64
+	obs   []uint64
+}
+
 type httpMetrics struct {
-	mu     sync.Mutex
-	counts map[string]uint64
+	mu      sync.Mutex
+	counts  map[string]uint64
+	latency hist
 }
 
 func newHTTPMetrics() *httpMetrics {
-	return &httpMetrics{counts: make(map[string]uint64)}
+	return &httpMetrics{
+		counts:  make(map[string]uint64),
+		latency: hist{obs: make([]uint64, len(latencyBuckets)+1)},
+	}
 }
 
-func (m *httpMetrics) inc(method, path string, status int) {
+func (m *httpMetrics) inc(method, path string, status int, latencyMs int64) {
 	key := fmt.Sprintf(`latch_http_requests_total{method=%q,path=%q,status="%d"}`, method, path, status)
 	m.mu.Lock()
 	m.counts[key]++
+	ms := float64(latencyMs)
+	m.latency.count++
+	m.latency.sum += ms
+	placed := false
+	for i, le := range latencyBuckets {
+		if ms <= le {
+			m.latency.obs[i]++
+			placed = true
+			break
+		}
+	}
+	if !placed {
+		m.latency.obs[len(latencyBuckets)]++
+	}
 	m.mu.Unlock()
 }
 
@@ -40,11 +67,23 @@ func (m *httpMetrics) render() string {
 	for _, k := range keys {
 		fmt.Fprintf(&b, "%s %d\n", k, m.counts[k])
 	}
+	b.WriteString("# HELP latch_http_request_duration_ms Request latency in milliseconds.\n")
+	b.WriteString("# TYPE latch_http_request_duration_ms histogram\n")
+	var cum uint64
+	for i, le := range latencyBuckets {
+		cum += m.latency.obs[i]
+		fmt.Fprintf(&b, "latch_http_request_duration_ms_bucket{le=\"%g\"} %d\n", le, cum)
+	}
+	cum += m.latency.obs[len(latencyBuckets)]
+	fmt.Fprintf(&b, "latch_http_request_duration_ms_bucket{le=\"+Inf\"} %d\n", cum)
+	fmt.Fprintf(&b, "latch_http_request_duration_ms_sum %g\n", m.latency.sum)
+	fmt.Fprintf(&b, "latch_http_request_duration_ms_count %d\n", m.latency.count)
 	return b.String()
 }
 
 func (a *App) observeRequests() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		start := time.Now()
 		c.Next()
 		path := c.FullPath()
 		if path == "" {
@@ -53,18 +92,18 @@ func (a *App) observeRequests() gin.HandlerFunc {
 		if path == "/metrics" {
 			return
 		}
-		a.metrics.inc(c.Request.Method, path, c.Writer.Status())
+		a.metrics.inc(c.Request.Method, path, c.Writer.Status(), time.Since(start).Milliseconds())
 	}
 }
 
 func (a *App) handleHealth(c *gin.Context) {
 	sqlDB, err := a.DB.DB()
 	if err != nil {
-		fail(c, http.StatusServiceUnavailable, 50301, "unhealthy")
+		fail(c, http.StatusServiceUnavailable, CodeUnhealthy, "unhealthy")
 		return
 	}
 	if err := sqlDB.Ping(); err != nil {
-		fail(c, http.StatusServiceUnavailable, 50301, "unhealthy")
+		fail(c, http.StatusServiceUnavailable, CodeUnhealthy, "unhealthy")
 		return
 	}
 	ok(c, gin.H{"status": "ok"})

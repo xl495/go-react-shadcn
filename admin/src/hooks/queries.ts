@@ -1,11 +1,14 @@
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/api/client"
 import type { MenuNode } from "@/types"
 
-/** Static fallback when menu API is empty (e.g. before seed migration). */
+export const PAGE_SIZE = 10
+export const PICKER_PAGE_SIZE = 50
+
 export const FALLBACK_MENU_ROUTES: MenuNode[] = [
   { id: 0, code: "dashboard:read", name: "Dashboard", kind: "menu", routePath: "/", component: "DashboardPage", icon: "LayoutDashboard", sort: 10, hidden: false },
   { id: 0, code: "user:list", name: "Users", kind: "menu", routePath: "/users", component: "UsersPage", icon: "Users", sort: 20, hidden: false },
+  { id: 0, code: "dept:list", name: "Departments", kind: "menu", routePath: "/departments", component: "DepartmentsPage", icon: "Building2", sort: 25, hidden: false },
   { id: 0, code: "role:list", name: "Roles", kind: "menu", routePath: "/roles", component: "RolesPage", icon: "Shield", sort: 30, hidden: false },
   { id: 0, code: "perm:list", name: "Permissions", kind: "menu", routePath: "/permissions", component: "PermissionsPage", icon: "KeyRound", sort: 40, hidden: false },
   { id: 0, code: "dict:list", name: "Dicts", kind: "menu", routePath: "/dicts", component: "DictsPage", icon: "BookMarked", sort: 50, hidden: false },
@@ -22,6 +25,10 @@ export function flattenMenuRoutes(nodes: MenuNode[]) {
   return out.sort((a, b) => a.sort - b.sort)
 }
 
+function invalidate(qc: ReturnType<typeof useQueryClient>, ...keys: string[][]) {
+  return Promise.all(keys.map((queryKey) => qc.invalidateQueries({ queryKey })))
+}
+
 export function useMenus() {
   return useQuery({
     queryKey: ["menus"],
@@ -36,10 +43,96 @@ export function useDashboardStats() {
   })
 }
 
+export function useCaptcha() {
+  return useQuery({
+    queryKey: ["auth", "captcha"],
+    queryFn: () => api.captcha(),
+    staleTime: 0,
+    refetchOnMount: "always",
+  })
+}
+
+export function useLoginMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.login,
+    onSuccess: (result) => {
+      qc.setQueryData(["auth", "me"], result.user)
+      void invalidate(qc, ["menus"], ["auth"])
+    },
+  })
+}
+
+export function useMe(enabled: boolean) {
+  return useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: () => api.me(),
+    enabled,
+    retry: false,
+  })
+}
+
+export function useUpdateProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.updateProfile,
+    onSuccess: (user) => {
+      qc.setQueryData(["auth", "me"], user)
+    },
+  })
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: api.changePassword,
+  })
+}
+
 export function useUsers(params?: { page?: number; pageSize?: number; q?: string }) {
   return useQuery({
     queryKey: ["users", params],
     queryFn: () => api.users(params),
+  })
+}
+
+export function useUser(id: number) {
+  return useQuery({
+    queryKey: ["users", id],
+    queryFn: () => api.getUser(id),
+    enabled: id > 0,
+  })
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.createUser,
+    onSuccess: () => void invalidate(qc, ["users"]),
+  })
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateUser>[1] }) =>
+      api.updateUser(id, body),
+    onSuccess: () => void invalidate(qc, ["users"]),
+  })
+}
+
+export function useDeleteUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteUser,
+    onSuccess: () => void invalidate(qc, ["users"]),
+  })
+}
+
+export function useAssignUserRoles() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, roleIds }: { id: number; roleIds: number[] }) => api.assignUserRoles(id, roleIds),
+    onSuccess: () => void invalidate(qc, ["users"]),
   })
 }
 
@@ -51,10 +144,172 @@ export function useRoles(params?: { page?: number; pageSize?: number }, enabled 
   })
 }
 
-export function usePermissions() {
+export function useCreateRole() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.createRole,
+    onSuccess: () => void invalidate(qc, ["roles"]),
+  })
+}
+
+export function useUpdateRole() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateRole>[1] }) =>
+      api.updateRole(id, body),
+    onSuccess: () => void invalidate(qc, ["roles"]),
+  })
+}
+
+export function useDeleteRole() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteRole,
+    onSuccess: () => void invalidate(qc, ["roles", "menus"]),
+  })
+}
+
+export function useAssignRolePermissions() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, permissionIds }: { id: number; permissionIds: number[] }) =>
+      api.assignRolePermissions(id, permissionIds),
+    onSuccess: () => void invalidate(qc, ["roles", "menus"]),
+  })
+}
+
+export function usePermissions(params?: { page?: number; pageSize?: number }) {
   return useQuery({
-    queryKey: ["permissions"],
-    queryFn: () => api.permissions(),
+    queryKey: ["permissions", params],
+    queryFn: () => api.permissions(params),
+  })
+}
+
+export function useCreatePermission() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.createPermission,
+    onSuccess: () => void invalidate(qc, ["permissions", "menus"]),
+  })
+}
+
+export function useDeletePermission() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deletePermission,
+    onSuccess: () => void invalidate(qc, ["permissions", "menus"]),
+  })
+}
+
+export function useDicts(params?: { page?: number; pageSize?: number }) {
+  return useQuery({
+    queryKey: ["dicts", params],
+    queryFn: () => api.dicts(params),
+  })
+}
+
+export function useDictItems(id: number, params?: { page?: number; pageSize?: number }) {
+  return useQuery({
+    queryKey: ["dict-items", id, params],
+    queryFn: () => api.dictItems(id, params),
+    enabled: id > 0,
+  })
+}
+
+export function useCreateDict() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.createDict,
+    onSuccess: () => void invalidate(qc, ["dicts"]),
+  })
+}
+
+export function useDeleteDict() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteDict,
+    onSuccess: () => void invalidate(qc, ["dicts", "dict-items"]),
+  })
+}
+
+export function useCreateDictItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.createDictItem>[1] }) =>
+      api.createDictItem(id, body),
+    onSuccess: () => void invalidate(qc, ["dict-items", "dicts"]),
+  })
+}
+
+export function useDeleteDictItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteDictItem,
+    onSuccess: () => void invalidate(qc, ["dict-items"]),
+  })
+}
+
+export function useConfigs(params?: { page?: number; pageSize?: number }) {
+  return useQuery({
+    queryKey: ["configs", params],
+    queryFn: () => api.configs(params),
+  })
+}
+
+export function useCreateConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.createConfig,
+    onSuccess: () => void invalidate(qc, ["configs"]),
+  })
+}
+
+export function useUpdateConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateConfig>[1] }) =>
+      api.updateConfig(id, body),
+    onSuccess: () => void invalidate(qc, ["configs"]),
+  })
+}
+
+export function useDeleteConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteConfig,
+    onSuccess: () => void invalidate(qc, ["configs"]),
+  })
+}
+
+export function useDepartments(params?: { page?: number; pageSize?: number }) {
+  return useQuery({
+    queryKey: ["departments", params],
+    queryFn: () => api.departments(params),
+  })
+}
+
+export function useCreateDepartment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.createDepartment,
+    onSuccess: () => void invalidate(qc, ["departments"]),
+  })
+}
+
+export function useUpdateDepartment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateDepartment>[1] }) =>
+      api.updateDepartment(id, body),
+    onSuccess: () => void invalidate(qc, ["departments"]),
+  })
+}
+
+export function useDeleteDepartment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteDepartment,
+    onSuccess: () => void invalidate(qc, ["departments"]),
   })
 }
 
@@ -90,10 +345,18 @@ export function useAPILogs(params?: { traceId?: string; page?: number; pageSize?
   })
 }
 
-export function useUser(id: number) {
-  return useQuery({
-    queryKey: ["users", id],
-    queryFn: () => api.getUser(id),
-    enabled: id > 0,
+export function useClearLogs() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.clearLogs,
+    onSuccess: () => void invalidate(qc, ["logs"]),
+  })
+}
+
+export function usePurgeLogs() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.purgeLogs,
+    onSuccess: () => void invalidate(qc, ["logs"]),
   })
 }

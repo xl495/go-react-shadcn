@@ -43,6 +43,7 @@ func testApp(t *testing.T) *App {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
+	t.Cleanup(app.Close)
 	return app
 }
 

@@ -3,6 +3,7 @@ import { lazy, type ComponentType, type LazyExoticComponent } from "react"
 export type PageKey =
   | "DashboardPage"
   | "UsersPage"
+  | "DepartmentsPage"
   | "RolesPage"
   | "PermissionsPage"
   | "DictsPage"
@@ -15,6 +16,9 @@ export const PAGE_REGISTRY: Record<
 > = {
   DashboardPage: lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.DashboardPage }))),
   UsersPage: lazy(() => import("@/pages/Users").then((m) => ({ default: m.UsersPage }))),
+  DepartmentsPage: lazy(() =>
+    import("@/pages/Departments").then((m) => ({ default: m.DepartmentsPage })),
+  ),
   RolesPage: lazy(() => import("@/pages/Roles").then((m) => ({ default: m.RolesPage }))),
   PermissionsPage: lazy(() =>
     import("@/pages/Permissions").then((m) => ({ default: m.PermissionsPage })),

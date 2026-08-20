@@ -43,12 +43,48 @@ func (g *LoginGuard) AllowIP(ip string) bool {
 			kept = append(kept, t)
 		}
 	}
-	if len(kept) >= g.ipLimit {
+	if len(kept) == 0 {
+		delete(g.ipHits, ip)
+	} else {
 		g.ipHits[ip] = kept
+	}
+	if len(kept) >= g.ipLimit {
 		return false
 	}
 	g.ipHits[ip] = append(kept, now)
+	if len(g.ipHits) > 4096 {
+		g.evictExpiredLocked(cutoff)
+	}
 	return true
+}
+
+func (g *LoginGuard) evictExpiredLocked(cutoff time.Time) {
+	for k, hits := range g.ipHits {
+		alive := hits[:0]
+		for _, t := range hits {
+			if t.After(cutoff) {
+				alive = append(alive, t)
+			}
+		}
+		if len(alive) == 0 {
+			delete(g.ipHits, k)
+		} else {
+			g.ipHits[k] = alive
+		}
+	}
+}
+
+func (g *LoginGuard) Sweep() {
+	now := time.Now()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.evictExpiredLocked(now.Add(-g.ipWindow))
+}
+
+func (g *LoginGuard) TrackedIPs() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.ipHits)
 }
 
 func (g *LoginGuard) LockDuration() time.Duration {

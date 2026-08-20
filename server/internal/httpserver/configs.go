@@ -16,16 +16,19 @@ type configRequest struct {
 }
 
 func (a *App) handleListConfigs(c *gin.Context) {
-	var rows []models.SysConfig
-	q := a.DB.Order("id asc")
+	p := parsePage(c, 50, 500)
+	q := a.DB.Model(&models.SysConfig{})
 	if g := c.Query("group"); g != "" {
 		q = q.Where("`group` = ?", g)
 	}
-	if err := q.Find(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50070, "failed to list configs")
+	var total int64
+	_ = q.Count(&total).Error
+	var rows []models.SysConfig
+	if err := q.Order("id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeListConfigs, "failed to list configs")
 		return
 	}
-	ok(c, rows)
+	ok(c, pageResult[models.SysConfig]{Items: rows, Total: total, Page: p.Page, PageSize: p.PageSize})
 }
 
 func (a *App) handleCreateConfig(c *gin.Context) {

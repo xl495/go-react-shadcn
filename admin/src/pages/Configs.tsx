@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
-import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
+import { PAGE_SIZE, useConfigs, useCreateConfig, useDeleteConfig, useUpdateConfig } from "@/hooks/queries"
+import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -27,19 +29,16 @@ import type { SysConfig } from "@/types"
 export function ConfigsPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const [rows, setRows] = useState<SysConfig[]>([])
-  const [error, setError] = useState("")
+  const [page, setPage] = useState(1)
+  const { data, isLoading, error } = useConfigs({ page, pageSize: PAGE_SIZE })
+  const rows = data?.items ?? []
+  const createConfig = useCreateConfig()
+  const updateConfig = useUpdateConfig()
+  const deleteConfig = useDeleteConfig()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<SysConfig | null>(null)
   const [form, setForm] = useState({ key: "", name: "", value: "", group: "app", remark: "" })
-
-  async function reload() {
-    setRows(await api.configs())
-  }
-
-  useEffect(() => {
-    reload().catch((e: Error) => setError(translateApiError(e, t)))
-  }, [])
+  const [pending, setPending] = useState<SysConfig | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -54,27 +53,16 @@ export function ConfigsPage() {
   }
 
   async function submit() {
-    setError("")
     try {
       if (editing) {
-        await api.updateConfig(editing.id, form)
+        await updateConfig.mutateAsync({ id: editing.id, body: form })
       } else {
-        await api.createConfig(form)
+        await createConfig.mutateAsync(form)
       }
+      toast.success(t("app.saved"))
       setOpen(false)
-      await reload()
     } catch (e) {
-      setError(translateApiError(e, t))
-    }
-  }
-
-  async function remove(row: SysConfig) {
-    if (!confirm(t("config.confirmDelete", { name: row.name }))) return
-    try {
-      await api.deleteConfig(row.id)
-      await reload()
-    } catch (e) {
-      setError(translateApiError(e, t))
+      toast.error(translateApiError(e, t))
     }
   }
 
@@ -89,48 +77,75 @@ export function ConfigsPage() {
           <Button onClick={openCreate}>{t("config.create")}</Button>
         </Can>
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
       <div className="rounded-lg border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("config.key")}</TableHead>
-              <TableHead>{t("app.name")}</TableHead>
-              <TableHead>{t("config.value")}</TableHead>
-              <TableHead>{t("config.group")}</TableHead>
-              <TableHead>{t("app.description")}</TableHead>
-              {can(P.configUpdate) || can(P.configDelete) ? (
-                <TableHead className="text-right">{t("app.actions")}</TableHead>
-              ) : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-mono text-xs">{row.key}</TableCell>
-                <TableCell>{row.name}</TableCell>
-                <TableCell className="max-w-[200px] truncate">{row.value}</TableCell>
-                <TableCell>{row.group}</TableCell>
-                <TableCell className="text-muted-foreground">{row.remark}</TableCell>
+        {isLoading ? (
+          <TableSkeleton />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("config.key")}</TableHead>
+                <TableHead>{t("app.name")}</TableHead>
+                <TableHead>{t("config.value")}</TableHead>
+                <TableHead>{t("config.group")}</TableHead>
+                <TableHead>{t("app.description")}</TableHead>
                 {can(P.configUpdate) || can(P.configDelete) ? (
-                  <TableCell className="text-right">
-                    <Can perm={P.configUpdate}>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(row)}>
-                        {t("app.edit")}
-                      </Button>
-                    </Can>
-                    <Can perm={P.configDelete}>
-                      <Button variant="ghost" size="sm" onClick={() => void remove(row)}>
-                        {t("app.delete")}
-                      </Button>
-                    </Can>
-                  </TableCell>
+                  <TableHead className="text-right">{t("app.actions")}</TableHead>
                 ) : null}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? (
+                <EmptyTableRow colSpan={6} />
+              ) : (
+                rows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-mono text-xs">{row.key}</TableCell>
+                    <TableCell>{row.name}</TableCell>
+                    <TableCell className="max-w-[200px] truncate">{row.value}</TableCell>
+                    <TableCell>{row.group}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.remark}</TableCell>
+                    {can(P.configUpdate) || can(P.configDelete) ? (
+                      <TableCell className="text-right">
+                        <Can perm={P.configUpdate}>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(row)}>
+                            {t("app.edit")}
+                          </Button>
+                        </Can>
+                        <Can perm={P.configDelete}>
+                          <Button variant="ghost" size="sm" onClick={() => setPending(row)}>
+                            {t("app.delete")}
+                          </Button>
+                        </Can>
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
       </div>
+      <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={setPage} />
+
+      <ConfirmAlert
+        open={!!pending}
+        onOpenChange={(next) => {
+          if (!next) setPending(null)
+        }}
+        title={t("app.delete")}
+        description={pending ? t("config.confirmDelete", { name: pending.name }) : ""}
+        onConfirm={() => {
+          if (!pending) return
+          deleteConfig.mutate(pending.id, {
+            onSuccess: () => toast.success(t("app.saved")),
+            onError: (e) => toast.error(translateApiError(e, t)),
+          })
+          setPending(null)
+        }}
+      />
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>

@@ -1,10 +1,12 @@
-import { useEffect, useState, type FormEvent } from "react"
+import { useState, type FormEvent } from "react"
 import { Navigate, useLocation, useNavigate } from "react-router-dom"
 import { RefreshCw } from "lucide-react"
+import { toast } from "sonner"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
-import { api, ApiError } from "@/api/client"
+import { ApiError } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
+import { useCaptcha, useLoginMutation } from "@/hooks/queries"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -18,39 +20,33 @@ export function LoginPage() {
 
   const [username, setUsername] = useState("admin")
   const [password, setPassword] = useState("admin123")
-  const [captchaId, setCaptchaId] = useState("")
   const [captchaCode, setCaptchaCode] = useState("")
-  const [image, setImage] = useState("")
-  const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
-
-  async function loadCaptcha() {
-    const ch = await api.captcha()
-    setCaptchaId(ch.captchaId)
-    setImage(ch.image)
-    setCaptchaCode("")
-  }
-
-  useEffect(() => {
-    loadCaptcha().catch(() => setError(t("login.captchaLoadFailed")))
-  }, [t])
+  const captcha = useCaptcha()
+  const loginMut = useLoginMutation()
 
   if (user) return <Navigate to="/" replace />
 
+  async function refreshCaptcha() {
+    setCaptchaCode("")
+    await captcha.refetch()
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    setError("")
-    setLoading(true)
     try {
-      const result = await api.login({ username, password, captchaId, captchaCode })
+      const result = await loginMut.mutateAsync({
+        username,
+        password,
+        captchaId: captcha.data?.captchaId ?? "",
+        captchaCode,
+      })
       login(result.token, result.user)
+      toast.success(t("login.submit"))
       navigate(from, { replace: true })
     } catch (err) {
       const message = err instanceof ApiError ? translateApiError(err, t) : t("login.failed")
-      setError(message)
-      await loadCaptcha().catch(() => undefined)
-    } finally {
-      setLoading(false)
+      toast.error(message)
+      await refreshCaptcha()
     }
   }
 
@@ -98,12 +94,12 @@ export function LoginPage() {
               />
               <button
                 type="button"
-                onClick={() => loadCaptcha().catch(() => setError(t("login.captchaLoadFailed")))}
+                onClick={() => void refreshCaptcha()}
                 className="relative h-9 w-[120px] overflow-hidden rounded-md border bg-muted"
                 aria-label={t("login.refreshCaptcha")}
               >
-                {image ? (
-                  <img src={image} alt={t("login.captchaAlt")} className="h-full w-full object-cover" />
+                {captcha.data?.image ? (
+                  <img src={captcha.data.image} alt={t("login.captchaAlt")} className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-xs text-muted-foreground">{t("app.loading")}</span>
                 )}
@@ -111,9 +107,9 @@ export function LoginPage() {
               </button>
             </div>
           </div>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <Button type="submit" disabled={loading} className="h-10 w-full">
-            {loading ? t("login.submitting") : t("login.submit")}
+          {captcha.error ? <p className="text-sm text-destructive">{t("login.captchaLoadFailed")}</p> : null}
+          <Button type="submit" disabled={loginMut.isPending} className="h-10 w-full">
+            {loginMut.isPending ? t("login.submitting") : t("login.submit")}
           </Button>
           <p className="text-xs text-muted-foreground">
             admin / admin123 · operator / operator123 · viewer / viewer123

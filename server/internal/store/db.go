@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -19,7 +20,11 @@ func Open(path string) (*gorm.DB, error) {
 			}
 		}
 	}
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+	dsn := path
+	if path != ":memory:" && path != "" && !strings.Contains(path, "?") {
+		dsn = "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+	}
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {

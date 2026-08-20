@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -11,14 +12,17 @@ import (
 const defaultJWTSecret = "dev-secret-change-me"
 
 type Config struct {
-	DevMode      bool
-	Port         string
-	DatabasePath string
-	JWTSecret    string
-	JWTTTL       time.Duration
-	CaptchaDebug bool
-	CORSOrigin   string
-	UploadDir    string
+	DevMode       bool
+	Port          string
+	DatabasePath  string
+	JWTSecret     string
+	JWTTTL        time.Duration
+	CaptchaDebug  bool
+	CORSOrigin    string
+	UploadDir     string
+	APILogEnabled bool
+	APILogSample  int
+	SessionCache  time.Duration
 }
 
 func Load() Config {
@@ -39,15 +43,30 @@ func Load() Config {
 	}
 	upload = absPath(upload)
 	dev := os.Getenv("APP_ENV") != "production" && os.Getenv("APP_ENV") != "prod"
+	sample := 1
+	if v := os.Getenv("API_LOG_SAMPLE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			sample = n
+		}
+	}
+	sessTTL := 2 * time.Second
+	if v := os.Getenv("SESSION_CACHE_TTL"); v != "" {
+		if parsed, err := time.ParseDuration(v); err == nil {
+			sessTTL = parsed
+		}
+	}
 	return Config{
-		DevMode:      dev,
-		Port:         env("PORT", "8080"),
-		DatabasePath: dbPath,
-		JWTSecret:    env("JWT_SECRET", defaultJWTSecret),
-		JWTTTL:       ttl,
-		CaptchaDebug: os.Getenv("CAPTCHA_DEBUG") == "1",
-		CORSOrigin:   env("CORS_ORIGIN", "http://localhost:5173"),
-		UploadDir:    upload,
+		DevMode:       dev,
+		Port:          env("PORT", "8080"),
+		DatabasePath:  dbPath,
+		JWTSecret:     env("JWT_SECRET", defaultJWTSecret),
+		JWTTTL:        ttl,
+		CaptchaDebug:  os.Getenv("CAPTCHA_DEBUG") == "1",
+		CORSOrigin:    env("CORS_ORIGIN", "http://localhost:5173"),
+		UploadDir:     upload,
+		APILogEnabled: os.Getenv("API_LOGS") != "0",
+		APILogSample:  sample,
+		SessionCache:  sessTTL,
 	}
 }
 

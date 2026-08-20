@@ -50,6 +50,10 @@ function crumbsFor(pathname: string, t: (k: string) => string): Crumb[] {
     if (parts[1]) crumbs.push({ label: t("users.detail") })
     return crumbs
   }
+  if (head === "departments") {
+    crumbs.push({ label: t("nav.departments"), to: "/departments" })
+    return crumbs
+  }
   if (head === "roles") {
     crumbs.push({ label: t("nav.roles"), to: "/roles" })
     return crumbs

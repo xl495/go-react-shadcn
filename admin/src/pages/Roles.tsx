@@ -1,11 +1,20 @@
-import { useEffect, useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
+import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
-import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { permLabel, roleDesc, roleLabel, translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
-import { usePermissions, useRoles } from "@/hooks/queries"
+import {
+  PAGE_SIZE,
+  PICKER_PAGE_SIZE,
+  useAssignRolePermissions,
+  useCreateRole,
+  useDeleteRole,
+  usePermissions,
+  useRoles,
+  useUpdateRole,
+} from "@/hooks/queries"
+import { ConfirmAlert, EmptyState, PaginationBar, TableSkeleton } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -20,69 +29,49 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { Role } from "@/types"
 
+const SCOPES = ["all", "dept_sub", "dept", "self"] as const
+
 export function RolesPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const qc = useQueryClient()
-  const { data: rolesPage, error: rolesError } = useRoles({ pageSize: 500 })
-  const { data: perms = [] } = usePermissions()
+  const [page, setPage] = useState(1)
+  const { data: rolesPage, isLoading, error: rolesError } = useRoles({ page, pageSize: PAGE_SIZE })
+  const { data: permsPage } = usePermissions({ pageSize: PICKER_PAGE_SIZE })
   const roles = rolesPage?.items ?? []
-  const [error, setError] = useState("")
+  const perms = permsPage?.items ?? []
+  const createRole = useCreateRole()
+  const updateRole = useUpdateRole()
+  const deleteRole = useDeleteRole()
+  const assignPerms = useAssignRolePermissions()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [code, setCode] = useState("")
   const [description, setDescription] = useState("")
+  const [dataScope, setDataScope] = useState("self")
   const [permissionIds, setPermissionIds] = useState<number[]>([])
-
-  useEffect(() => {
-    if (rolesError) setError(translateApiError(rolesError as Error, t))
-  }, [rolesError, t])
-
-  async function reload() {
-    await qc.invalidateQueries({ queryKey: ["roles"] })
-    await qc.invalidateQueries({ queryKey: ["permissions"] })
-  }
+  const [pending, setPending] = useState<Role | null>(null)
 
   function toggle(id: number) {
     setPermissionIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
   }
 
-  async function createRole() {
-    setError("")
+  async function create() {
     try {
-      await api.createRole({ name, code, description, permissionIds })
+      await createRole.mutateAsync({ name, code, description, dataScope, permissionIds })
+      toast.success(t("app.saved"))
       setOpen(false)
       setName("")
       setCode("")
       setDescription("")
+      setDataScope("self")
       setPermissionIds([])
-      await reload()
     } catch (e) {
-      setError(translateApiError(e, t) || t("roles.createFailed"))
-    }
-  }
-
-  async function savePerms(role: Role, next: number[]) {
-    try {
-      await api.assignRolePermissions(role.id, next)
-      await reload()
-    } catch (e) {
-      setError(translateApiError(e, t) || t("roles.assignFailed"))
-    }
-  }
-
-  async function remove(role: Role) {
-    if (!confirm(t("roles.confirmDelete", { name: roleLabel(role.code, role.name, t) }))) return
-    try {
-      await api.deleteRole(role.id)
-      await reload()
-    } catch (e) {
-      setError(translateApiError(e, t) || t("roles.deleteFailed"))
+      toast.error(translateApiError(e, t) || t("roles.createFailed"))
     }
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-5xl space-y-4">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">{t("roles.title")}</h2>
@@ -92,8 +81,10 @@ export function RolesPage() {
           <Button onClick={() => setOpen(true)}>{t("roles.create")}</Button>
         </Can>
       </div>
-      {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
-      <div className="mt-6 space-y-4">
+      {rolesError ? <p className="text-sm text-destructive">{translateApiError(rolesError, t)}</p> : null}
+      {isLoading ? <TableSkeleton rows={4} cols={3} /> : null}
+      {!isLoading && roles.length === 0 ? <EmptyState /> : null}
+      <div className="space-y-4">
         {roles.map((role) => {
           const assigned = new Set((role.permissions ?? []).map((p) => p.id))
           return (
@@ -104,15 +95,41 @@ export function RolesPage() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     {role.code}
                     {role.description || roleDesc(role.code, "", t)
-                      ? ` · ${roleDesc(role.code, role.description, t)}`
+                      ? ` · ${roleDesc(role.code, role.description ?? "", t)}`
                       : ""}
                   </p>
                 </div>
-                <Can perm={P.roleDelete}>
-                  <Button variant="ghost" size="sm" onClick={() => remove(role)}>
-                    {t("app.delete")}
-                  </Button>
-                </Can>
+                <div className="flex items-center gap-2">
+                  <Can perm={P.roleUpdate}>
+                    <label className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">{t("roles.dataScope")}</span>
+                      <select
+                        className="h-8 rounded-md border border-input bg-card px-2"
+                        value={role.dataScope || "self"}
+                        onChange={(e) => {
+                          updateRole.mutate(
+                            { id: role.id, body: { dataScope: e.target.value } },
+                            {
+                              onSuccess: () => toast.success(t("app.saved")),
+                              onError: (err) => toast.error(translateApiError(err, t)),
+                            },
+                          )
+                        }}
+                      >
+                        {SCOPES.map((s) => (
+                          <option key={s} value={s}>
+                            {t(`roles.scope.${s}`)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </Can>
+                  <Can perm={P.roleDelete}>
+                    <Button variant="ghost" size="sm" onClick={() => setPending(role)}>
+                      {t("app.delete")}
+                    </Button>
+                  </Can>
+                </div>
               </div>
               <div className="mt-4 space-y-3">
                 {(["menu", "button", "api"] as const).map((kind) => {
@@ -138,7 +155,13 @@ export function RolesPage() {
                                     const next = checked
                                       ? [...assigned].filter((id) => id !== p.id)
                                       : [...assigned, p.id]
-                                    void savePerms(role, next)
+                                    assignPerms.mutate(
+                                      { id: role.id, permissionIds: next },
+                                      {
+                                        onError: (e) =>
+                                          toast.error(translateApiError(e, t) || t("roles.assignFailed")),
+                                      },
+                                    )
                                   }}
                                 />
                               ) : null}
@@ -158,6 +181,31 @@ export function RolesPage() {
           )
         })}
       </div>
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={rolesPage?.total ?? 0}
+        onPageChange={setPage}
+      />
+
+      <ConfirmAlert
+        open={!!pending}
+        onOpenChange={(next) => {
+          if (!next) setPending(null)
+        }}
+        title={t("app.delete")}
+        description={
+          pending ? t("roles.confirmDelete", { name: roleLabel(pending.code, pending.name, t) }) : ""
+        }
+        onConfirm={() => {
+          if (!pending) return
+          deleteRole.mutate(pending.id, {
+            onSuccess: () => toast.success(t("app.saved")),
+            onError: (e) => toast.error(translateApiError(e, t) || t("roles.deleteFailed")),
+          })
+          setPending(null)
+        }}
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[80vh] overflow-y-auto">
@@ -177,6 +225,21 @@ export function RolesPage() {
               <Label htmlFor="rd">{t("app.description")}</Label>
               <Input id="rd" value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="rs">{t("roles.dataScope")}</Label>
+              <select
+                id="rs"
+                className="h-9 rounded-md border border-input bg-card px-3 text-sm"
+                value={dataScope}
+                onChange={(e) => setDataScope(e.target.value)}
+              >
+                {SCOPES.map((s) => (
+                  <option key={s} value={s}>
+                    {t(`roles.scope.${s}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="grid gap-2">
               <Label>{t("roles.permissions")}</Label>
               {perms.map((p) => (
@@ -194,7 +257,7 @@ export function RolesPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => void createRole()}>{t("app.create")}</Button>
+            <Button onClick={() => void create()}>{t("app.create")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

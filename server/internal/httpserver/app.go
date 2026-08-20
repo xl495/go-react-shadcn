@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-contrib/cors"
@@ -27,6 +29,10 @@ type App struct {
 	LoginGuard *security.LoginGuard
 	Router     *gin.Engine
 	metrics    *httpMetrics
+	sessions   *sessionCache
+	apiLogs    *apiLogQueue
+	stopOnce   sync.Once
+	stopCh     chan struct{}
 }
 
 func New(cfg config.Config, db *gorm.DB) (*App, error) {
@@ -55,9 +61,39 @@ func New(cfg config.Config, db *gorm.DB) (*App, error) {
 		Enforcer:   enforcer,
 		LoginGuard: security.NewLoginGuard(),
 		metrics:    newHTTPMetrics(),
+		sessions:   newSessionCache(cfg.SessionCache),
+		apiLogs:    newAPILogQueue(db, cfg.APILogEnabled, cfg.APILogSample),
+		stopCh:     make(chan struct{}),
 	}
 	app.Router = app.buildRouter()
+	go app.sweepLoginGuard()
 	return app, nil
+}
+
+func (a *App) sweepLoginGuard() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if a.LoginGuard != nil {
+				a.LoginGuard.Sweep()
+			}
+		case <-a.stopCh:
+			return
+		}
+	}
+}
+
+func (a *App) Close() {
+	a.stopOnce.Do(func() {
+		if a.stopCh != nil {
+			close(a.stopCh)
+		}
+	})
+	if a.apiLogs != nil {
+		a.apiLogs.Stop()
+	}
 }
 
 func (a *App) buildRouter() *gin.Engine {

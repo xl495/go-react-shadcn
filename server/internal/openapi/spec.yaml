@@ -116,7 +116,78 @@ paths:
                 $ref: "#/components/schemas/EnvelopeAPILogPage"
   /departments:
     get:
-      summary: Department tree
+      summary: Department tree (paginated roots)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeDepartmentPage"
+  /roles:
+    get:
+      summary: List roles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeRolePage"
+  /permissions:
+    get:
+      summary: List permissions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePermissionPage"
+  /dicts:
+    get:
+      summary: List dictionary types
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeDictPage"
+  /configs:
+    get:
+      summary: List system configs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+        - { name: group, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeConfigPage"
+  /dashboard/stats:
+    get:
+      summary: Dashboard counters
       security: [{ bearerAuth: [] }]
       responses:
         "200":
@@ -124,7 +195,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EnvelopeDepartments"
+                $ref: "#/components/schemas/EnvelopeDashboardStats"
 components:
   securitySchemes:
     bearerAuth:
@@ -140,6 +211,7 @@ components:
         message: { type: string }
     User:
       type: object
+      required: [id, username, nickname, avatar, email, phone, gender, department, title, remark, status, roles]
       properties:
         id: { type: integer }
         username: { type: string }
@@ -156,16 +228,38 @@ components:
         lastLoginIp: { type: string }
         permissionCodes: { type: array, items: { type: string } }
         roles: { type: array, items: { $ref: "#/components/schemas/Role" } }
+        createdAt: { type: string }
+        updatedAt: { type: string }
     Role:
       type: object
+      required: [id, name, code, description]
       properties:
         id: { type: integer }
         name: { type: string }
         code: { type: string }
         description: { type: string }
         dataScope: { type: string }
+        permissions: { type: array, items: { $ref: "#/components/schemas/Permission" } }
+    Permission:
+      type: object
+      required: [id, name, code, path, method, kind, description]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        code: { type: string }
+        path: { type: string }
+        method: { type: string }
+        kind: { type: string }
+        description: { type: string }
+        parentId: { type: integer, nullable: true }
+        sort: { type: integer }
+        icon: { type: string }
+        routePath: { type: string }
+        component: { type: string }
+        hidden: { type: boolean }
     MenuNode:
       type: object
+      required: [id, name, code, kind, routePath, component, icon, sort, hidden]
       properties:
         id: { type: integer }
         name: { type: string }
@@ -179,21 +273,26 @@ components:
         children: { type: array, items: { $ref: "#/components/schemas/MenuNode" } }
     OpLog:
       type: object
+      required: [id, username, module, action, method, path, status, ip, latencyMs, createdAt]
       properties:
         id: { type: integer }
         traceId: { type: string }
         username: { type: string }
         module: { type: string }
         action: { type: string }
+        method: { type: string }
         path: { type: string }
         status: { type: integer }
         ip: { type: string }
         latencyMs: { type: integer }
+        detail: { type: string }
+        description: { type: string }
         oldValue: { type: string }
         newValue: { type: string }
         createdAt: { type: string }
     LoginLog:
       type: object
+      required: [id, username, ip, userAgent, location, status, failReason, createdAt]
       properties:
         id: { type: integer }
         username: { type: string }
@@ -205,6 +304,7 @@ components:
         createdAt: { type: string }
     APILog:
       type: object
+      required: [id, traceId, username, method, path, status, latencyMs, createdAt]
       properties:
         id: { type: integer }
         traceId: { type: string }
@@ -213,20 +313,74 @@ components:
         path: { type: string }
         status: { type: integer }
         latencyMs: { type: integer }
+        requestBody: { type: string }
+        responseBody: { type: string }
+        errorStack: { type: string }
         createdAt: { type: string }
     Department:
       type: object
+      required: [id, name, code, sort, leader, status]
       properties:
         id: { type: integer }
         name: { type: string }
         code: { type: string }
         parentId: { type: integer, nullable: true }
         sort: { type: integer }
+        leader: { type: string }
+        status: { type: string }
         children: { type: array, items: { $ref: "#/components/schemas/Department" } }
+    DictType:
+      type: object
+      required: [id, code, name, status, remark]
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        status: { type: string }
+        remark: { type: string }
+    DictItem:
+      type: object
+      required: [id, typeCode, label, value, sort, status, remark]
+      properties:
+        id: { type: integer }
+        typeCode: { type: string }
+        label: { type: string }
+        value: { type: string }
+        sort: { type: integer }
+        status: { type: string }
+        remark: { type: string }
+    SysConfig:
+      type: object
+      required: [id, key, value, name, group, remark]
+      properties:
+        id: { type: integer }
+        key: { type: string }
+        value: { type: string }
+        name: { type: string }
+        group: { type: string }
+        remark: { type: string }
+    DashboardStats:
+      type: object
+      required: [users, roles, permissions, dicts, configs, logs]
+      properties:
+        users: { type: integer }
+        roles: { type: integer }
+        permissions: { type: integer }
+        dicts: { type: integer }
+        configs: { type: integer }
+        logs: { type: integer }
+    DictLookup:
+      type: object
+      required: [code, name, items]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        items: { type: array, items: { $ref: "#/components/schemas/DictItem" } }
     PageMeta:
       type: object
       required: [items, total, page, pageSize]
       properties:
+        items: { type: array }
         total: { type: integer }
         page: { type: integer }
         pageSize: { type: integer }
@@ -240,11 +394,14 @@ components:
         captchaCode: { type: string }
     CaptchaChallenge:
       type: object
+      required: [captchaId, image]
       properties:
         captchaId: { type: string }
         image: { type: string }
+        answer: { type: string }
     LoginResult:
       type: object
+      required: [token, expiresAt, user]
       properties:
         token: { type: string }
         expiresAt: { type: string }
@@ -317,9 +474,81 @@ components:
                 - type: object
                   properties:
                     items: { type: array, items: { $ref: "#/components/schemas/APILog" } }
-    EnvelopeDepartments:
+    EnvelopeDepartmentPage:
       allOf:
         - $ref: "#/components/schemas/EnvelopeBase"
         - type: object
           properties:
-            data: { type: array, items: { $ref: "#/components/schemas/Department" } }
+            data:
+              allOf:
+                - $ref: "#/components/schemas/PageMeta"
+                - type: object
+                  properties:
+                    items: { type: array, items: { $ref: "#/components/schemas/Department" } }
+    EnvelopeRolePage:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/PageMeta"
+                - type: object
+                  properties:
+                    items: { type: array, items: { $ref: "#/components/schemas/Role" } }
+    EnvelopePermissionPage:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/PageMeta"
+                - type: object
+                  properties:
+                    items: { type: array, items: { $ref: "#/components/schemas/Permission" } }
+    EnvelopeDictPage:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/PageMeta"
+                - type: object
+                  properties:
+                    items: { type: array, items: { $ref: "#/components/schemas/DictType" } }
+    EnvelopeDictItemPage:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/PageMeta"
+                - type: object
+                  properties:
+                    items: { type: array, items: { $ref: "#/components/schemas/DictItem" } }
+    EnvelopeConfigPage:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              allOf:
+                - $ref: "#/components/schemas/PageMeta"
+                - type: object
+                  properties:
+                    items: { type: array, items: { $ref: "#/components/schemas/SysConfig" } }
+    EnvelopeDashboardStats:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/DashboardStats" }
+    EnvelopeDictLookup:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/DictLookup" }

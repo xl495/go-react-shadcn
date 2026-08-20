@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 import { lazy, Suspense } from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
+import { Toaster } from "sonner"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { DynamicAuthRoutes } from "@/components/layout/DynamicAuthRoutes"
 import { PageFallback } from "@/components/PageFallback"
@@ -19,6 +20,7 @@ export function App() {
       <I18nProvider>
         <AuthProvider>
           <ErrorBoundary>
+            <Toaster position="top-center" richColors />
             <BrowserRouter>
               <Suspense fallback={<PageFallback />}>
                 <Routes>
@@ -31,9 +33,9 @@ export function App() {
                     }
                   >
                     <DynamicAuthRoutes />
+                    <Route path="403" element={<ForbiddenPage />} />
+                    <Route path="*" element={<NotFoundPage />} />
                   </Route>
-                  <Route path="/403" element={<ForbiddenPage />} />
-                  <Route path="*" element={<NotFoundPage />} />
                 </Routes>
               </Suspense>
             </BrowserRouter>

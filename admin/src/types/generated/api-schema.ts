@@ -319,7 +319,203 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Department tree */
+        /** Department tree (paginated roots) */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeDepartmentPage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List roles */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeRolePage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List permissions */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopePermissionPage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List dictionary types */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeDictPage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List system configs */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                    group?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeConfigPage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard counters */
         get: {
             parameters: {
                 query?: never;
@@ -335,7 +531,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["EnvelopeDepartments"];
+                        "application/json": components["schemas"]["EnvelopeDashboardStats"];
                     };
                 };
             };
@@ -357,84 +553,148 @@ export interface components {
             message: string;
         };
         User: {
-            id?: number;
-            username?: string;
-            nickname?: string;
-            avatar?: string;
-            email?: string;
-            phone?: string;
-            gender?: string;
-            department?: string;
-            title?: string;
-            remark?: string;
-            status?: string;
+            id: number;
+            username: string;
+            nickname: string;
+            avatar: string;
+            email: string;
+            phone: string;
+            gender: string;
+            department: string;
+            title: string;
+            remark: string;
+            status: string;
             lastLoginAt?: string | null;
             lastLoginIp?: string;
             permissionCodes?: string[];
-            roles?: components["schemas"]["Role"][];
+            roles: components["schemas"]["Role"][];
+            createdAt?: string;
+            updatedAt?: string;
         };
         Role: {
-            id?: number;
-            name?: string;
-            code?: string;
-            description?: string;
+            id: number;
+            name: string;
+            code: string;
+            description: string;
             dataScope?: string;
+            permissions?: components["schemas"]["Permission"][];
         };
-        MenuNode: {
-            id?: number;
-            name?: string;
-            code?: string;
-            kind?: string;
+        Permission: {
+            id: number;
+            name: string;
+            code: string;
+            path: string;
+            method: string;
+            kind: string;
+            description: string;
+            parentId?: number | null;
+            sort?: number;
+            icon?: string;
             routePath?: string;
             component?: string;
-            icon?: string;
-            sort?: number;
             hidden?: boolean;
+        };
+        MenuNode: {
+            id: number;
+            name: string;
+            code: string;
+            kind: string;
+            routePath: string;
+            component: string;
+            icon: string;
+            sort: number;
+            hidden: boolean;
             children?: components["schemas"]["MenuNode"][];
         };
         OpLog: {
-            id?: number;
+            id: number;
             traceId?: string;
-            username?: string;
-            module?: string;
-            action?: string;
-            path?: string;
-            status?: number;
-            ip?: string;
-            latencyMs?: number;
+            username: string;
+            module: string;
+            action: string;
+            method: string;
+            path: string;
+            status: number;
+            ip: string;
+            latencyMs: number;
+            detail?: string;
+            description?: string;
             oldValue?: string;
             newValue?: string;
-            createdAt?: string;
+            createdAt: string;
         };
         LoginLog: {
-            id?: number;
-            username?: string;
-            ip?: string;
-            userAgent?: string;
-            location?: string;
-            status?: string;
-            failReason?: string;
-            createdAt?: string;
+            id: number;
+            username: string;
+            ip: string;
+            userAgent: string;
+            location: string;
+            status: string;
+            failReason: string;
+            createdAt: string;
         };
         APILog: {
-            id?: number;
-            traceId?: string;
-            username?: string;
-            method?: string;
-            path?: string;
-            status?: number;
-            latencyMs?: number;
-            createdAt?: string;
+            id: number;
+            traceId: string;
+            username: string;
+            method: string;
+            path: string;
+            status: number;
+            latencyMs: number;
+            requestBody?: string;
+            responseBody?: string;
+            errorStack?: string;
+            createdAt: string;
         };
         Department: {
-            id?: number;
-            name?: string;
-            code?: string;
+            id: number;
+            name: string;
+            code: string;
             parentId?: number | null;
-            sort?: number;
+            sort: number;
+            leader: string;
+            status: string;
             children?: components["schemas"]["Department"][];
         };
+        DictType: {
+            id: number;
+            code: string;
+            name: string;
+            status: string;
+            remark: string;
+        };
+        DictItem: {
+            id: number;
+            typeCode: string;
+            label: string;
+            value: string;
+            sort: number;
+            status: string;
+            remark: string;
+        };
+        SysConfig: {
+            id: number;
+            key: string;
+            value: string;
+            name: string;
+            group: string;
+            remark: string;
+        };
+        DashboardStats: {
+            users: number;
+            roles: number;
+            permissions: number;
+            dicts: number;
+            configs: number;
+            logs: number;
+        };
+        DictLookup: {
+            code: string;
+            name: string;
+            items: components["schemas"]["DictItem"][];
+        };
         PageMeta: {
+            items: unknown[];
             total: number;
             page: number;
             pageSize: number;
@@ -446,13 +706,14 @@ export interface components {
             captchaCode: string;
         };
         CaptchaChallenge: {
-            captchaId?: string;
-            image?: string;
+            captchaId: string;
+            image: string;
+            answer?: string;
         };
         LoginResult: {
-            token?: string;
-            expiresAt?: string;
-            user?: components["schemas"]["User"];
+            token: string;
+            expiresAt: string;
+            user: components["schemas"]["User"];
         };
         EnvelopeUser: components["schemas"]["EnvelopeBase"] & {
             data?: components["schemas"]["User"];
@@ -486,8 +747,41 @@ export interface components {
                 items?: components["schemas"]["APILog"][];
             };
         };
-        EnvelopeDepartments: components["schemas"]["EnvelopeBase"] & {
-            data?: components["schemas"]["Department"][];
+        EnvelopeDepartmentPage: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["PageMeta"] & {
+                items?: components["schemas"]["Department"][];
+            };
+        };
+        EnvelopeRolePage: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["PageMeta"] & {
+                items?: components["schemas"]["Role"][];
+            };
+        };
+        EnvelopePermissionPage: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["PageMeta"] & {
+                items?: components["schemas"]["Permission"][];
+            };
+        };
+        EnvelopeDictPage: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["PageMeta"] & {
+                items?: components["schemas"]["DictType"][];
+            };
+        };
+        EnvelopeDictItemPage: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["PageMeta"] & {
+                items?: components["schemas"]["DictItem"][];
+            };
+        };
+        EnvelopeConfigPage: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["PageMeta"] & {
+                items?: components["schemas"]["SysConfig"][];
+            };
+        };
+        EnvelopeDashboardStats: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["DashboardStats"];
+        };
+        EnvelopeDictLookup: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["DictLookup"];
         };
     };
     responses: never;

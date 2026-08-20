@@ -1,9 +1,19 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
-import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
+import {
+  PAGE_SIZE,
+  useCreateDict,
+  useCreateDictItem,
+  useDeleteDict,
+  useDeleteDictItem,
+  useDictItems,
+  useDicts,
+} from "@/hooks/queries"
+import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -28,92 +38,25 @@ import type { DictItem, DictType } from "@/types"
 export function DictsPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const [types, setTypes] = useState<DictType[]>([])
-  const [active, setActive] = useState<DictType | null>(null)
-  const [items, setItems] = useState<DictItem[]>([])
-  const [error, setError] = useState("")
+  const [page, setPage] = useState(1)
+  const [itemPage, setItemPage] = useState(1)
+  const { data, isLoading, error } = useDicts({ page, pageSize: PAGE_SIZE })
+  const types = data?.items ?? []
+  const [activeId, setActiveId] = useState<number>(0)
+  const active = types.find((row) => row.id === activeId) ?? types[0] ?? null
+  const currentId = active?.id ?? 0
+  const itemsQuery = useDictItems(currentId, { page: itemPage, pageSize: PAGE_SIZE })
+  const items = itemsQuery.data?.items ?? []
+  const createDict = useCreateDict()
+  const deleteDict = useDeleteDict()
+  const createItem = useCreateDictItem()
+  const deleteItem = useDeleteDictItem()
   const [typeOpen, setTypeOpen] = useState(false)
   const [itemOpen, setItemOpen] = useState(false)
   const [typeForm, setTypeForm] = useState({ code: "", name: "", remark: "" })
   const [itemForm, setItemForm] = useState({ label: "", value: "", sort: "0", remark: "" })
-
-  async function reloadTypes() {
-    const rows = await api.dicts()
-    setTypes(rows)
-    if (active) {
-      const next = rows.find((r) => r.id === active.id) ?? rows[0] ?? null
-      setActive(next)
-      if (next) setItems(await api.dictItems(next.id))
-      else setItems([])
-    } else if (rows[0]) {
-      setActive(rows[0])
-      setItems(await api.dictItems(rows[0].id))
-    }
-  }
-
-  useEffect(() => {
-    reloadTypes().catch((e: Error) => setError(translateApiError(e, t)))
-  }, [])
-
-  async function selectType(row: DictType) {
-    setActive(row)
-    try {
-      setItems(await api.dictItems(row.id))
-    } catch (e) {
-      setError(translateApiError(e, t))
-    }
-  }
-
-  async function createType() {
-    setError("")
-    try {
-      await api.createDict(typeForm)
-      setTypeOpen(false)
-      setTypeForm({ code: "", name: "", remark: "" })
-      await reloadTypes()
-    } catch (e) {
-      setError(translateApiError(e, t))
-    }
-  }
-
-  async function removeType(row: DictType) {
-    if (!confirm(t("dict.confirmDeleteType", { name: row.name }))) return
-    try {
-      await api.deleteDict(row.id)
-      setActive(null)
-      await reloadTypes()
-    } catch (e) {
-      setError(translateApiError(e, t))
-    }
-  }
-
-  async function createItem() {
-    if (!active) return
-    setError("")
-    try {
-      await api.createDictItem(active.id, {
-        label: itemForm.label,
-        value: itemForm.value,
-        sort: Number(itemForm.sort) || 0,
-        remark: itemForm.remark,
-      })
-      setItemOpen(false)
-      setItemForm({ label: "", value: "", sort: "0", remark: "" })
-      setItems(await api.dictItems(active.id))
-    } catch (e) {
-      setError(translateApiError(e, t))
-    }
-  }
-
-  async function removeItem(row: DictItem) {
-    if (!confirm(t("dict.confirmDeleteItem", { name: row.label }))) return
-    try {
-      await api.deleteDictItem(row.id)
-      if (active) setItems(await api.dictItems(active.id))
-    } catch (e) {
-      setError(translateApiError(e, t))
-    }
-  }
+  const [pendingType, setPendingType] = useState<DictType | null>(null)
+  const [pendingItem, setPendingItem] = useState<DictItem | null>(null)
 
   return (
     <div className="space-y-4">
@@ -126,45 +69,59 @@ export function DictsPage() {
           <Button onClick={() => setTypeOpen(true)}>{t("dict.createType")}</Button>
         </Can>
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-        <div className="rounded-lg border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("dict.type")}</TableHead>
-                {can(P.dictDelete) ? <TableHead className="text-right">{t("app.actions")}</TableHead> : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {types.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className={active?.id === row.id ? "bg-accent" : "cursor-pointer"}
-                  onClick={() => void selectType(row)}
-                >
-                  <TableCell>
-                    <div className="font-medium">{row.name}</div>
-                    <div className="font-mono text-xs text-muted-foreground">{row.code}</div>
-                  </TableCell>
-                  {can(P.dictDelete) ? (
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void removeType(row)
+        <div className="space-y-3">
+          <div className="rounded-lg border bg-card">
+            {isLoading ? (
+              <TableSkeleton rows={6} cols={2} />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("dict.type")}</TableHead>
+                    {can(P.dictDelete) ? <TableHead className="text-right">{t("app.actions")}</TableHead> : null}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {types.length === 0 ? (
+                    <EmptyTableRow colSpan={can(P.dictDelete) ? 2 : 1} />
+                  ) : (
+                    types.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        className={active?.id === row.id ? "bg-accent" : "cursor-pointer"}
+                        onClick={() => {
+                          setActiveId(row.id)
+                          setItemPage(1)
                         }}
                       >
-                        {t("app.delete")}
-                      </Button>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                        <TableCell>
+                          <div className="font-medium">{row.name}</div>
+                          <div className="font-mono text-xs text-muted-foreground">{row.code}</div>
+                        </TableCell>
+                        {can(P.dictDelete) ? (
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setPendingType(row)
+                              }}
+                            >
+                              {t("app.delete")}
+                            </Button>
+                          </TableCell>
+                        ) : null}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={setPage} />
         </div>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -178,43 +135,93 @@ export function DictsPage() {
             ) : null}
           </div>
           <div className="rounded-lg border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("dict.label")}</TableHead>
-                  <TableHead>{t("dict.value")}</TableHead>
-                  <TableHead>{t("dict.sort")}</TableHead>
-                  <TableHead>{t("app.status")}</TableHead>
-                  {can(P.dictItemDelete) ? (
-                    <TableHead className="text-right">{t("app.actions")}</TableHead>
-                  ) : null}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>{row.label}</TableCell>
-                    <TableCell className="font-mono text-xs">{row.value}</TableCell>
-                    <TableCell>{row.sort}</TableCell>
-                    <TableCell>
-                      <Badge variant={row.status === "active" ? "default" : "muted"}>
-                        {row.status === "active" ? t("app.active") : t("app.disabled")}
-                      </Badge>
-                    </TableCell>
+            {itemsQuery.isLoading ? (
+              <TableSkeleton />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("dict.label")}</TableHead>
+                    <TableHead>{t("dict.value")}</TableHead>
+                    <TableHead>{t("dict.sort")}</TableHead>
+                    <TableHead>{t("app.status")}</TableHead>
                     {can(P.dictItemDelete) ? (
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => void removeItem(row)}>
-                          {t("app.delete")}
-                        </Button>
-                      </TableCell>
+                      <TableHead className="text-right">{t("app.actions")}</TableHead>
                     ) : null}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {items.length === 0 ? (
+                    <EmptyTableRow colSpan={can(P.dictItemDelete) ? 5 : 4} />
+                  ) : (
+                    items.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>{row.label}</TableCell>
+                        <TableCell className="font-mono text-xs">{row.value}</TableCell>
+                        <TableCell>{row.sort}</TableCell>
+                        <TableCell>
+                          <Badge variant={row.status === "active" ? "default" : "muted"}>
+                            {row.status === "active" ? t("app.active") : t("app.disabled")}
+                          </Badge>
+                        </TableCell>
+                        {can(P.dictItemDelete) ? (
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="sm" onClick={() => setPendingItem(row)}>
+                              {t("app.delete")}
+                            </Button>
+                          </TableCell>
+                        ) : null}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </div>
+          <PaginationBar
+            page={itemPage}
+            pageSize={PAGE_SIZE}
+            total={itemsQuery.data?.total ?? 0}
+            onPageChange={setItemPage}
+          />
         </div>
       </div>
+
+      <ConfirmAlert
+        open={!!pendingType}
+        onOpenChange={(next) => {
+          if (!next) setPendingType(null)
+        }}
+        title={t("app.delete")}
+        description={pendingType ? t("dict.confirmDeleteType", { name: pendingType.name }) : ""}
+        onConfirm={() => {
+          if (!pendingType) return
+          deleteDict.mutate(pendingType.id, {
+            onSuccess: () => {
+              setActiveId(0)
+              toast.success(t("app.saved"))
+            },
+            onError: (e) => toast.error(translateApiError(e, t)),
+          })
+          setPendingType(null)
+        }}
+      />
+      <ConfirmAlert
+        open={!!pendingItem}
+        onOpenChange={(next) => {
+          if (!next) setPendingItem(null)
+        }}
+        title={t("app.delete")}
+        description={pendingItem ? t("dict.confirmDeleteItem", { name: pendingItem.label }) : ""}
+        onConfirm={() => {
+          if (!pendingItem) return
+          deleteItem.mutate(pendingItem.id, {
+            onSuccess: () => toast.success(t("app.saved")),
+            onError: (e) => toast.error(translateApiError(e, t)),
+          })
+          setPendingItem(null)
+        }}
+      />
 
       <Dialog open={typeOpen} onOpenChange={setTypeOpen}>
         <DialogContent>
@@ -236,7 +243,17 @@ export function DictsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => void createType()}>{t("app.create")}</Button>
+            <Button
+              onClick={() =>
+                void createDict.mutateAsync(typeForm).then(() => {
+                  toast.success(t("app.saved"))
+                  setTypeOpen(false)
+                  setTypeForm({ code: "", name: "", remark: "" })
+                }).catch((e) => toast.error(translateApiError(e, t)))
+              }
+            >
+              {t("app.create")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -261,7 +278,29 @@ export function DictsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => void createItem()}>{t("app.create")}</Button>
+            <Button
+              onClick={() => {
+                if (!active) return
+                void createItem
+                  .mutateAsync({
+                    id: active.id,
+                    body: {
+                      label: itemForm.label,
+                      value: itemForm.value,
+                      sort: Number(itemForm.sort) || 0,
+                      remark: itemForm.remark,
+                    },
+                  })
+                  .then(() => {
+                    toast.success(t("app.saved"))
+                    setItemOpen(false)
+                    setItemForm({ label: "", value: "", sort: "0", remark: "" })
+                  })
+                  .catch((e) => toast.error(translateApiError(e, t)))
+              }}
+            >
+              {t("app.create")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

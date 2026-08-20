@@ -19,8 +19,13 @@ jobs:
           cache-dependency-path: server/go.sum
       - name: Vet
         run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.1.6
+          working-directory: server
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
       - name: Build
         run: go build -o server ./cmd/server
 
@@ -37,6 +42,7 @@ jobs:
           cache: npm
           cache-dependency-path: admin/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
 
   web:

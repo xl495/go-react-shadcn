@@ -29,6 +29,11 @@ export const P = {
   configDelete: "config:delete",
   logList: "log:list",
   logClear: "log:clear",
+  logPurge: "log:purge",
+  deptList: "dept:list",
+  deptCreate: "dept:create",
+  deptUpdate: "dept:update",
+  deptDelete: "dept:delete",
 } as const
 
 export type PermCode = (typeof P)[keyof typeof P]

@@ -1,10 +1,10 @@
 import { useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
-import { api } from "@/api/client"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
-import { useAPILogs, useLoginLogs, useOpLogs } from "@/hooks/queries"
+import { PAGE_SIZE, useAPILogs, useClearLogs, useLoginLogs, useOpLogs, usePurgeLogs } from "@/hooks/queries"
+import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,35 +23,32 @@ type Tab = "op" | "login" | "api"
 
 export function LogsPage() {
   const { t } = useI18n()
-  const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>("op")
+  const [page, setPage] = useState(1)
   const [username, setUsername] = useState("")
   const [module, setModule] = useState("")
   const [action, setAction] = useState("")
   const [traceId, setTraceId] = useState("")
+  const [confirm, setConfirm] = useState<"clear" | "purge" | null>(null)
 
+  const params = { page, pageSize: PAGE_SIZE }
   const opQuery = useOpLogs({
+    ...params,
     username: username || undefined,
     module: module || undefined,
     action: action || undefined,
-    pageSize: 200,
   })
-  const loginQuery = useLoginLogs({ username: username || undefined, pageSize: 200 })
-  const apiQuery = useAPILogs({ traceId: traceId || undefined, pageSize: 200 })
+  const loginQuery = useLoginLogs({ ...params, username: username || undefined })
+  const apiQuery = useAPILogs({ ...params, traceId: traceId || undefined })
+  const clearLogs = useClearLogs()
+  const purgeLogs = usePurgeLogs()
 
   const active = tab === "login" ? loginQuery : tab === "api" ? apiQuery : opQuery
-  const error = active.error ? translateApiError(active.error as Error, t) : ""
+  const error = active.error ? translateApiError(active.error, t) : ""
 
-  async function clearAll() {
-    if (!confirm(t("log.confirmClear"))) return
-    await api.clearLogs(tab === "login" ? "login" : tab === "api" ? "api" : "op")
-    await qc.invalidateQueries({ queryKey: ["logs"] })
-  }
-
-  async function purgeOld() {
-    if (!confirm(t("log.confirmPurge"))) return
-    await api.purgeLogs(30)
-    await qc.invalidateQueries({ queryKey: ["logs"] })
+  function switchTab(next: Tab) {
+    setTab(next)
+    setPage(1)
   }
 
   return (
@@ -64,25 +61,25 @@ export function LogsPage() {
         <div className="flex flex-wrap items-center gap-2">
           {tab === "op" ? (
             <>
-              <Input className="w-36" placeholder={t("login.username")} value={username} onChange={(e) => setUsername(e.target.value)} />
-              <Input className="w-32" placeholder={t("log.module")} value={module} onChange={(e) => setModule(e.target.value)} />
-              <Input className="w-32" placeholder={t("log.action")} value={action} onChange={(e) => setAction(e.target.value)} />
+              <Input className="w-36" placeholder={t("login.username")} value={username} onChange={(e) => { setUsername(e.target.value); setPage(1) }} />
+              <Input className="w-32" placeholder={t("log.module")} value={module} onChange={(e) => { setModule(e.target.value); setPage(1) }} />
+              <Input className="w-32" placeholder={t("log.action")} value={action} onChange={(e) => { setAction(e.target.value); setPage(1) }} />
             </>
           ) : null}
           {tab === "login" ? (
-            <Input className="w-36" placeholder={t("login.username")} value={username} onChange={(e) => setUsername(e.target.value)} />
+            <Input className="w-36" placeholder={t("login.username")} value={username} onChange={(e) => { setUsername(e.target.value); setPage(1) }} />
           ) : null}
           {tab === "api" ? (
-            <Input className="w-48" placeholder="Trace ID" value={traceId} onChange={(e) => setTraceId(e.target.value)} />
+            <Input className="w-48" placeholder="Trace ID" value={traceId} onChange={(e) => { setTraceId(e.target.value); setPage(1) }} />
           ) : null}
           <Button variant="outline" onClick={() => void active.refetch()}>
             {t("log.filter")}
           </Button>
           <Can perm={P.logClear}>
-            <Button variant="destructive" onClick={() => void clearAll()}>
+            <Button variant="destructive" onClick={() => setConfirm("clear")}>
               {t("log.clear")}
             </Button>
-            <Button variant="outline" onClick={() => void purgeOld()}>
+            <Button variant="outline" onClick={() => setConfirm("purge")}>
               {t("log.purge")}
             </Button>
           </Can>
@@ -91,18 +88,50 @@ export function LogsPage() {
 
       <div className="flex gap-2">
         {(["op", "login", "api"] as Tab[]).map((k) => (
-          <Button key={k} size="sm" variant={tab === k ? "default" : "outline"} onClick={() => setTab(k)}>
+          <Button key={k} size="sm" variant={tab === k ? "default" : "outline"} onClick={() => switchTab(k)}>
             {t(`log.tab.${k}`)}
           </Button>
         ))}
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {active.isLoading ? <p className="text-sm text-muted-foreground">{t("app.loading")}</p> : null}
+      {active.isLoading ? <TableSkeleton rows={8} cols={6} /> : null}
 
-      {tab === "op" ? <OpLogTable rows={opQuery.data?.items ?? []} t={t} /> : null}
-      {tab === "login" ? <LoginLogTable rows={loginQuery.data?.items ?? []} t={t} /> : null}
-      {tab === "api" ? <APILogTable rows={apiQuery.data?.items ?? []} t={t} /> : null}
+      {!active.isLoading && tab === "op" ? <OpLogTable rows={opQuery.data?.items ?? []} t={t} /> : null}
+      {!active.isLoading && tab === "login" ? <LoginLogTable rows={loginQuery.data?.items ?? []} t={t} /> : null}
+      {!active.isLoading && tab === "api" ? <APILogTable rows={apiQuery.data?.items ?? []} t={t} /> : null}
+      <PaginationBar page={page} pageSize={PAGE_SIZE} total={active.data?.total ?? 0} onPageChange={setPage} />
+
+      <ConfirmAlert
+        open={confirm === "clear"}
+        onOpenChange={(next) => {
+          if (!next) setConfirm(null)
+        }}
+        title={t("log.clear")}
+        description={t("log.confirmClear")}
+        onConfirm={() => {
+          clearLogs.mutate(tab === "login" ? "login" : tab === "api" ? "api" : "op", {
+            onSuccess: () => toast.success(t("app.saved")),
+            onError: (e) => toast.error(translateApiError(e, t)),
+          })
+          setConfirm(null)
+        }}
+      />
+      <ConfirmAlert
+        open={confirm === "purge"}
+        onOpenChange={(next) => {
+          if (!next) setConfirm(null)
+        }}
+        title={t("log.purge")}
+        description={t("log.confirmPurge")}
+        onConfirm={() => {
+          purgeLogs.mutate(30, {
+            onSuccess: () => toast.success(t("app.saved")),
+            onError: (e) => toast.error(translateApiError(e, t)),
+          })
+          setConfirm(null)
+        }}
+      />
     </div>
   )
 }
@@ -127,11 +156,7 @@ function OpLogTable({ rows, t }: { rows: OpLog[]; t: (k: string) => string }) {
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">
-                {t("log.empty")}
-              </TableCell>
-            </TableRow>
+            <EmptyTableRow colSpan={10} />
           ) : (
             rows.map((row) => (
               <TableRow key={row.id}>
@@ -142,7 +167,7 @@ function OpLogTable({ rows, t }: { rows: OpLog[]; t: (k: string) => string }) {
                 <TableCell>{row.action}</TableCell>
                 <TableCell className="font-mono text-xs">{row.path}</TableCell>
                 <TableCell>
-                  <Badge variant={row.status >= 400 ? "muted" : "default"}>{row.status || "—"}</Badge>
+                  <Badge variant={(row.status ?? 0) >= 400 ? "muted" : "default"}>{row.status || "—"}</Badge>
                 </TableCell>
                 <TableCell className="text-xs">{row.ip}</TableCell>
                 <TableCell className="text-xs">{row.latencyMs ? `${row.latencyMs}ms` : "—"}</TableCell>
@@ -173,22 +198,26 @@ function LoginLogTable({ rows, t }: { rows: LoginLog[]; t: (k: string) => string
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.id}>
-              <TableCell>{row.id}</TableCell>
-              <TableCell>{row.username}</TableCell>
-              <TableCell>
-                <Badge variant={row.status === "success" ? "default" : "muted"}>{row.status}</Badge>
-              </TableCell>
-              <TableCell className="text-xs">{row.ip}</TableCell>
-              <TableCell className="text-xs">{row.location || "—"}</TableCell>
-              <TableCell className="max-w-[12rem] truncate text-xs" title={row.userAgent}>
-                {row.userAgent || "—"}
-              </TableCell>
-              <TableCell className="text-xs">{row.failReason || "—"}</TableCell>
-              <TableCell className="whitespace-nowrap text-xs">{formatDateTime(row.createdAt)}</TableCell>
-            </TableRow>
-          ))}
+          {rows.length === 0 ? (
+            <EmptyTableRow colSpan={8} />
+          ) : (
+            rows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell>{row.id}</TableCell>
+                <TableCell>{row.username}</TableCell>
+                <TableCell>
+                  <Badge variant={row.status === "success" ? "default" : "muted"}>{row.status}</Badge>
+                </TableCell>
+                <TableCell className="text-xs">{row.ip}</TableCell>
+                <TableCell className="text-xs">{row.location || "—"}</TableCell>
+                <TableCell className="max-w-[12rem] truncate text-xs" title={row.userAgent}>
+                  {row.userAgent || "—"}
+                </TableCell>
+                <TableCell className="text-xs">{row.failReason || "—"}</TableCell>
+                <TableCell className="whitespace-nowrap text-xs">{formatDateTime(row.createdAt)}</TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     </div>
@@ -212,18 +241,22 @@ function APILogTable({ rows, t }: { rows: APILog[]; t: (k: string) => string }) 
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.id}>
-              <TableCell>{row.id}</TableCell>
-              <TableCell className="font-mono text-xs">{row.traceId}</TableCell>
-              <TableCell>{row.username || "—"}</TableCell>
-              <TableCell>{row.method}</TableCell>
-              <TableCell className="font-mono text-xs">{row.path}</TableCell>
-              <TableCell>{row.status}</TableCell>
-              <TableCell className="text-xs">{row.latencyMs ? `${row.latencyMs}ms` : "—"}</TableCell>
-              <TableCell className="whitespace-nowrap text-xs">{formatDateTime(row.createdAt)}</TableCell>
-            </TableRow>
-          ))}
+          {rows.length === 0 ? (
+            <EmptyTableRow colSpan={8} />
+          ) : (
+            rows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell>{row.id}</TableCell>
+                <TableCell className="font-mono text-xs">{row.traceId}</TableCell>
+                <TableCell>{row.username || "—"}</TableCell>
+                <TableCell>{row.method}</TableCell>
+                <TableCell className="font-mono text-xs">{row.path}</TableCell>
+                <TableCell>{row.status}</TableCell>
+                <TableCell className="text-xs">{row.latencyMs ? `${row.latencyMs}ms` : "—"}</TableCell>
+                <TableCell className="whitespace-nowrap text-xs">{formatDateTime(row.createdAt)}</TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     </div>

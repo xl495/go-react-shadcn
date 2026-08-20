@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react"
+import { useState } from "react"
 import { Link } from "react-router-dom"
-import { useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
 import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
@@ -8,7 +8,17 @@ import { DICT, useDict } from "@/hooks/dict"
 import { formatDateTime } from "@/utils/format"
 import { roleLabel, translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
-import { useRoles, useUsers } from "@/hooks/queries"
+import {
+  PAGE_SIZE,
+  PICKER_PAGE_SIZE,
+  useAssignUserRoles,
+  useCreateUser,
+  useDeleteUser,
+  useRoles,
+  useUpdateUser,
+  useUsers,
+} from "@/hooks/queries"
+import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
 import { Avatar } from "@/components/ui/avatar"
 import { AvatarField } from "@/components/ui/avatar-field"
 import { Badge } from "@/components/ui/badge"
@@ -50,51 +60,25 @@ const emptyForm = {
 export function UsersPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const qc = useQueryClient()
   const genderDict = useDict(DICT.gender)
   const statusDict = useDict(DICT.userStatus)
   const deptDict = useDict(DICT.department)
-  const { data: usersPage, error: usersError } = useUsers({ pageSize: 500 })
-  const needRoles = can(P.roleList) || can(P.userRoles) || can(P.userCreate) || can(P.userUpdate)
-  const { data: rolesPage } = useRoles({ pageSize: 500 }, needRoles)
-  const users = usersPage?.items ?? []
-  const roles = rolesPage?.items ?? []
-  const [error, setError] = useState("")
+  const [page, setPage] = useState(1)
   const [query, setQuery] = useState("")
+  const { data, isLoading, error } = useUsers({ page, pageSize: PAGE_SIZE, q: query || undefined })
+  const needRoles = can(P.roleList) || can(P.userRoles) || can(P.userCreate) || can(P.userUpdate)
+  const { data: rolesPage } = useRoles({ pageSize: PICKER_PAGE_SIZE }, needRoles)
+  const users = data?.items ?? []
+  const roles = rolesPage?.items ?? []
+  const createUser = useCreateUser()
+  const updateUser = useUpdateUser()
+  const deleteUser = useDeleteUser()
+  const assignRoles = useAssignUserRoles()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<User | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [roleIds, setRoleIds] = useState<number[]>([])
-
-  useEffect(() => {
-    if (usersError) setError(translateApiError(usersError as Error, t))
-  }, [usersError, t])
-
-  async function reload() {
-    await qc.invalidateQueries({ queryKey: ["users"] })
-    if (needRoles) await qc.invalidateQueries({ queryKey: ["roles"] })
-  }
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return users
-    return users.filter((u) =>
-      [
-        u.username,
-        u.nickname,
-        u.email,
-        u.phone,
-        u.title,
-        u.department,
-        genderDict.label(u.gender),
-        deptDict.label(u.department),
-        statusDict.label(u.status),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(q),
-    )
-  }, [users, query, genderDict.items, deptDict.items, statusDict.items])
+  const [pending, setPending] = useState<User | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -117,7 +101,7 @@ export function UsersPage() {
       remark: u.remark ?? "",
       status: u.status || "active",
     })
-    setRoleIds(u.roles.map((r) => r.id))
+    setRoleIds((u.roles ?? []).map((r) => r.id))
     setOpen(true)
   }
 
@@ -126,25 +110,27 @@ export function UsersPage() {
   }
 
   async function submit() {
-    setError("")
     try {
       if (editing) {
-        await api.updateUser(editing.id, {
-          nickname: form.nickname,
-          email: form.email,
-          phone: form.phone,
-          gender: form.gender,
-          department: form.department,
-          title: form.title,
-          remark: form.remark,
-          status: form.status,
-          password: form.password || undefined,
+        await updateUser.mutateAsync({
+          id: editing.id,
+          body: {
+            nickname: form.nickname,
+            email: form.email,
+            phone: form.phone,
+            gender: form.gender,
+            department: form.department,
+            title: form.title,
+            remark: form.remark,
+            status: form.status,
+            password: form.password || undefined,
+          },
         })
         if (can(P.userRoles)) {
-          await api.assignUserRoles(editing.id, roleIds)
+          await assignRoles.mutateAsync({ id: editing.id, roleIds })
         }
       } else {
-        await api.createUser({
+        await createUser.mutateAsync({
           username: form.username,
           password: form.password,
           nickname: form.nickname,
@@ -158,20 +144,10 @@ export function UsersPage() {
           roleIds,
         })
       }
+      toast.success(t("app.saved"))
       setOpen(false)
-      await reload()
     } catch (e) {
-      setError(translateApiError(e, t))
-    }
-  }
-
-  async function remove(user: User) {
-    if (!confirm(t("users.confirmDelete", { name: user.username }))) return
-    try {
-      await api.deleteUser(user.id)
-      await reload()
-    } catch (e) {
-      setError(translateApiError(e, t))
+      toast.error(translateApiError(e, t))
     }
   }
 
@@ -185,7 +161,10 @@ export function UsersPage() {
         <div className="flex items-center gap-2">
           <Input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setPage(1)
+            }}
             placeholder={t("users.search")}
             className="w-56"
           />
@@ -194,84 +173,115 @@ export function UsersPage() {
           </Can>
         </div>
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
       <div className="rounded-lg border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>{t("users.avatar")}</TableHead>
-              <TableHead>{t("users.account")}</TableHead>
-              <TableHead>{t("users.nickname")}</TableHead>
-              <TableHead>{t("users.phone")}</TableHead>
-              <TableHead>{t("users.email")}</TableHead>
-              <TableHead>{t("users.gender")}</TableHead>
-              <TableHead>{t("users.department")}</TableHead>
-              <TableHead>{t("users.jobTitle")}</TableHead>
-              <TableHead>{t("users.roles")}</TableHead>
-              <TableHead>{t("app.status")}</TableHead>
-              <TableHead>{t("users.lastLogin")}</TableHead>
-              <TableHead>{t("users.createdAt")}</TableHead>
-              <TableHead className="text-right">{t("app.actions")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((u) => (
-              <TableRow key={u.id}>
-                <TableCell className="tabular-nums text-muted-foreground">{u.id}</TableCell>
-                <TableCell>
-                  <Avatar name={u.nickname || u.username} src={u.avatar} />
-                </TableCell>
-                <TableCell className="font-medium">{u.username}</TableCell>
-                <TableCell>{u.nickname || "—"}</TableCell>
-                <TableCell>{u.phone || "—"}</TableCell>
-                <TableCell>{u.email || "—"}</TableCell>
-                <TableCell>{genderDict.label(u.gender)}</TableCell>
-                <TableCell>{deptDict.label(u.department)}</TableCell>
-                <TableCell>{u.title || "—"}</TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {u.roles.map((r) => (
-                      <Badge key={r.id} variant="muted">
-                        {roleLabel(r.code, r.name, t)}
-                      </Badge>
-                    ))}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={u.status === "active" ? "default" : "muted"}>
-                    {statusDict.label(u.status)}
-                  </Badge>
-                </TableCell>
-                <TableCell className="whitespace-nowrap text-xs">
-                  {formatDateTime(u.lastLoginAt)}
-                  {u.lastLoginIp ? (
-                    <span className="mt-0.5 block text-muted-foreground">{u.lastLoginIp}</span>
-                  ) : null}
-                </TableCell>
-                <TableCell className="whitespace-nowrap text-xs">{formatDateTime(u.createdAt)}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button asChild variant="ghost" size="sm">
-                      <Link to={`/users/${u.id}`}>{t("users.detail")}</Link>
-                    </Button>
-                    <Can perm={P.userUpdate}>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
-                        {t("app.edit")}
-                      </Button>
-                    </Can>
-                    <Can perm={P.userDelete}>
-                      <Button variant="ghost" size="sm" onClick={() => remove(u)}>
-                        {t("app.delete")}
-                      </Button>
-                    </Can>
-                  </div>
-                </TableCell>
+        {isLoading ? (
+          <TableSkeleton rows={8} cols={6} />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>{t("users.avatar")}</TableHead>
+                <TableHead>{t("users.account")}</TableHead>
+                <TableHead>{t("users.nickname")}</TableHead>
+                <TableHead>{t("users.phone")}</TableHead>
+                <TableHead>{t("users.email")}</TableHead>
+                <TableHead>{t("users.gender")}</TableHead>
+                <TableHead>{t("users.department")}</TableHead>
+                <TableHead>{t("users.jobTitle")}</TableHead>
+                <TableHead>{t("users.roles")}</TableHead>
+                <TableHead>{t("app.status")}</TableHead>
+                <TableHead>{t("users.lastLogin")}</TableHead>
+                <TableHead>{t("users.createdAt")}</TableHead>
+                <TableHead className="text-right">{t("app.actions")}</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {users.length === 0 ? (
+                <EmptyTableRow colSpan={14} />
+              ) : (
+                users.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="tabular-nums text-muted-foreground">{u.id}</TableCell>
+                    <TableCell>
+                      <Avatar name={u.nickname || u.username} src={u.avatar} />
+                    </TableCell>
+                    <TableCell className="font-medium">{u.username}</TableCell>
+                    <TableCell>{u.nickname || "—"}</TableCell>
+                    <TableCell>{u.phone || "—"}</TableCell>
+                    <TableCell>{u.email || "—"}</TableCell>
+                    <TableCell>{genderDict.label(u.gender)}</TableCell>
+                    <TableCell>{deptDict.label(u.department)}</TableCell>
+                    <TableCell>{u.title || "—"}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {(u.roles ?? []).map((r) => (
+                          <Badge key={r.id} variant="muted">
+                            {roleLabel(r.code, r.name, t)}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={u.status === "active" ? "default" : "muted"}>
+                        {statusDict.label(u.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">
+                      {formatDateTime(u.lastLoginAt)}
+                      {u.lastLoginIp ? (
+                        <span className="mt-0.5 block text-muted-foreground">{u.lastLoginIp}</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{formatDateTime(u.createdAt)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button asChild variant="ghost" size="sm">
+                          <Link to={`/users/${u.id}`}>{t("users.detail")}</Link>
+                        </Button>
+                        <Can perm={P.userUpdate}>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
+                            {t("app.edit")}
+                          </Button>
+                        </Can>
+                        <Can perm={P.userDelete}>
+                          <Button variant="ghost" size="sm" onClick={() => setPending(u)}>
+                            {t("app.delete")}
+                          </Button>
+                        </Can>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
       </div>
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={data?.total ?? 0}
+        onPageChange={setPage}
+      />
+
+      <ConfirmAlert
+        open={!!pending}
+        onOpenChange={(next) => {
+          if (!next) setPending(null)
+        }}
+        title={t("app.delete")}
+        description={pending ? t("users.confirmDelete", { name: pending.username }) : ""}
+        onConfirm={() => {
+          if (!pending) return
+          deleteUser.mutate(pending.id, {
+            onSuccess: () => toast.success(t("app.saved")),
+            onError: (e) => toast.error(translateApiError(e, t)),
+          })
+          setPending(null)
+        }}
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
@@ -287,7 +297,7 @@ export function UsersPage() {
                   onFile={async (file) => {
                     const next = await api.uploadUserAvatar(editing.id, file)
                     setEditing(next)
-                    await reload()
+                    toast.success(t("app.saved"))
                   }}
                 />
               </div>

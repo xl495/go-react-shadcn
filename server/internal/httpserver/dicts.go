@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/models"
+	"gorm.io/gorm"
 )
 
 type dictTypeRequest struct {
@@ -23,12 +24,16 @@ type dictItemRequest struct {
 }
 
 func (a *App) handleListDicts(c *gin.Context) {
+	p := parsePage(c, 50, 500)
+	q := a.DB.Model(&models.DictType{})
+	var total int64
+	_ = q.Count(&total).Error
 	var rows []models.DictType
-	if err := a.DB.Order("id asc").Find(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50060, "failed to list dicts")
+	if err := q.Order("id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeListDicts, "failed to list dicts")
 		return
 	}
-	ok(c, rows)
+	ok(c, pageResult[models.DictType]{Items: rows, Total: total, Page: p.Page, PageSize: p.PageSize})
 }
 
 func (a *App) handleCreateDict(c *gin.Context) {
@@ -79,12 +84,13 @@ func (a *App) handleDeleteDict(c *gin.Context) {
 		fail(c, http.StatusNotFound, 40460, "dict not found")
 		return
 	}
-	if err := a.DB.Where("type_code = ?", row.Code).Delete(&models.DictItem{}).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50062, "failed to delete dict items")
-		return
-	}
-	if err := a.DB.Delete(&row).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50063, "failed to delete dict")
+	if err := a.withTx(func(tx *gorm.DB) error {
+		if err := tx.Where("type_code = ?", row.Code).Delete(&models.DictItem{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&row).Error
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, CodeDeleteDict, "failed to delete dict")
 		return
 	}
 	ok(c, gin.H{"deleted": row.ID})
@@ -97,11 +103,15 @@ func (a *App) handleListDictItems(c *gin.Context) {
 		return
 	}
 	var items []models.DictItem
-	if err := a.DB.Where("type_code = ?", typ.Code).Order("sort asc, id asc").Find(&items).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50064, "failed to list dict items")
+	p := parsePage(c, 100, 500)
+	q := a.DB.Model(&models.DictItem{}).Where("type_code = ?", typ.Code)
+	var total int64
+	_ = q.Count(&total).Error
+	if err := q.Order("sort asc, id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&items).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeListDictItems, "failed to list dict items")
 		return
 	}
-	ok(c, items)
+	ok(c, pageResult[models.DictItem]{Items: items, Total: total, Page: p.Page, PageSize: p.PageSize})
 }
 
 func (a *App) handleCreateDictItem(c *gin.Context) {

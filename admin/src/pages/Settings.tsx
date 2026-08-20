@@ -1,9 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react"
+import { useState, type FormEvent } from "react"
+import { toast } from "sonner"
 import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { DICT, useDict } from "@/hooks/dict"
 import { formatDateTime } from "@/utils/format"
 import { translateApiError, useI18n } from "@/providers/i18n"
+import { useChangePassword, useUpdateProfile } from "@/hooks/queries"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { AvatarField } from "@/components/ui/avatar-field"
 import { Button } from "@/components/ui/button"
@@ -17,6 +19,8 @@ export function SettingsPage() {
   const { t } = useI18n()
   const genderDict = useDict(DICT.gender)
   const deptDict = useDict(DICT.department)
+  const updateProfile = useUpdateProfile()
+  const changePassword = useChangePassword()
   const [profile, setProfile] = useState({
     nickname: user?.nickname ?? "",
     email: user?.email ?? "",
@@ -28,55 +32,27 @@ export function SettingsPage() {
   })
   const [oldPassword, setOldPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
-  const [profileMsg, setProfileMsg] = useState("")
-  const [profileErr, setProfileErr] = useState("")
-  const [pwdMsg, setPwdMsg] = useState("")
-  const [pwdErr, setPwdErr] = useState("")
-  const [saving, setSaving] = useState(false)
-  const [changing, setChanging] = useState(false)
-
-  useEffect(() => {
-    setProfile({
-      nickname: user?.nickname ?? "",
-      email: user?.email ?? "",
-      phone: user?.phone ?? "",
-      gender: user?.gender ?? "",
-      department: user?.department ?? "",
-      title: user?.title ?? "",
-      remark: user?.remark ?? "",
-    })
-  }, [user])
 
   async function onSaveProfile(e: FormEvent) {
     e.preventDefault()
-    setProfileErr("")
-    setProfileMsg("")
-    setSaving(true)
     try {
-      const next = await api.updateProfile(profile)
+      const next = await updateProfile.mutateAsync(profile)
       updateUser(next)
-      setProfileMsg(t("settings.saved"))
+      toast.success(t("settings.saved"))
     } catch (err) {
-      setProfileErr(translateApiError(err, t))
-    } finally {
-      setSaving(false)
+      toast.error(translateApiError(err, t))
     }
   }
 
   async function onChangePassword(e: FormEvent) {
     e.preventDefault()
-    setPwdErr("")
-    setPwdMsg("")
-    setChanging(true)
     try {
-      await api.changePassword({ oldPassword, newPassword })
+      await changePassword.mutateAsync({ oldPassword, newPassword })
       setOldPassword("")
       setNewPassword("")
-      setPwdMsg(t("settings.passwordChanged"))
+      toast.success(t("settings.passwordChanged"))
     } catch (err) {
-      setPwdErr(translateApiError(err, t))
-    } finally {
-      setChanging(false)
+      toast.error(translateApiError(err, t))
     }
   }
 
@@ -104,6 +80,7 @@ export function SettingsPage() {
                 onFile={async (file) => {
                   const next = await api.uploadOwnAvatar(file)
                   updateUser(next)
+                  toast.success(t("app.saved"))
                 }}
               />
             </div>
@@ -143,11 +120,9 @@ export function SettingsPage() {
               emptyLabel={t("app.optional")}
               onChange={(value) => setProfile((p) => ({ ...p, department: value }))}
             />
-            {profileErr ? <p className="text-sm text-destructive sm:col-span-2">{profileErr}</p> : null}
-            {profileMsg ? <p className="text-sm text-foreground sm:col-span-2">{profileMsg}</p> : null}
             <div className="sm:col-span-2">
-              <Button type="submit" disabled={saving}>
-                {saving ? t("app.saving") : t("settings.saveProfile")}
+              <Button type="submit" disabled={updateProfile.isPending}>
+                {updateProfile.isPending ? t("app.saving") : t("settings.saveProfile")}
               </Button>
             </div>
           </form>
@@ -179,10 +154,8 @@ export function SettingsPage() {
                 onChange={(e) => setNewPassword(e.target.value)}
               />
             </div>
-            {pwdErr ? <p className="text-sm text-destructive">{pwdErr}</p> : null}
-            {pwdMsg ? <p className="text-sm">{pwdMsg}</p> : null}
-            <Button type="submit" disabled={changing}>
-              {changing ? t("app.saving") : t("settings.changePassword")}
+            <Button type="submit" disabled={changePassword.isPending}>
+              {changePassword.isPending ? t("app.saving") : t("settings.changePassword")}
             </Button>
           </form>
         </CardContent>

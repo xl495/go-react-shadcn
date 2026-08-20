@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/seed"
+	"gorm.io/gorm"
 )
 
 type permissionRequest struct {
@@ -33,16 +34,20 @@ func normalizeKind(k string) string {
 }
 
 func (a *App) handleListPermissions(c *gin.Context) {
+	p := parsePage(c, 50, 500)
+	q := a.DB.Model(&models.Permission{})
+	var total int64
+	_ = q.Count(&total).Error
 	var perms []models.Permission
-	if err := a.DB.Order("id asc").Find(&perms).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50030, "failed to list permissions")
+	if err := q.Order("id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&perms).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeListPerms, "failed to list permissions")
 		return
 	}
 	out := make([]permissionDTO, 0, len(perms))
-	for _, p := range perms {
-		out = append(out, toPermissionDTO(p))
+	for _, perm := range perms {
+		out = append(out, toPermissionDTO(perm))
 	}
-	ok(c, out)
+	ok(c, pageResult[permissionDTO]{Items: out, Total: total, Page: p.Page, PageSize: p.PageSize})
 }
 
 func (a *App) handleCreatePermission(c *gin.Context) {
@@ -113,12 +118,13 @@ func (a *App) handleDeletePermission(c *gin.Context) {
 		fail(c, http.StatusNotFound, 40430, "permission not found")
 		return
 	}
-	if err := a.DB.Model(&perm).Association("Roles").Clear(); err != nil {
-		fail(c, http.StatusInternalServerError, 50032, "failed to detach permission")
-		return
-	}
-	if err := a.DB.Delete(&perm).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50033, "failed to delete permission")
+	if err := a.withTx(func(tx *gorm.DB) error {
+		if err := tx.Model(&perm).Association("Roles").Clear(); err != nil {
+			return err
+		}
+		return tx.Delete(&perm).Error
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, CodeDeletePerm, "failed to delete permission")
 		return
 	}
 	var remaining []models.Role

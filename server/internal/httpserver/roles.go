@@ -115,15 +115,17 @@ func (a *App) handleDeleteRole(c *gin.Context) {
 		return
 	}
 	if seed.IsSeedRole(role.Code) {
-		fail(c, http.StatusBadRequest, 40023, "cannot delete seeded role")
+		fail(c, http.StatusBadRequest, CodeCannotDeleteRole, "cannot delete seeded role")
+		return
+	}
+	if err := a.withTx(func(tx *gorm.DB) error {
+		return tx.Select("Permissions", "Users").Delete(&role).Error
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, CodeDeleteRole, "failed to delete role")
 		return
 	}
 	if err := seed.RemoveRole(a.Enforcer, role.Code); err != nil {
-		fail(c, http.StatusInternalServerError, 50024, "failed to sync rbac")
-		return
-	}
-	if err := a.DB.Select("Permissions", "Users").Delete(&role).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50025, "failed to delete role")
+		fail(c, http.StatusInternalServerError, CodeSyncRBAC, "failed to sync rbac")
 		return
 	}
 	ok(c, gin.H{"deleted": role.ID})
@@ -145,8 +147,10 @@ func (a *App) handleAssignRolePermissions(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40021, "invalid permission ids")
 		return
 	}
-	if err := a.DB.Model(&role).Association("Permissions").Replace(perms); err != nil {
-		fail(c, http.StatusInternalServerError, 50021, "failed to assign permissions")
+	if err := a.withTx(func(tx *gorm.DB) error {
+		return tx.Model(&role).Association("Permissions").Replace(perms)
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, CodeAssignPerms, "failed to assign permissions")
 		return
 	}
 	if err := seed.SyncRolePolicies(a.Enforcer, role.Code, perms); err != nil {

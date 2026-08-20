@@ -1,11 +1,12 @@
-import { Suspense } from "react"
+import { lazy, Suspense } from "react"
 import { Route } from "react-router-dom"
 import { PageFallback } from "@/components/PageFallback"
 import { RequirePerm } from "@/providers/auth"
 import { FALLBACK_MENU_ROUTES, flattenMenuRoutes, useMenus } from "@/hooks/queries"
 import { resolvePage } from "@/constants/route-registry"
-import { SettingsPage } from "@/pages/Settings"
-import { UserDetailPage } from "@/pages/UserDetail"
+
+const SettingsPage = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.SettingsPage })))
+const UserDetailPage = lazy(() => import("@/pages/UserDetail").then((m) => ({ default: m.UserDetailPage })))
 
 function menuRouteProps(routePath: string): { index?: boolean; path?: string } {
   if (routePath === "/") return { index: true }
@@ -39,12 +40,21 @@ export function DynamicAuthRoutes() {
 
   return (
     <>
-      <Route path="settings" element={<SettingsPage />} />
+      <Route
+        path="settings"
+        element={
+          <Suspense fallback={<PageFallback />}>
+            <SettingsPage />
+          </Suspense>
+        }
+      />
       <Route
         path="users/:id"
         element={
           <RequirePerm perm="user:list">
-            <UserDetailPage />
+            <Suspense fallback={<PageFallback />}>
+              <UserDetailPage />
+            </Suspense>
           </RequirePerm>
         }
       />

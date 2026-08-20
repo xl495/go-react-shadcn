@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { api } from "@/api/client"
 import type { DictItem } from "@/types"
 
@@ -15,32 +16,20 @@ export function dictLabel(items: DictItem[], value?: string | null, fallback = "
 }
 
 export function useDict(code: string) {
-  const [items, setItems] = useState<DictItem[]>([])
-  const [loaded, setLoaded] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    api
-      .lookupDict(code)
-      .then((pack) => {
-        if (!cancelled) setItems(pack.items ?? [])
-      })
-      .catch(() => {
-        if (!cancelled) setItems([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoaded(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [code])
-
+  const query = useQuery({
+    queryKey: ["dicts", "lookup", code],
+    queryFn: () => api.lookupDict(code),
+  })
+  const items = useMemo(() => query.data?.items ?? [], [query.data?.items])
   const byValue = useMemo(() => {
     const map = new Map<string, string>()
     for (const it of items) map.set(it.value, it.label)
     return map
   }, [items])
 
-  return { items, loaded, label: (value?: string | null) => (value ? byValue.get(value) ?? value : "—") }
+  return {
+    items,
+    loaded: query.isSuccess || query.isError,
+    label: (value?: string | null) => (value ? (byValue.get(value) ?? value) : "—"),
+  }
 }

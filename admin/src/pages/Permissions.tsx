@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
-import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { permLabel, translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
+import { PAGE_SIZE, useCreatePermission, useDeletePermission, usePermissions } from "@/hooks/queries"
+import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -30,43 +32,28 @@ const empty = { name: "", code: "", path: "", method: "GET", kind: "button", des
 export function PermissionsPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const [items, setItems] = useState<Permission[]>([])
-  const [error, setError] = useState("")
+  const [page, setPage] = useState(1)
+  const { data, isLoading, error } = usePermissions({ page, pageSize: PAGE_SIZE })
+  const items = data?.items ?? []
+  const createPerm = useCreatePermission()
+  const deletePerm = useDeletePermission()
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(empty)
-
-  async function reload() {
-    setItems(await api.permissions())
-  }
-
-  useEffect(() => {
-    reload().catch((e: Error) => setError(translateApiError(e, t)))
-  }, [])
+  const [pending, setPending] = useState<Permission | null>(null)
 
   async function create() {
-    setError("")
     try {
-      await api.createPermission(form)
+      await createPerm.mutateAsync(form)
+      toast.success(t("app.saved"))
       setOpen(false)
       setForm(empty)
-      await reload()
     } catch (e) {
-      setError(translateApiError(e, t) || t("permissions.createFailed"))
-    }
-  }
-
-  async function remove(p: Permission) {
-    if (!confirm(t("permissions.confirmDelete", { code: p.code }))) return
-    try {
-      await api.deletePermission(p.id)
-      await reload()
-    } catch (e) {
-      setError(translateApiError(e, t) || t("permissions.deleteFailed"))
+      toast.error(translateApiError(e, t) || t("permissions.createFailed"))
     }
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-5xl space-y-4">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">{t("permissions.title")}</h2>
@@ -76,45 +63,71 @@ export function PermissionsPage() {
           <Button onClick={() => setOpen(true)}>{t("permissions.create")}</Button>
         </Can>
       </div>
-      {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
-      <div className="mt-6 rounded-xl border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("app.name")}</TableHead>
-              <TableHead>{t("app.code")}</TableHead>
-              <TableHead>{t("permissions.type")}</TableHead>
-              <TableHead>{t("permissions.rule")}</TableHead>
-              {can(P.permDelete) ? <TableHead className="text-right">{t("app.actions")}</TableHead> : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell className="font-medium">{permLabel(p.code, p.name, t)}</TableCell>
-                <TableCell className="font-mono text-xs">{p.code}</TableCell>
-                <TableCell>
-                  <Badge variant={p.kind === "button" ? "default" : "muted"}>
-                    {t(`kinds.${p.kind || "api"}`)}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">
-                    {p.method} {p.path}
-                  </Badge>
-                </TableCell>
-                {can(P.permDelete) ? (
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => remove(p)}>
-                      {t("app.delete")}
-                    </Button>
-                  </TableCell>
-                ) : null}
+      {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
+      <div className="rounded-xl border bg-card">
+        {isLoading ? (
+          <TableSkeleton />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("app.name")}</TableHead>
+                <TableHead>{t("app.code")}</TableHead>
+                <TableHead>{t("permissions.type")}</TableHead>
+                <TableHead>{t("permissions.rule")}</TableHead>
+                {can(P.permDelete) ? <TableHead className="text-right">{t("app.actions")}</TableHead> : null}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {items.length === 0 ? (
+                <EmptyTableRow colSpan={can(P.permDelete) ? 5 : 4} />
+              ) : (
+                items.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium">{permLabel(p.code, p.name, t)}</TableCell>
+                    <TableCell className="font-mono text-xs">{p.code}</TableCell>
+                    <TableCell>
+                      <Badge variant={p.kind === "button" ? "default" : "muted"}>
+                        {t(`kinds.${p.kind || "api"}`)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {p.method} {p.path}
+                      </Badge>
+                    </TableCell>
+                    {can(P.permDelete) ? (
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => setPending(p)}>
+                          {t("app.delete")}
+                        </Button>
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
       </div>
+      <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={setPage} />
+
+      <ConfirmAlert
+        open={!!pending}
+        onOpenChange={(next) => {
+          if (!next) setPending(null)
+        }}
+        title={t("app.delete")}
+        description={pending ? t("permissions.confirmDelete", { code: pending.code }) : ""}
+        onConfirm={() => {
+          if (!pending) return
+          deletePerm.mutate(pending.id, {
+            onSuccess: () => toast.success(t("app.saved")),
+            onError: (e) => toast.error(translateApiError(e, t) || t("permissions.deleteFailed")),
+          })
+          setPending(null)
+        }}
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

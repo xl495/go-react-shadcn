@@ -1,16 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import { en } from "@/locales/en"
-import { zhCN } from "@/locales/zh-CN"
-import { zhTW } from "@/locales/zh-TW"
 import { ApiError } from "@/api/client"
 
 export const LOCALES = ["zh-CN", "zh-TW", "en"] as const
 export type Locale = (typeof LOCALES)[number]
 
-const catalogs: Record<Locale, Record<string, unknown>> = {
-  "zh-CN": zhCN,
-  "zh-TW": zhTW,
-  en,
+const loaders: Record<Locale, () => Promise<Record<string, unknown>>> = {
+  "zh-CN": () => import("@/locales/zh-CN").then((m) => m.zhCN as unknown as Record<string, unknown>),
+  "zh-TW": () => import("@/locales/zh-TW").then((m) => m.zhTW as unknown as Record<string, unknown>),
+  en: () => import("@/locales/en").then((m) => m.en as unknown as Record<string, unknown>),
 }
 
 export const LOCALE_META: Record<Locale, { short: string; label: string; html: string }> = {
@@ -53,21 +50,42 @@ export function detectLocale(): Locale {
   return "en"
 }
 
-export function applyLocale(locale: Locale) {
+export function applyLocale(locale: Locale, catalog?: Record<string, unknown>) {
   document.documentElement.lang = LOCALE_META[locale].html
-  document.title = lookup(catalogs[locale], "app.title") ?? "Latch"
+  document.title = (catalog ? lookup(catalog, "app.title") : undefined) ?? "Latch"
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(() => detectLocale())
+  const [catalog, setCatalog] = useState<Record<string, unknown> | null>(null)
+  const [fallback, setFallback] = useState<Record<string, unknown> | null>(null)
 
   useEffect(() => {
-    applyLocale(locale)
+    let cancelled = false
+    loaders[locale]().then((next) => {
+      if (cancelled) return
+      setCatalog(next)
+      applyLocale(locale, next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [locale])
+
+  useEffect(() => {
+    if (locale === "zh-CN") return
+    let cancelled = false
+    loaders["zh-CN"]().then((next) => {
+      if (!cancelled) setFallback(next)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [locale])
 
   const value = useMemo<I18nState>(() => {
     const t = (key: string, vars?: Record<string, string | number>) => {
-      const raw = lookup(catalogs[locale], key) ?? lookup(catalogs["zh-CN"], key) ?? key
+      const raw = lookup(catalog, key) ?? lookup(fallback, key) ?? key
       return interpolate(raw, vars)
     }
     return {
@@ -78,7 +96,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       },
       t,
     }
-  }, [locale])
+  }, [locale, catalog, fallback])
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
 }
@@ -120,4 +138,3 @@ export function roleDesc(code: string, fallback: string, t: I18nState["t"]) {
   const translated = t(key)
   return translated === key ? fallback : translated
 }
-
