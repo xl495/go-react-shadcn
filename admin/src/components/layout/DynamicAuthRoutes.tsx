@@ -1,22 +1,23 @@
 import { lazy, Suspense } from "react"
-import { Route } from "react-router-dom"
+import type { RouteObject } from "react-router-dom"
 import { PageFallback } from "@/components/PageFallback"
 import { RequirePerm } from "@/providers/auth"
 import { FALLBACK_MENU_ROUTES, flattenMenuRoutes, useMenus } from "@/hooks/queries"
 import { resolvePage } from "@/constants/route-registry"
+import type { MenuNode } from "@/types"
 
 const SettingsPage = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.SettingsPage })))
+const ChangePasswordPage = lazy(() =>
+  import("@/pages/ChangePassword").then((m) => ({ default: m.ChangePasswordPage })),
+)
+const MailTemplateEditorPage = lazy(() =>
+  import("@/pages/MailTemplateEditor").then((m) => ({ default: m.MailTemplateEditorPage })),
+)
 const UserDetailPage = lazy(() => import("@/pages/UserDetail").then((m) => ({ default: m.UserDetailPage })))
 
-function menuRouteProps(routePath: string): { index?: boolean; path?: string } {
-  if (routePath === "/") return { index: true }
-  return { path: routePath.replace(/^\//, "") }
-}
-
-function renderMenuRoute(m: (typeof FALLBACK_MENU_ROUTES)[number]) {
+function menuRouteObject(m: MenuNode): RouteObject | null {
   const Page = resolvePage(m.component)
   if (!Page) return null
-  const props = menuRouteProps(m.routePath)
   const element = (
     <RequirePerm perm={m.code}>
       <Suspense fallback={<PageFallback />}>
@@ -24,41 +25,65 @@ function renderMenuRoute(m: (typeof FALLBACK_MENU_ROUTES)[number]) {
       </Suspense>
     </RequirePerm>
   )
-  if (props.index) {
-    return <Route key={m.code} index element={element} />
-  }
-  return <Route key={m.code} path={props.path} element={element} />
+  if (m.routePath === "/") return { index: true, element }
+  return { path: m.routePath.replace(/^\//, ""), element }
 }
 
-export function DynamicAuthRoutes() {
+export function useDynamicAuthRoutes(): RouteObject[] {
   const { data: menus, isLoading } = useMenus()
   const routes = flattenMenuRoutes(menus?.length ? menus : FALLBACK_MENU_ROUTES)
 
   if (isLoading && !menus) {
-    return <Route index element={<PageFallback />} />
+    return [{ index: true, element: <PageFallback /> }]
   }
 
-  return (
-    <>
-      <Route
-        path="settings"
-        element={
+  return [
+    {
+      path: "settings/password",
+      element: (
+        <Suspense fallback={<PageFallback />}>
+          <ChangePasswordPage />
+        </Suspense>
+      ),
+    },
+    {
+      path: "settings",
+      element: (
+        <Suspense fallback={<PageFallback />}>
+          <SettingsPage />
+        </Suspense>
+      ),
+    },
+    {
+      path: "users/:id",
+      element: (
+        <RequirePerm perm="user:list">
           <Suspense fallback={<PageFallback />}>
-            <SettingsPage />
+            <UserDetailPage />
           </Suspense>
-        }
-      />
-      <Route
-        path="users/:id"
-        element={
-          <RequirePerm perm="user:list">
-            <Suspense fallback={<PageFallback />}>
-              <UserDetailPage />
-            </Suspense>
-          </RequirePerm>
-        }
-      />
-      {routes.map((m) => renderMenuRoute(m))}
-    </>
-  )
+        </RequirePerm>
+      ),
+    },
+    {
+      path: "mail/campaigns/new",
+      element: (
+        <RequirePerm perm="mail:campaign:list">
+          <Suspense fallback={<PageFallback />}>
+            <MailTemplateEditorPage />
+          </Suspense>
+        </RequirePerm>
+      ),
+    },
+    {
+      path: "mail/campaigns/:id",
+      element: (
+        <RequirePerm perm="mail:campaign:list">
+          <Suspense fallback={<PageFallback />}>
+            <MailTemplateEditorPage />
+          </Suspense>
+        </RequirePerm>
+      ),
+    },
+    ...routes.map(menuRouteObject).filter((r): r is RouteObject => r != null),
+  ]
 }

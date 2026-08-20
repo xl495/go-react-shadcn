@@ -2,8 +2,15 @@ import { request, uploadAvatar, qs } from "./http"
 import type { PageResult, User } from "@/types"
 
 export const usersApi = {
-  users: (params?: { page?: number; pageSize?: number; q?: string }) =>
-    request<PageResult<User>>(`/api/v1/users${qs(params ?? {})}`),
+  users: (params?: {
+    page?: number
+    pageSize?: number
+    q?: string
+    status?: string
+    gender?: string
+    department?: string
+    roleId?: number
+  }) => request<PageResult<User>>(`/api/v1/users${qs(params ?? {})}`),
   getUser: (id: number) => request<User>(`/api/v1/users/${id}`),
   createUser: (body: {
     username: string
@@ -16,6 +23,8 @@ export const usersApi = {
     department?: string
     title?: string
     remark?: string
+    timezone?: string
+    marketingOptIn?: boolean
     roleIds: number[]
   }) => request<User>("/api/v1/users", { method: "POST", body: JSON.stringify(body) }),
   updateUser: (
@@ -30,6 +39,8 @@ export const usersApi = {
       department?: string
       title?: string
       remark?: string
+      timezone?: string
+      marketingOptIn?: boolean
     },
   ) => request<User>(`/api/v1/users/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteUser: (id: number) => request<{ deleted: number }>(`/api/v1/users/${id}`, { method: "DELETE" }),

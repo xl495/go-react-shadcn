@@ -4,6 +4,7 @@ import { Can } from "@/components/auth/Can"
 import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
+import { useSearchPageParams } from "@/hooks/list-params"
 import {
   PAGE_SIZE,
   useCreateDepartment,
@@ -12,6 +13,7 @@ import {
   useUpdateDepartment,
 } from "@/hooks/queries"
 import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -49,8 +51,9 @@ const emptyForm = { name: "", code: "", parentId: "", sort: "0", leader: "", sta
 export function DepartmentsPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const [page, setPage] = useState(1)
-  const { data, isLoading, error } = useDepartments({ page, pageSize: PAGE_SIZE })
+  const [{ page, q }, setParams] = useSearchPageParams()
+  const [draftQ, setDraftQ] = useSyncedDraft(q)
+  const { data, isLoading, error } = useDepartments({ page, pageSize: PAGE_SIZE, q: q || undefined })
   const roots = data?.items ?? []
   const rows = flatten(roots)
   const createDept = useCreateDepartment()
@@ -113,6 +116,29 @@ export function DepartmentsPage() {
           <Button onClick={openCreate}>{t("dept.create")}</Button>
         </Can>
       </div>
+      <FilterForm onSubmit={() => void setParams({ q: draftQ.trim(), page: 1 })}>
+        <SearchField
+          id="dept-q"
+          label={t("app.search")}
+          value={draftQ}
+          placeholder={t("dept.search")}
+          inputClassName="w-64"
+          onChange={setDraftQ}
+        />
+        <SearchSubmitButton />
+        {q || draftQ ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setDraftQ("")
+              void setParams({ q: "", page: 1 })
+            }}
+          >
+            {t("app.resetFilters")}
+          </Button>
+        ) : null}
+      </FilterForm>
       {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
       <div className="rounded-lg border bg-card">
         {isLoading ? (
@@ -169,7 +195,7 @@ export function DepartmentsPage() {
           </Table>
         )}
       </div>
-      <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={setPage} />
+      <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={(next) => void setParams({ page: next })} />
 
       <ConfirmAlert
         open={!!pending}

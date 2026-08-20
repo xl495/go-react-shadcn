@@ -3,12 +3,14 @@ import { Navigate, useLocation } from "react-router-dom"
 import { ApiError, getToken, setToken, setUnauthorizedHandler } from "@/api/client"
 import { useMe } from "@/hooks/queries"
 import { queryClient } from "@/providers/query-client"
+import { PageFallback } from "@/components/PageFallback"
 import type { User } from "@/types"
 
 const USER_KEY = "latch.user"
 
 type AuthState = {
   user: User | null
+  loading: boolean
   login: (token: string, user: User) => void
   logout: () => void
   updateUser: (next: User) => void
@@ -34,15 +36,19 @@ function isAuthError(err: unknown) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [cachedUser, setCachedUser] = useState<User | null>(readUser)
-  const meQuery = useMe(!!getToken())
+  const hasToken = !!getToken()
+  const meQuery = useMe(hasToken)
+  const loading = hasToken && meQuery.isPending
+  const user = isAuthError(meQuery.error) ? null : (meQuery.data ?? null)
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setToken(null)
       localStorage.removeItem(USER_KEY)
       setCachedUser(null)
+      queryClient.removeQueries({ queryKey: ["auth", "me"] })
       if (!window.location.pathname.startsWith("/login")) {
-        window.location.href = "/login"
+        window.location.assign("/login")
       }
     })
     return () => setUnauthorizedHandler(null)
@@ -51,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (meQuery.data) {
       localStorage.setItem(USER_KEY, JSON.stringify(meQuery.data))
+      setCachedUser(meQuery.data)
     }
   }, [meQuery.data])
 
@@ -58,9 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isAuthError(meQuery.error)) return
     setToken(null)
     localStorage.removeItem(USER_KEY)
+    setCachedUser(null)
   }, [meQuery.error])
-
-  const user = isAuthError(meQuery.error) ? null : (meQuery.data ?? cachedUser)
 
   const value = useMemo<AuthState>(() => {
     const codes = new Set<string>(user?.permissionCodes ?? [])
@@ -71,12 +77,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isAdmin = roleCodes.has("admin") || codes.has("admin:all") || codes.has("*")
     return {
       user,
+      loading,
       isAdmin,
       can: (code) => isAdmin || codes.has(code),
       login: (token, next) => {
         setToken(token)
         localStorage.setItem(USER_KEY, JSON.stringify(next))
         setCachedUser(next)
+        queryClient.setQueryData(["auth", "me"], next)
       },
       logout: () => {
         setToken(null)
@@ -90,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         queryClient.setQueryData(["auth", "me"], next)
       },
     }
-  }, [user])
+  }, [user, loading])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
@@ -102,8 +110,9 @@ export function useAuth() {
 }
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
   const location = useLocation()
+  if (loading) return <PageFallback />
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
   return children
 }

@@ -10,16 +10,16 @@ import (
 )
 
 type menuNode struct {
-	ID          uint       `json:"id"`
-	Name        string     `json:"name"`
-	Code        string     `json:"code"`
-	Kind        string     `json:"kind"`
-	RoutePath   string     `json:"routePath"`
-	Component   string     `json:"component"`
-	Icon        string     `json:"icon"`
-	Sort        int        `json:"sort"`
-	Hidden      bool       `json:"hidden"`
-	Children    []menuNode `json:"children,omitempty"`
+	ID        uint       `json:"id"`
+	Name      string     `json:"name"`
+	Code      string     `json:"code"`
+	Kind      string     `json:"kind"`
+	RoutePath string     `json:"routePath"`
+	Component string     `json:"component"`
+	Icon      string     `json:"icon"`
+	Sort      int        `json:"sort"`
+	Hidden    bool       `json:"hidden"`
+	Children  []menuNode `json:"children,omitempty"`
 }
 
 func (a *App) handleMenus(c *gin.Context) {
@@ -46,7 +46,41 @@ func (a *App) handleMenus(c *gin.Context) {
 			filtered = append(filtered, p)
 		}
 	}
-	ok(c, buildMenuTree(filtered, nil))
+	ok(c, buildMenuTree(includeMenuAncestors(perms, filtered), nil))
+}
+
+// includeMenuAncestors keeps directory parents in the tree when a child is visible,
+// even if the user was not assigned the parent permission code.
+func includeMenuAncestors(all, filtered []models.Permission) []models.Permission {
+	byID := make(map[uint]models.Permission, len(all))
+	for _, p := range all {
+		byID[p.ID] = p
+	}
+	seen := make(map[uint]struct{}, len(filtered)+8)
+	out := make([]models.Permission, 0, len(filtered)+8)
+	for _, p := range filtered {
+		if _, ok := seen[p.ID]; ok {
+			continue
+		}
+		seen[p.ID] = struct{}{}
+		out = append(out, p)
+	}
+	for i := 0; i < len(out); i++ {
+		p := out[i]
+		if p.ParentID == nil {
+			continue
+		}
+		parent, ok := byID[*p.ParentID]
+		if !ok {
+			continue
+		}
+		if _, ok := seen[parent.ID]; ok {
+			continue
+		}
+		seen[parent.ID] = struct{}{}
+		out = append(out, parent)
+	}
+	return out
 }
 
 func buildMenuTree(perms []models.Permission, parentID *uint) []menuNode {

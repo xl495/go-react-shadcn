@@ -41,6 +41,7 @@ func (a *App) handleListDepartments(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeListDepts, "failed to list departments")
 		return
 	}
+	rows = filterDepartments(rows, c.Query("q"))
 	tree := buildDeptTree(rows, nil)
 	p := parsePage(c, 50, 500)
 	total := int64(len(tree))
@@ -53,6 +54,45 @@ func (a *App) handleListDepartments(c *gin.Context) {
 		end = len(tree)
 	}
 	ok(c, pageResult[models.Department]{Items: tree[start:end], Total: total, Page: p.Page, PageSize: p.PageSize})
+}
+
+func filterDepartments(rows []models.Department, kw string) []models.Department {
+	kw = strings.ToLower(strings.TrimSpace(kw))
+	if kw == "" {
+		return rows
+	}
+	byID := make(map[uint]models.Department, len(rows))
+	matched := make(map[uint]bool)
+	for _, d := range rows {
+		byID[d.ID] = d
+		if strings.Contains(strings.ToLower(d.Name), kw) ||
+			strings.Contains(strings.ToLower(d.Code), kw) ||
+			strings.Contains(strings.ToLower(d.Leader), kw) {
+			matched[d.ID] = true
+		}
+	}
+	keep := make(map[uint]bool, len(matched))
+	for id := range matched {
+		cur := id
+		for {
+			if keep[cur] {
+				break
+			}
+			keep[cur] = true
+			p := byID[cur].ParentID
+			if p == nil {
+				break
+			}
+			cur = *p
+		}
+	}
+	out := make([]models.Department, 0, len(keep))
+	for _, d := range rows {
+		if keep[d.ID] {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 func buildDeptTree(rows []models.Department, parentID *uint) []models.Department {

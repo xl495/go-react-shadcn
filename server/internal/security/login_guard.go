@@ -22,11 +22,21 @@ type LoginGuard struct {
 }
 
 func NewLoginGuard() *LoginGuard {
+	return NewIPLimiter(DefaultIPLimit, DefaultIPWindow)
+}
+
+func NewIPLimiter(limit int, window time.Duration) *LoginGuard {
+	if limit <= 0 {
+		limit = DefaultIPLimit
+	}
+	if window <= 0 {
+		window = DefaultIPWindow
+	}
 	return &LoginGuard{
 		maxFailures: DefaultMaxFailures,
 		lockFor:     DefaultLockMinutes * time.Minute,
-		ipLimit:     DefaultIPLimit,
-		ipWindow:    DefaultIPWindow,
+		ipLimit:     limit,
+		ipWindow:    window,
 		ipHits:      make(map[string][]time.Time),
 	}
 }

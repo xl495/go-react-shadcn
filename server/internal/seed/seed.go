@@ -26,6 +26,7 @@ const (
 	DictGender       = "sys_gender"
 	DictDepartment   = "sys_department"
 	DictYesNo        = "sys_yes_no"
+	DictPermKind     = "sys_perm_kind"
 )
 
 const (
@@ -43,6 +44,8 @@ func catalog() []catalogPerm {
 		{"全部管理接口", "admin:all", "/api/v1/*", "*", KindAPI, "管理员通配权限"},
 		{"查看自己", "me:read", "/api/v1/auth/me", "GET", KindAPI, "读取当前登录用户"},
 		{"仪表盘", "dashboard:read", "/api/v1/dashboard/stats", "GET", KindMenu, "读取仪表盘统计"},
+		{"组织管理", "org:menu", "/admin/org", "GET", KindMenu, "组织目录"},
+		{"系统管理", "system:menu", "/admin/system", "GET", KindMenu, "系统目录"},
 		{"用户菜单", "user:list", "/api/v1/users", "GET", KindMenu, "进入用户页"},
 		{"用户详情", "user:detail", "/api/v1/users/:id", "GET", KindAPI, "读取单个用户"},
 		{"新建用户", "user:create", "/api/v1/users", "POST", KindButton, "用户页-新建按钮"},
@@ -71,6 +74,16 @@ func catalog() []catalogPerm {
 		{"新建参数", "config:create", "/api/v1/configs", "POST", KindButton, ""},
 		{"更新参数", "config:update", "/api/v1/configs/:id", "PUT", KindButton, ""},
 		{"删除参数", "config:delete", "/api/v1/configs/:id", "DELETE", KindButton, ""},
+		{"发送测试邮件", "mail:test", "/api/v1/mail/test", "POST", KindButton, "系统参数页-测试发信"},
+		{"邮件队列", "mail:jobs:list", "/api/v1/mail/jobs", "GET", KindMenu, "查看投递队列"},
+		{"重试邮件", "mail:jobs:retry", "/api/v1/mail/jobs/:id/retry", "POST", KindButton, ""},
+		{"取消邮件", "mail:jobs:cancel", "/api/v1/mail/jobs/:id/cancel", "POST", KindButton, ""},
+		{"邮件模板", "mail:campaign:list", "/api/v1/mail/campaigns", "GET", KindMenu, "邮件模板"},
+		{"查看模板", "mail:campaign:detail", "/api/v1/mail/campaigns/:id", "GET", KindAPI, ""},
+		{"新建模板", "mail:campaign:create", "/api/v1/mail/campaigns", "POST", KindButton, ""},
+		{"更新模板", "mail:campaign:update", "/api/v1/mail/campaigns/:id", "PUT", KindButton, ""},
+		{"删除模板", "mail:campaign:delete", "/api/v1/mail/campaigns/:id", "DELETE", KindButton, ""},
+		{"投放模板", "mail:campaign:schedule", "/api/v1/mail/campaigns/:id/schedule", "POST", KindButton, ""},
 		{"日志菜单", "log:list", "/api/v1/logs", "GET", KindMenu, "进入操作日志页"},
 		{"登录日志", "log:login:list", "/api/v1/logs/login", "GET", KindAPI, "查询登录日志"},
 		{"API日志", "log:api:list", "/api/v1/logs/api", "GET", KindAPI, "查询 API 日志"},
@@ -92,6 +105,9 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 		return err
 	}
 	if err := syncMenuMeta(db); err != nil {
+		return err
+	}
+	if err := syncMenuParents(db); err != nil {
 		return err
 	}
 	if err := ensureDepartments(db); err != nil {
@@ -129,6 +145,7 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 		"dict:list", "dict:item:list",
 		"config:list",
 		"log:list",
+		"mail:jobs:list", "mail:campaign:list", "mail:campaign:detail",
 	)
 
 	if err := db.Model(&adminRole).Association("Permissions").Replace(adminPerms); err != nil {
@@ -356,6 +373,7 @@ func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (mo
 			Nickname: profile.Nickname, Avatar: profile.Avatar, Email: profile.Email,
 			Phone: profile.Phone, Gender: profile.Gender,
 			Department: profile.Department, Title: profile.Title, Remark: profile.Remark,
+			Timezone: mailerDefaultTZ(), MarketingOptIn: true,
 		}
 		if id := lookupDepartmentID(db, profile.Department); id != nil {
 			user.DepartmentID = id
@@ -380,8 +398,13 @@ func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (mo
 	if user.Remark == "" {
 		user.Remark = profile.Remark
 	}
+	if user.Timezone == "" {
+		user.Timezone = mailerDefaultTZ()
+	}
 	return user, db.Save(&user).Error
 }
+
+func mailerDefaultTZ() string { return "Asia/Shanghai" }
 
 func writeSeedAvatar(uploadDir, username, letter, bg string) (string, error) {
 	dir := filepath.Join(uploadDir, "avatars")
@@ -409,6 +432,7 @@ func ensureDicts(db *gorm.DB) error {
 		{DictGender, "性别", []item{{"男", "male"}, {"女", "female"}, {"其他", "other"}}},
 		{DictDepartment, "部门", []item{{"技术部", "tech"}, {"运营部", "ops"}, {"市场部", "market"}}},
 		{DictYesNo, "是否", []item{{"是", "1"}, {"否", "0"}}},
+		{DictPermKind, "权限类型", []item{{"菜单", KindMenu}, {"按钮", KindButton}, {"接口", KindAPI}}},
 	}
 	for _, typ := range catalog {
 		var dt models.DictType
@@ -446,7 +470,24 @@ func ensureConfigs(db *gorm.DB) error {
 	rows := []models.SysConfig{
 		{Key: "app.name", Value: "Latch Admin", Name: "系统名称", Group: "app", Remark: "浏览器标题与侧栏品牌"},
 		{Key: "app.captcha_enabled", Value: "1", Name: "登录验证码", Group: "app", Remark: "1 开启 / 0 关闭"},
-		{Key: "app.default_locale", Value: "zh-CN", Name: "默认语言", Group: "app", Remark: "zh-CN / zh-TW / en"},
+		{Key: "app.default_locale", Value: "zh-CN", Name: "默认语言", Group: "app", Remark: "zh-CN / en"},
+		{Key: "mail.enabled", Value: "0", Name: "启用发信", Group: "mail", Remark: "1 开启 / 0 关闭，关闭时不发送任何邮件"},
+		{Key: "mail.host", Value: "", Name: "SMTP 主机", Group: "mail", Remark: "例如 smtp.example.com"},
+		{Key: "mail.port", Value: "587", Name: "SMTP 端口", Group: "mail", Remark: "587 STARTTLS / 465 SSL"},
+		{Key: "mail.username", Value: "", Name: "SMTP 用户名", Group: "mail", Remark: ""},
+		{Key: "mail.password", Value: "", Name: "SMTP 密码", Group: "mail", Remark: "列表中不会回显明文"},
+		{Key: "mail.from", Value: "", Name: "发件人邮箱", Group: "mail", Remark: "MAIL FROM 地址"},
+		{Key: "mail.from_name", Value: "Latch", Name: "发件人名称", Group: "mail", Remark: "收件箱显示的名称"},
+		{Key: "mail.tls", Value: "starttls", Name: "加密方式", Group: "mail", Remark: "starttls / ssl / none"},
+		{Key: "mail.reset_base_url", Value: "http://127.0.0.1:5173", Name: "重置链接前缀", Group: "mail", Remark: "忘记密码邮件中的站点地址，用户端可改为 :5174"},
+		{Key: "mail.default_timezone", Value: "Asia/Shanghai", Name: "默认时区", Group: "mail", Remark: "IANA，用户未填时区时使用"},
+		{Key: "mail.quiet_start", Value: "22:00", Name: "静默开始", Group: "mail", Remark: "本地时间，运营/营销在此之后不发送"},
+		{Key: "mail.quiet_end", Value: "08:00", Name: "静默结束", Group: "mail", Remark: "可跨午夜"},
+		{Key: "mail.marketing_start", Value: "09:00", Name: "营销开始", Group: "mail", Remark: "营销邮件允许发送的本地开始时间"},
+		{Key: "mail.marketing_end", Value: "21:00", Name: "营销结束", Group: "mail", Remark: "营销邮件允许发送的本地结束时间"},
+		{Key: "mail.rate_per_minute", Value: "30", Name: "每分钟封数", Group: "mail", Remark: "Worker 全局 SMTP 上限"},
+		{Key: "mail.max_attempts", Value: "5", Name: "最大重试", Group: "mail", Remark: "超过后进入死信"},
+		{Key: "mail.worker_tick_ms", Value: "2000", Name: "Worker 间隔", Group: "mail", Remark: "毫秒；紧急邮件会额外唤醒"},
 	}
 	for _, row := range rows {
 		var existing models.SysConfig
@@ -503,14 +544,18 @@ func syncMenuMeta(db *gorm.DB) error {
 		sort                   int
 	}
 	meta := map[string]row{
-		"dashboard:read": {"/", "LayoutDashboard", "DashboardPage", 10},
-		"user:list":      {"/users", "Users", "UsersPage", 20},
-		"dept:list":      {"/departments", "Building2", "DepartmentsPage", 25},
-		"role:list":      {"/roles", "Shield", "RolesPage", 30},
-		"perm:list":      {"/permissions", "KeyRound", "PermissionsPage", 40},
-		"dict:list":      {"/dicts", "BookMarked", "DictsPage", 50},
-		"config:list":    {"/configs", "Settings2", "ConfigsPage", 60},
-		"log:list":       {"/logs", "ClipboardList", "LogsPage", 70},
+		"dashboard:read":     {"/", "LayoutDashboard", "DashboardPage", 10},
+		"org:menu":           {"", "FolderTree", "", 15},
+		"system:menu":        {"", "Monitor", "", 45},
+		"user:list":          {"/users", "Users", "UsersPage", 20},
+		"dept:list":          {"/departments", "Building2", "DepartmentsPage", 25},
+		"role:list":          {"/roles", "Shield", "RolesPage", 30},
+		"perm:list":          {"/permissions", "KeyRound", "PermissionsPage", 40},
+		"dict:list":          {"/dicts", "BookMarked", "DictsPage", 50},
+		"config:list":        {"/configs", "Settings2", "ConfigsPage", 60},
+		"mail:jobs:list":     {"/mail/jobs", "Mail", "MailJobsPage", 65},
+		"mail:campaign:list": {"/mail/campaigns", "FileText", "MailCampaignsPage", 66},
+		"log:list":           {"/logs", "ClipboardList", "LogsPage", 70},
 	}
 	for code, m := range meta {
 		if err := db.Model(&models.Permission{}).Where("code = ?", code).Updates(map[string]any{
@@ -520,6 +565,34 @@ func syncMenuMeta(db *gorm.DB) error {
 			"sort":       m.sort,
 		}).Error; err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func syncMenuParents(db *gorm.DB) error {
+	idByCode := func(code string) (uint, error) {
+		var p models.Permission
+		if err := db.Select("id").Where("code = ?", code).First(&p).Error; err != nil {
+			return 0, err
+		}
+		return p.ID, nil
+	}
+	groups := map[string][]string{
+		"org:menu": {
+			"user:list", "dept:list", "role:list", "perm:list",
+		},
+		"system:menu": {
+			"dict:list", "config:list", "mail:jobs:list", "mail:campaign:list", "log:list",
+		},
+	}
+	for parentCode, children := range groups {
+		pid, err := idByCode(parentCode)
+		if err != nil {
+			return fmt.Errorf("menu parent %s: %w", parentCode, err)
+		}
+		if err := db.Model(&models.Permission{}).Where("code IN ?", children).Update("parent_id", pid).Error; err != nil {
+			return fmt.Errorf("menu children of %s: %w", parentCode, err)
 		}
 	}
 	return nil

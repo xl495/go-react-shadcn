@@ -26,6 +26,7 @@ type dictItemRequest struct {
 func (a *App) handleListDicts(c *gin.Context) {
 	p := parsePage(c, 50, 500)
 	q := a.DB.Model(&models.DictType{})
+	q = applyContains(q, c.Query("q"), "code", "name", "remark")
 	var total int64
 	_ = q.Count(&total).Error
 	var rows []models.DictType

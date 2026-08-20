@@ -43,7 +43,11 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const json = (await res.json()) as Envelope<T>
   if (!res.ok || json.code !== 0) {
     const err = new ApiError(res.status, json.code, json.message || "request failed")
-    if (err.status === 401 || err.code === 40101 || err.code === 40102) {
+    if (
+      token &&
+      getToken() === token &&
+      (err.status === 401 || err.code === 40101 || err.code === 40102)
+    ) {
       onUnauthorized?.()
     }
     throw err
@@ -62,7 +66,13 @@ export async function uploadAvatar(path: string, file: File): Promise<User> {
   const json = (await res.json()) as Envelope<User>
   if (!res.ok || json.code !== 0) {
     const err = new ApiError(res.status, json.code, json.message || "request failed")
-    if (err.status === 401 || err.code === 40101 || err.code === 40102) onUnauthorized?.()
+    if (
+      token &&
+      getToken() === token &&
+      (err.status === 401 || err.code === 40101 || err.code === 40102)
+    ) {
+      onUnauthorized?.()
+    }
     throw err
   }
   return json.data as User

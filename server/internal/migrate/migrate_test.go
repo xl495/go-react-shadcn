@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/glebarez/go-sqlite"
 )
 
 func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
@@ -24,8 +24,8 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	if dirty {
 		t.Fatal("expected clean migration state")
 	}
-	if version != 3 {
-		t.Fatalf("version=%d, want 3", version)
+	if version != 5 {
+		t.Fatalf("version=%d, want 5", version)
 	}
 
 	db, err := sql.Open("sqlite", path)
@@ -34,7 +34,7 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	required := []string{"users", "roles", "permissions", "op_logs", "login_logs", "api_logs", "departments", "casbin_rule", "schema_migrations"}
+	required := []string{"users", "roles", "permissions", "op_logs", "login_logs", "api_logs", "departments", "casbin_rule", "schema_migrations", "password_reset_tokens", "mail_jobs", "mail_campaigns"}
 	for _, name := range required {
 		var got string
 		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&got)

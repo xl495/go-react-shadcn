@@ -213,7 +213,7 @@ func TestOperationLogsRecordLoginAndMutations(t *testing.T) {
 		t.Fatalf("create config: %d %s", created.Code, created.Body.String())
 	}
 
-	listed := doJSON(t, app, http.MethodGet, "/api/v1/logs/login?username="+seed.AdminUsername+"&status=success", token, nil)
+	listed := doJSON(t, app, http.MethodGet, "/api/v1/logs/login?username=adm&status=success", token, nil)
 	if listed.Code != http.StatusOK {
 		t.Fatalf("list login logs: %d %s", listed.Code, listed.Body.String())
 	}

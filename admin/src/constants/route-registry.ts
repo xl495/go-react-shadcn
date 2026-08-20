@@ -9,6 +9,8 @@ export type PageKey =
   | "DictsPage"
   | "ConfigsPage"
   | "LogsPage"
+  | "MailJobsPage"
+  | "MailCampaignsPage"
 
 export const PAGE_REGISTRY: Record<
   PageKey,
@@ -26,6 +28,10 @@ export const PAGE_REGISTRY: Record<
   DictsPage: lazy(() => import("@/pages/Dicts").then((m) => ({ default: m.DictsPage }))),
   ConfigsPage: lazy(() => import("@/pages/Configs").then((m) => ({ default: m.ConfigsPage }))),
   LogsPage: lazy(() => import("@/pages/Logs").then((m) => ({ default: m.LogsPage }))),
+  MailJobsPage: lazy(() => import("@/pages/MailJobs").then((m) => ({ default: m.MailJobsPage }))),
+  MailCampaignsPage: lazy(() =>
+    import("@/pages/MailCampaigns").then((m) => ({ default: m.MailCampaignsPage })),
+  ),
 }
 
 export function resolvePage(component: string) {

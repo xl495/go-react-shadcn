@@ -1,9 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/api/client"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { api, ApiError, getToken } from "@/api/client"
 import type { MenuNode } from "@/types"
 
 export const PAGE_SIZE = 10
-export const PICKER_PAGE_SIZE = 50
+export const PICKER_PAGE_SIZE = 200
 
 export const FALLBACK_MENU_ROUTES: MenuNode[] = [
   { id: 0, code: "dashboard:read", name: "Dashboard", kind: "menu", routePath: "/", component: "DashboardPage", icon: "LayoutDashboard", sort: 10, hidden: false },
@@ -13,6 +13,8 @@ export const FALLBACK_MENU_ROUTES: MenuNode[] = [
   { id: 0, code: "perm:list", name: "Permissions", kind: "menu", routePath: "/permissions", component: "PermissionsPage", icon: "KeyRound", sort: 40, hidden: false },
   { id: 0, code: "dict:list", name: "Dicts", kind: "menu", routePath: "/dicts", component: "DictsPage", icon: "BookMarked", sort: 50, hidden: false },
   { id: 0, code: "config:list", name: "Configs", kind: "menu", routePath: "/configs", component: "ConfigsPage", icon: "Settings2", sort: 60, hidden: false },
+  { id: 0, code: "mail:jobs:list", name: "Mail queue", kind: "menu", routePath: "/mail/jobs", component: "MailJobsPage", icon: "Mail", sort: 65, hidden: false },
+  { id: 0, code: "mail:campaign:list", name: "Templates", kind: "menu", routePath: "/mail/campaigns", component: "MailCampaignsPage", icon: "FileText", sort: 66, hidden: false },
   { id: 0, code: "log:list", name: "Logs", kind: "menu", routePath: "/logs", component: "LogsPage", icon: "ClipboardList", sort: 70, hidden: false },
 ]
 
@@ -29,10 +31,16 @@ function invalidate(qc: ReturnType<typeof useQueryClient>, ...keys: string[][]) 
   return Promise.all(keys.map((queryKey) => qc.invalidateQueries({ queryKey })))
 }
 
+function isAuthError(err: unknown) {
+  return err instanceof ApiError && (err.status === 401 || err.code === 40101 || err.code === 40102)
+}
+
 export function useMenus() {
   return useQuery({
     queryKey: ["menus"],
     queryFn: () => api.menus(),
+    enabled: !!getToken(),
+    retry: (count, err) => count < 2 && !isAuthError(err),
   })
 }
 
@@ -58,7 +66,7 @@ export function useLoginMutation() {
     mutationFn: api.login,
     onSuccess: (result) => {
       qc.setQueryData(["auth", "me"], result.user)
-      void invalidate(qc, ["menus"], ["auth"])
+      void invalidate(qc, ["menus"])
     },
   })
 }
@@ -88,10 +96,19 @@ export function useChangePassword() {
   })
 }
 
-export function useUsers(params?: { page?: number; pageSize?: number; q?: string }) {
+export function useUsers(params?: {
+  page?: number
+  pageSize?: number
+  q?: string
+  status?: string
+  gender?: string
+  department?: string
+  roleId?: number
+}) {
   return useQuery({
     queryKey: ["users", params],
     queryFn: () => api.users(params),
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -136,11 +153,12 @@ export function useAssignUserRoles() {
   })
 }
 
-export function useRoles(params?: { page?: number; pageSize?: number }, enabled = true) {
+export function useRoles(params?: { page?: number; pageSize?: number; q?: string }, enabled = true) {
   return useQuery({
     queryKey: ["roles", params],
     queryFn: () => api.roles(params),
     enabled,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -178,10 +196,11 @@ export function useAssignRolePermissions() {
   })
 }
 
-export function usePermissions(params?: { page?: number; pageSize?: number }) {
+export function usePermissions(params?: { page?: number; pageSize?: number; q?: string; kind?: string }) {
   return useQuery({
     queryKey: ["permissions", params],
     queryFn: () => api.permissions(params),
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -201,10 +220,11 @@ export function useDeletePermission() {
   })
 }
 
-export function useDicts(params?: { page?: number; pageSize?: number }) {
+export function useDicts(params?: { page?: number; pageSize?: number; q?: string }) {
   return useQuery({
     queryKey: ["dicts", params],
     queryFn: () => api.dicts(params),
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -249,10 +269,11 @@ export function useDeleteDictItem() {
   })
 }
 
-export function useConfigs(params?: { page?: number; pageSize?: number }) {
+export function useConfigs(params?: { page?: number; pageSize?: number; group?: string; q?: string }) {
   return useQuery({
     queryKey: ["configs", params],
     queryFn: () => api.configs(params),
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -281,10 +302,91 @@ export function useDeleteConfig() {
   })
 }
 
-export function useDepartments(params?: { page?: number; pageSize?: number }) {
+export function useTestMail() {
+  return useMutation({
+    mutationFn: (to: string) => api.testMail(to),
+  })
+}
+
+export function useMailJobs(params?: { page?: number; pageSize?: number; status?: string; class?: string }) {
+  return useQuery({
+    queryKey: ["mail-jobs", params],
+    queryFn: () => api.jobs(params),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useRetryMailJob() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.retryJob,
+    onSuccess: () => void invalidate(qc, ["mail-jobs"]),
+  })
+}
+
+export function useCancelMailJob() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.cancelJob,
+    onSuccess: () => void invalidate(qc, ["mail-jobs"]),
+  })
+}
+
+export function useMailCampaign(id: number) {
+  return useQuery({
+    queryKey: ["mail-campaigns", id],
+    queryFn: () => api.getCampaign(id),
+    enabled: id > 0,
+  })
+}
+
+export function useMailCampaigns(params?: { page?: number; pageSize?: number; status?: string }) {
+  return useQuery({
+    queryKey: ["mail-campaigns", params],
+    queryFn: () => api.campaigns(params),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useCreateMailCampaign() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.createCampaign,
+    onSuccess: () => void invalidate(qc, ["mail-campaigns"]),
+  })
+}
+
+export function useUpdateMailCampaign() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateCampaign>[1] }) =>
+      api.updateCampaign(id, body),
+    onSuccess: () => void invalidate(qc, ["mail-campaigns", "mail-jobs"]),
+  })
+}
+
+export function useDeleteMailCampaign() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteCampaign,
+    onSuccess: () => void invalidate(qc, ["mail-campaigns"]),
+  })
+}
+
+export function useScheduleMailCampaign() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, scheduledAt }: { id: number; scheduledAt?: string }) =>
+      api.scheduleCampaign(id, scheduledAt),
+    onSuccess: () => void invalidate(qc, ["mail-campaigns", "mail-jobs"]),
+  })
+}
+
+export function useDepartments(params?: { page?: number; pageSize?: number; q?: string }) {
   return useQuery({
     queryKey: ["departments", params],
     queryFn: () => api.departments(params),
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -338,7 +440,7 @@ export function useLoginLogs(params?: {
   })
 }
 
-export function useAPILogs(params?: { traceId?: string; page?: number; pageSize?: number }) {
+export function useAPILogs(params?: { traceId?: string; path?: string; page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ["logs", "api", params],
     queryFn: () => api.apiLogs(params),

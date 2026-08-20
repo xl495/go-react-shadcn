@@ -1,18 +1,16 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { ApiError } from "@/api/client"
 
-export const LOCALES = ["zh-CN", "zh-TW", "en"] as const
+export const LOCALES = ["zh-CN", "en"] as const
 export type Locale = (typeof LOCALES)[number]
 
 const loaders: Record<Locale, () => Promise<Record<string, unknown>>> = {
   "zh-CN": () => import("@/locales/zh-CN").then((m) => m.zhCN as unknown as Record<string, unknown>),
-  "zh-TW": () => import("@/locales/zh-TW").then((m) => m.zhTW as unknown as Record<string, unknown>),
   en: () => import("@/locales/en").then((m) => m.en as unknown as Record<string, unknown>),
 }
 
 export const LOCALE_META: Record<Locale, { short: string; label: string; html: string }> = {
   "zh-CN": { short: "简", label: "简体中文", html: "zh-CN" },
-  "zh-TW": { short: "繁", label: "繁體中文", html: "zh-TW" },
   en: { short: "EN", label: "English", html: "en" },
 }
 
@@ -42,10 +40,10 @@ function interpolate(template: string, vars?: Record<string, string | number>) {
 
 export function detectLocale(): Locale {
   const saved = localStorage.getItem(STORAGE_KEY)
+  if (saved === "zh-TW") return "zh-CN"
   if (saved && (LOCALES as readonly string[]).includes(saved)) return saved as Locale
   const nav = navigator.language || ""
   const lower = nav.toLowerCase()
-  if (lower.startsWith("zh-tw") || lower.startsWith("zh-hk") || lower.startsWith("zh-hant")) return "zh-TW"
   if (lower.startsWith("zh")) return "zh-CN"
   return "en"
 }

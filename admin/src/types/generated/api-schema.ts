@@ -80,6 +80,469 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request a password reset email */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ForgotPasswordRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeSent"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset password with email token */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ResetPasswordRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeReset"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a test email using SMTP settings */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TestMailRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeSent"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Opt out of marketing mail */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UnsubscribeRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeUnsubscribed"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List mail jobs */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                    status?: string;
+                    class?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeMailJobPage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/jobs/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-queue a dead or canceled mail job */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a queued mail job */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List mail templates */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                    status?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeMailCampaignPage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create a mail template */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MailCampaignRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeMailCampaign"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/campaigns/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a mail template */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeMailCampaign"];
+                    };
+                };
+            };
+        };
+        /** Update or pause a mail template */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["MailCampaignRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeMailCampaign"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        /** Delete a draft or paused campaign */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/campaigns/{id}/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Schedule a campaign for fan-out */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ScheduleCampaignRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeMailCampaign"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/me": {
         parameters: {
             query?: never;
@@ -165,7 +628,12 @@ export interface paths {
                 query?: {
                     page?: number;
                     pageSize?: number;
+                    /** @description Search username */
                     q?: string;
+                    status?: string;
+                    gender?: string;
+                    department?: string;
+                    roleId?: number;
                 };
                 header?: never;
                 path?: never;
@@ -403,6 +871,8 @@ export interface paths {
                 query?: {
                     page?: number;
                     pageSize?: number;
+                    q?: string;
+                    kind?: string;
                 };
                 header?: never;
                 path?: never;
@@ -564,6 +1034,8 @@ export interface components {
             title: string;
             remark: string;
             status: string;
+            timezone: string;
+            marketingOptIn: boolean;
             lastLoginAt?: string | null;
             lastLoginIp?: string;
             permissionCodes?: string[];
@@ -705,6 +1177,65 @@ export interface components {
             captchaId: string;
             captchaCode: string;
         };
+        ForgotPasswordRequest: {
+            email: string;
+            captchaId: string;
+            captchaCode: string;
+        };
+        ResetPasswordRequest: {
+            token: string;
+            newPassword: string;
+        };
+        TestMailRequest: {
+            to: string;
+        };
+        UnsubscribeRequest: {
+            token: string;
+        };
+        MailJob: {
+            id: number;
+            campaignId?: number | null;
+            class: string;
+            priority: number;
+            userId?: number | null;
+            toEmail: string;
+            timezone?: string;
+            subject: string;
+            body?: string;
+            status: string;
+            sendAfter: string;
+            attempts?: number;
+            lastError?: string;
+            dedupeKey?: string;
+            sentAt?: string | null;
+            createdAt?: string;
+            updatedAt?: string;
+        };
+        MailCampaign: {
+            id: number;
+            name: string;
+            subject: string;
+            body?: string;
+            audience: string;
+            status: string;
+            scheduledAt?: string | null;
+            startedAt?: string | null;
+            finishedAt?: string | null;
+            jobCount?: number;
+            createdAt?: string;
+            updatedAt?: string;
+        };
+        MailCampaignRequest: {
+            name?: string;
+            subject?: string;
+            body?: string;
+            audience?: string;
+            status?: string;
+        };
+        ScheduleCampaignRequest: {
+            /** Format: date-time */
+            scheduledAt?: string;
+        };
         CaptchaChallenge: {
             captchaId: string;
             image: string;
@@ -782,6 +1313,36 @@ export interface components {
         };
         EnvelopeDictLookup: components["schemas"]["EnvelopeBase"] & {
             data?: components["schemas"]["DictLookup"];
+        };
+        EnvelopeSent: components["schemas"]["EnvelopeBase"] & {
+            data?: {
+                sent?: boolean;
+                to?: string;
+                queued?: boolean;
+            };
+        };
+        EnvelopeUnsubscribed: components["schemas"]["EnvelopeBase"] & {
+            data?: {
+                unsubscribed?: boolean;
+            };
+        };
+        EnvelopeMailJobPage: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["PageMeta"] & {
+                items?: components["schemas"]["MailJob"][];
+            };
+        };
+        EnvelopeMailCampaignPage: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["PageMeta"] & {
+                items?: components["schemas"]["MailCampaign"][];
+            };
+        };
+        EnvelopeMailCampaign: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["MailCampaign"];
+        };
+        EnvelopeReset: components["schemas"]["EnvelopeBase"] & {
+            data?: {
+                reset?: boolean;
+            };
         };
     };
     responses: never;

@@ -1,6 +1,8 @@
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/utils/cn"
-import type { DictItem } from "@/types"
+
+const EMPTY = "__empty__"
 
 export function DictSelect({
   id,
@@ -15,7 +17,7 @@ export function DictSelect({
   id: string
   label?: string
   value: string
-  items: DictItem[]
+  items: { value: string; label: string }[]
   onChange: (value: string) => void
   allowEmpty?: boolean
   emptyLabel?: string
@@ -24,19 +26,22 @@ export function DictSelect({
   return (
     <div className={cn("grid gap-1.5", className)}>
       {label ? <Label htmlFor={id}>{label}</Label> : null}
-      <select
-        id={id}
-        className="h-9 rounded-md border border-input bg-card px-3 text-sm"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+      <Select
+        value={allowEmpty && value === "" ? EMPTY : value}
+        onValueChange={(next) => onChange(next === EMPTY ? "" : next)}
       >
-        {allowEmpty ? <option value="">{emptyLabel}</option> : null}
-        {items.map((it) => (
-          <option key={it.value} value={it.value}>
-            {it.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger id={id}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {allowEmpty ? <SelectItem value={EMPTY}>{emptyLabel}</SelectItem> : null}
+          {items.map((it) => (
+            <SelectItem key={it.value} value={it.value}>
+              {it.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   )
 }

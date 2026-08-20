@@ -3,11 +3,13 @@ import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
+import { useLogListParams } from "@/hooks/list-params"
 import { PAGE_SIZE, useAPILogs, useClearLogs, useLoginLogs, useOpLogs, usePurgeLogs } from "@/hooks/queries"
+import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
 import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { DictSelect } from "@/components/ui/dict-select"
 import {
   Table,
   TableBody,
@@ -21,15 +23,53 @@ import type { APILog, LoginLog, OpLog } from "@/types"
 
 type Tab = "op" | "login" | "api"
 
+const LOGIN_STATUSES = ["success", "failed", "warning"] as const
+const OP_MODULES = ["user", "role", "perm", "dict", "mail", "config", "dept", "auth", "system"] as const
+const OP_ACTIONS = ["create", "update", "delete"] as const
+
 export function LogsPage() {
   const { t } = useI18n()
-  const [tab, setTab] = useState<Tab>("op")
-  const [page, setPage] = useState(1)
-  const [username, setUsername] = useState("")
-  const [module, setModule] = useState("")
-  const [action, setAction] = useState("")
-  const [traceId, setTraceId] = useState("")
+  const [{ tab, page, username, module, action, traceId, status, path }, setParams] = useLogListParams()
+  const [draftUsername, setDraftUsername] = useSyncedDraft(username)
+  const [draftModule, setDraftModule] = useSyncedDraft(module)
+  const [draftAction, setDraftAction] = useSyncedDraft(action)
+  const [draftTraceId, setDraftTraceId] = useSyncedDraft(traceId)
+  const [draftStatus, setDraftStatus] = useSyncedDraft(status)
+  const [draftPath, setDraftPath] = useSyncedDraft(path)
   const [confirm, setConfirm] = useState<"clear" | "purge" | null>(null)
+
+  function searchLogs() {
+    void setParams({
+      username: draftUsername.trim(),
+      module: draftModule,
+      action: draftAction,
+      traceId: draftTraceId.trim(),
+      status: draftStatus,
+      path: draftPath.trim(),
+      page: 1,
+    })
+  }
+
+  function resetLogs() {
+    setDraftUsername("")
+    setDraftModule("")
+    setDraftAction("")
+    setDraftTraceId("")
+    setDraftStatus("")
+    setDraftPath("")
+    void setParams({
+      username: "",
+      module: "",
+      action: "",
+      traceId: "",
+      status: "",
+      path: "",
+      page: 1,
+    })
+  }
+
+  const filtered = Boolean(username || module || action || traceId || status || path)
+  const draftFiltered = Boolean(draftUsername || draftModule || draftAction || draftTraceId || draftStatus || draftPath)
 
   const params = { page, pageSize: PAGE_SIZE }
   const opQuery = useOpLogs({
@@ -38,18 +78,21 @@ export function LogsPage() {
     module: module || undefined,
     action: action || undefined,
   })
-  const loginQuery = useLoginLogs({ ...params, username: username || undefined })
-  const apiQuery = useAPILogs({ ...params, traceId: traceId || undefined })
+  const loginQuery = useLoginLogs({
+    ...params,
+    username: username || undefined,
+    status: status || undefined,
+  })
+  const apiQuery = useAPILogs({
+    ...params,
+    traceId: traceId || undefined,
+    path: path || undefined,
+  })
   const clearLogs = useClearLogs()
   const purgeLogs = usePurgeLogs()
 
   const active = tab === "login" ? loginQuery : tab === "api" ? apiQuery : opQuery
   const error = active.error ? translateApiError(active.error, t) : ""
-
-  function switchTab(next: Tab) {
-    setTab(next)
-    setPage(1)
-  }
 
   return (
     <div className="space-y-4">
@@ -58,41 +101,78 @@ export function LogsPage() {
           <h2 className="text-xl font-semibold tracking-tight">{t("log.title")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("log.subtitle")}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {tab === "op" ? (
-            <>
-              <Input className="w-36" placeholder={t("login.username")} value={username} onChange={(e) => { setUsername(e.target.value); setPage(1) }} />
-              <Input className="w-32" placeholder={t("log.module")} value={module} onChange={(e) => { setModule(e.target.value); setPage(1) }} />
-              <Input className="w-32" placeholder={t("log.action")} value={action} onChange={(e) => { setAction(e.target.value); setPage(1) }} />
-            </>
-          ) : null}
-          {tab === "login" ? (
-            <Input className="w-36" placeholder={t("login.username")} value={username} onChange={(e) => { setUsername(e.target.value); setPage(1) }} />
-          ) : null}
-          {tab === "api" ? (
-            <Input className="w-48" placeholder="Trace ID" value={traceId} onChange={(e) => { setTraceId(e.target.value); setPage(1) }} />
-          ) : null}
-          <Button variant="outline" onClick={() => void active.refetch()}>
-            {t("log.filter")}
-          </Button>
-          <Can perm={P.logClear}>
-            <Button variant="destructive" onClick={() => setConfirm("clear")}>
+        <Can perm={P.logClear}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="destructive" onClick={() => setConfirm("clear")}>
               {t("log.clear")}
             </Button>
-            <Button variant="outline" onClick={() => setConfirm("purge")}>
+            <Button type="button" variant="outline" onClick={() => setConfirm("purge")}>
               {t("log.purge")}
             </Button>
-          </Can>
-        </div>
+          </div>
+        </Can>
       </div>
-
       <div className="flex gap-2">
         {(["op", "login", "api"] as Tab[]).map((k) => (
-          <Button key={k} size="sm" variant={tab === k ? "default" : "outline"} onClick={() => switchTab(k)}>
+          <Button key={k} size="sm" variant={tab === k ? "default" : "outline"} onClick={() => void setParams({ tab: k, page: 1 })}>
             {t(`log.tab.${k}`)}
           </Button>
         ))}
       </div>
+      <FilterForm onSubmit={searchLogs}>
+        {tab === "op" ? (
+          <>
+            <SearchField id="log-username" label={t("login.username")} value={draftUsername} placeholder={t("login.username")} inputClassName="w-40" onChange={setDraftUsername} />
+            <DictSelect
+              id="log-module"
+              className="w-36"
+              label={t("log.module")}
+              value={draftModule}
+              items={OP_MODULES.map((value) => ({ value, label: t(`log.modules.${value}`) }))}
+              allowEmpty
+              emptyLabel={t("app.all")}
+              onChange={setDraftModule}
+            />
+            <DictSelect
+              id="log-action"
+              className="w-36"
+              label={t("log.action")}
+              value={draftAction}
+              items={OP_ACTIONS.map((value) => ({ value, label: t(`log.actions.${value}`) }))}
+              allowEmpty
+              emptyLabel={t("app.all")}
+              onChange={setDraftAction}
+            />
+          </>
+        ) : null}
+        {tab === "login" ? (
+          <>
+            <SearchField id="login-username" label={t("login.username")} value={draftUsername} placeholder={t("login.username")} inputClassName="w-40" onChange={setDraftUsername} />
+            <DictSelect
+              id="login-status"
+              className="w-36"
+              label={t("app.status")}
+              value={draftStatus}
+              items={LOGIN_STATUSES.map((value) => ({ value, label: t(`log.loginStatus.${value}`) }))}
+              allowEmpty
+              emptyLabel={t("app.all")}
+              onChange={setDraftStatus}
+            />
+          </>
+        ) : null}
+        {tab === "api" ? (
+          <>
+            <SearchField id="api-trace" label={t("log.traceId")} value={draftTraceId} placeholder={t("log.traceId")} inputClassName="w-56" onChange={setDraftTraceId} />
+            <SearchField id="api-path" label={t("log.path")} value={draftPath} placeholder={t("log.path")} inputClassName="w-56" onChange={setDraftPath} />
+          </>
+        ) : null}
+        <SearchSubmitButton />
+        {filtered || draftFiltered ? (
+          <Button type="button" variant="outline" onClick={resetLogs}>
+            {t("app.resetFilters")}
+          </Button>
+        ) : null}
+      </FilterForm>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {active.isLoading ? <TableSkeleton rows={8} cols={6} /> : null}
@@ -100,7 +180,7 @@ export function LogsPage() {
       {!active.isLoading && tab === "op" ? <OpLogTable rows={opQuery.data?.items ?? []} t={t} /> : null}
       {!active.isLoading && tab === "login" ? <LoginLogTable rows={loginQuery.data?.items ?? []} t={t} /> : null}
       {!active.isLoading && tab === "api" ? <APILogTable rows={apiQuery.data?.items ?? []} t={t} /> : null}
-      <PaginationBar page={page} pageSize={PAGE_SIZE} total={active.data?.total ?? 0} onPageChange={setPage} />
+      <PaginationBar page={page} pageSize={PAGE_SIZE} total={active.data?.total ?? 0} onPageChange={(next) => void setParams({ page: next })} />
 
       <ConfirmAlert
         open={confirm === "clear"}
@@ -182,6 +262,11 @@ function OpLogTable({ rows, t }: { rows: OpLog[]; t: (k: string) => string }) {
 }
 
 function LoginLogTable({ rows, t }: { rows: LoginLog[]; t: (k: string) => string }) {
+  function statusLabel(value: string) {
+    const key = `log.loginStatus.${value}`
+    const got = t(key)
+    return got === key ? value : got
+  }
   return (
     <div className="rounded-lg border bg-card">
       <Table>
@@ -206,7 +291,7 @@ function LoginLogTable({ rows, t }: { rows: LoginLog[]; t: (k: string) => string
                 <TableCell>{row.id}</TableCell>
                 <TableCell>{row.username}</TableCell>
                 <TableCell>
-                  <Badge variant={row.status === "success" ? "default" : "muted"}>{row.status}</Badge>
+                  <Badge variant={row.status === "success" ? "default" : "muted"}>{statusLabel(row.status)}</Badge>
                 </TableCell>
                 <TableCell className="text-xs">{row.ip}</TableCell>
                 <TableCell className="text-xs">{row.location || "—"}</TableCell>

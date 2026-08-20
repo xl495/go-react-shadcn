@@ -95,6 +95,15 @@ func TestMenuTreeFollowsPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	foundDept := false
+	var org *menuNode
+	for i := range adminMenus {
+		if adminMenus[i].Code == "org:menu" {
+			org = &adminMenus[i]
+		}
+	}
+	if org == nil {
+		t.Fatalf("admin menus missing org group: %+v", adminMenus)
+	}
 	for _, m := range flattenMenuTest(adminMenus) {
 		if m.Code == "dept:list" && m.Component == "DepartmentsPage" {
 			foundDept = true
@@ -102,6 +111,31 @@ func TestMenuTreeFollowsPermissions(t *testing.T) {
 	}
 	if !foundDept {
 		t.Fatalf("admin menus missing department page: %+v", adminMenus)
+	}
+	foundUsers := false
+	for _, c := range org.Children {
+		if c.Code == "user:list" {
+			foundUsers = true
+		}
+	}
+	if !foundUsers {
+		t.Fatalf("user:list should nest under org:menu: %+v", org.Children)
+	}
+
+	op := loginOK(t, app, seed.OperatorUsername, seed.OperatorPassword)
+	ow := doJSON(t, app, http.MethodGet, "/api/v1/auth/menus", op, nil)
+	var opMenus []menuNode
+	if err := json.Unmarshal(decodeEnv(t, ow).Data, &opMenus); err != nil {
+		t.Fatal(err)
+	}
+	var opOrg *menuNode
+	for i := range opMenus {
+		if opMenus[i].Code == "org:menu" {
+			opOrg = &opMenus[i]
+		}
+	}
+	if opOrg == nil {
+		t.Fatalf("operator should still see org group via ancestors: %+v", opMenus)
 	}
 }
 

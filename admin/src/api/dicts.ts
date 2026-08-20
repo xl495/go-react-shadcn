@@ -2,7 +2,7 @@ import { request, qs } from "./http"
 import type { DictItem, DictLookup, DictType, PageResult } from "@/types"
 
 export const dictsApi = {
-  dicts: (params?: { page?: number; pageSize?: number }) =>
+  dicts: (params?: { page?: number; pageSize?: number; q?: string }) =>
     request<PageResult<DictType>>(`/api/v1/dicts${qs(params ?? {})}`),
   createDict: (body: { code: string; name: string; status?: string; remark?: string }) =>
     request<DictType>("/api/v1/dicts", { method: "POST", body: JSON.stringify(body) }),

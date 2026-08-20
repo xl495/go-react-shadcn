@@ -4,6 +4,7 @@ import { Can } from "@/components/auth/Can"
 import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
+import { useDictListParams } from "@/hooks/list-params"
 import {
   PAGE_SIZE,
   useCreateDict,
@@ -14,6 +15,7 @@ import {
   useDicts,
 } from "@/hooks/queries"
 import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -38,12 +40,11 @@ import type { DictItem, DictType } from "@/types"
 export function DictsPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const [page, setPage] = useState(1)
-  const [itemPage, setItemPage] = useState(1)
-  const { data, isLoading, error } = useDicts({ page, pageSize: PAGE_SIZE })
+  const [{ page, q, itemPage, typeId }, setParams] = useDictListParams()
+  const [draftQ, setDraftQ] = useSyncedDraft(q)
+  const { data, isLoading, error } = useDicts({ page, pageSize: PAGE_SIZE, q: q || undefined })
   const types = data?.items ?? []
-  const [activeId, setActiveId] = useState<number>(0)
-  const active = types.find((row) => row.id === activeId) ?? types[0] ?? null
+  const active = types.find((row) => row.id === typeId) ?? types[0] ?? null
   const currentId = active?.id ?? 0
   const itemsQuery = useDictItems(currentId, { page: itemPage, pageSize: PAGE_SIZE })
   const items = itemsQuery.data?.items ?? []
@@ -69,6 +70,29 @@ export function DictsPage() {
           <Button onClick={() => setTypeOpen(true)}>{t("dict.createType")}</Button>
         </Can>
       </div>
+      <FilterForm onSubmit={() => void setParams({ q: draftQ.trim(), page: 1, typeId: null, itemPage: 1 })}>
+        <SearchField
+          id="dict-q"
+          label={t("app.search")}
+          value={draftQ}
+          placeholder={t("dict.search")}
+          inputClassName="w-64"
+          onChange={setDraftQ}
+        />
+        <SearchSubmitButton />
+        {q || draftQ ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setDraftQ("")
+              void setParams({ q: "", page: 1, typeId: null, itemPage: 1 })
+            }}
+          >
+            {t("app.resetFilters")}
+          </Button>
+        ) : null}
+      </FilterForm>
       {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <div className="space-y-3">
@@ -92,8 +116,7 @@ export function DictsPage() {
                         key={row.id}
                         className={active?.id === row.id ? "bg-accent" : "cursor-pointer"}
                         onClick={() => {
-                          setActiveId(row.id)
-                          setItemPage(1)
+                          void setParams({ typeId: row.id, itemPage: 1 })
                         }}
                       >
                         <TableCell>
@@ -121,7 +144,7 @@ export function DictsPage() {
               </Table>
             )}
           </div>
-          <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={setPage} />
+          <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={(next) => void setParams({ page: next })} />
         </div>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -182,7 +205,7 @@ export function DictsPage() {
             page={itemPage}
             pageSize={PAGE_SIZE}
             total={itemsQuery.data?.total ?? 0}
-            onPageChange={setItemPage}
+            onPageChange={(next) => void setParams({ itemPage: next })}
           />
         </div>
       </div>
@@ -198,7 +221,7 @@ export function DictsPage() {
           if (!pendingType) return
           deleteDict.mutate(pendingType.id, {
             onSuccess: () => {
-              setActiveId(0)
+              void setParams({ typeId: null, itemPage: 1 })
               toast.success(t("app.saved"))
             },
             onError: (e) => toast.error(translateApiError(e, t)),

@@ -2,8 +2,10 @@ package httpserver
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go-react-shadcn/internal/mailer"
 	"go-react-shadcn/internal/models"
 )
 
@@ -18,9 +20,10 @@ type configRequest struct {
 func (a *App) handleListConfigs(c *gin.Context) {
 	p := parsePage(c, 50, 500)
 	q := a.DB.Model(&models.SysConfig{})
-	if g := c.Query("group"); g != "" {
+	if g := strings.TrimSpace(c.Query("group")); g != "" {
 		q = q.Where("`group` = ?", g)
 	}
+	q = applyContains(q, c.Query("q"), "`key`", "name", "remark")
 	var total int64
 	_ = q.Count(&total).Error
 	var rows []models.SysConfig
@@ -28,7 +31,7 @@ func (a *App) handleListConfigs(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeListConfigs, "failed to list configs")
 		return
 	}
-	ok(c, pageResult[models.SysConfig]{Items: rows, Total: total, Page: p.Page, PageSize: p.PageSize})
+	ok(c, pageResult[models.SysConfig]{Items: presentConfigs(rows), Total: total, Page: p.Page, PageSize: p.PageSize})
 }
 
 func (a *App) handleCreateConfig(c *gin.Context) {
@@ -45,7 +48,7 @@ func (a *App) handleCreateConfig(c *gin.Context) {
 		fail(c, http.StatusConflict, 40970, "config key already exists")
 		return
 	}
-	ok(c, row)
+	ok(c, mailer.Redact(row))
 }
 
 func (a *App) handleUpdateConfig(c *gin.Context) {
@@ -62,7 +65,7 @@ func (a *App) handleUpdateConfig(c *gin.Context) {
 	if req.Name != "" {
 		row.Name = req.Name
 	}
-	row.Value = req.Value
+	row.Value = mailer.KeepSecret(row.Key, req.Value, row.Value)
 	if req.Group != "" {
 		row.Group = req.Group
 	}
@@ -71,7 +74,7 @@ func (a *App) handleUpdateConfig(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, 50071, "failed to update config")
 		return
 	}
-	ok(c, row)
+	ok(c, mailer.Redact(row))
 }
 
 func (a *App) handleDeleteConfig(c *gin.Context) {
@@ -85,4 +88,12 @@ func (a *App) handleDeleteConfig(c *gin.Context) {
 		return
 	}
 	ok(c, gin.H{"deleted": row.ID})
+}
+
+func presentConfigs(rows []models.SysConfig) []models.SysConfig {
+	out := make([]models.SysConfig, len(rows))
+	for i, row := range rows {
+		out[i] = mailer.Redact(row)
+	}
+	return out
 }

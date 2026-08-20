@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from "react"
+import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { DICT, useDict } from "@/hooks/dict"
 import { formatDateTime } from "@/utils/format"
 import { translateApiError, useI18n } from "@/providers/i18n"
-import { useChangePassword, useUpdateProfile } from "@/hooks/queries"
+import { useUpdateProfile } from "@/hooks/queries"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { AvatarField } from "@/components/ui/avatar-field"
 import { Button } from "@/components/ui/button"
@@ -13,6 +14,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DictSelect } from "@/components/ui/dict-select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { TimezoneSelect } from "@/components/ui/timezone-select"
 
 export function SettingsPage() {
   const { user, updateUser } = useAuth()
@@ -20,7 +23,6 @@ export function SettingsPage() {
   const genderDict = useDict(DICT.gender)
   const deptDict = useDict(DICT.department)
   const updateProfile = useUpdateProfile()
-  const changePassword = useChangePassword()
   const [profile, setProfile] = useState({
     nickname: user?.nickname ?? "",
     email: user?.email ?? "",
@@ -29,9 +31,9 @@ export function SettingsPage() {
     department: user?.department ?? "",
     title: user?.title ?? "",
     remark: user?.remark ?? "",
+    timezone: user?.timezone || "Asia/Shanghai",
+    marketingOptIn: user?.marketingOptIn ?? true,
   })
-  const [oldPassword, setOldPassword] = useState("")
-  const [newPassword, setNewPassword] = useState("")
 
   async function onSaveProfile(e: FormEvent) {
     e.preventDefault()
@@ -44,23 +46,16 @@ export function SettingsPage() {
     }
   }
 
-  async function onChangePassword(e: FormEvent) {
-    e.preventDefault()
-    try {
-      await changePassword.mutateAsync({ oldPassword, newPassword })
-      setOldPassword("")
-      setNewPassword("")
-      toast.success(t("settings.passwordChanged"))
-    } catch (err) {
-      toast.error(translateApiError(err, t))
-    }
-  }
-
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">{t("settings.title")}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{t("settings.subtitle")}</p>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">{t("settings.title")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t("settings.subtitle")}</p>
+        </div>
+        <Button asChild variant="outline">
+          <Link to="/settings/password">{t("settings.password")}</Link>
+        </Button>
       </div>
 
       <Card>
@@ -120,43 +115,29 @@ export function SettingsPage() {
               emptyLabel={t("app.optional")}
               onChange={(value) => setProfile((p) => ({ ...p, department: value }))}
             />
+            <div className="grid gap-1.5">
+              <Label htmlFor="tz">{t("settings.timezone")}</Label>
+              <TimezoneSelect
+                id="tz"
+                value={profile.timezone}
+                onChange={(timezone) => setProfile((p) => ({ ...p, timezone }))}
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <Switch
+                id="mkt"
+                checked={profile.marketingOptIn}
+                onCheckedChange={(checked) => setProfile((p) => ({ ...p, marketingOptIn: checked }))}
+              />
+              <Label htmlFor="mkt" className="font-normal">
+                {t("settings.marketingOptIn")}
+              </Label>
+            </div>
             <div className="sm:col-span-2">
               <Button type="submit" disabled={updateProfile.isPending}>
                 {updateProfile.isPending ? t("app.saving") : t("settings.saveProfile")}
               </Button>
             </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.password")}</CardTitle>
-          <CardDescription>{t("settings.passwordHint")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onChangePassword} className="grid max-w-md gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="old">{t("settings.oldPassword")}</Label>
-              <Input
-                id="old"
-                type="password"
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="nw">{t("settings.newPassword")}</Label>
-              <Input
-                id="nw"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
-            </div>
-            <Button type="submit" disabled={changePassword.isPending}>
-              {changePassword.isPending ? t("app.saving") : t("settings.changePassword")}
-            </Button>
           </form>
         </CardContent>
       </Card>

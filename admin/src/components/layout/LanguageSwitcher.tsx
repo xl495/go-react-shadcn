@@ -1,27 +1,20 @@
 import { LOCALE_META, LOCALES, useI18n, type Locale } from "@/providers/i18n"
-import { cn } from "@/utils/cn"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export function LanguageSwitcher() {
   const { locale, setLocale, t } = useI18n()
   return (
-    <div
-      role="group"
-      aria-label={t("app.language")}
-      className="inline-flex rounded-md border border-border p-0.5 text-xs text-muted-foreground"
-    >
-      {LOCALES.map((item) => (
-        <button
-          key={item}
-          type="button"
-          onClick={() => setLocale(item as Locale)}
-          className={cn(
-            "rounded px-2 py-1 transition-colors",
-            locale === item ? "bg-foreground text-background" : "hover:text-foreground",
-          )}
-        >
-          {LOCALE_META[item].short}
-        </button>
-      ))}
-    </div>
+    <Select value={locale} onValueChange={(value) => setLocale(value as Locale)}>
+      <SelectTrigger aria-label={t("app.language")} className="w-38">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {LOCALES.map((item) => (
+          <SelectItem key={item} value={item}>
+            {LOCALE_META[item].label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }

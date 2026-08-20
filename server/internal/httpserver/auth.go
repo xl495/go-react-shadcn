@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go-react-shadcn/internal/mailer"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/passwd"
 	"go-react-shadcn/internal/security"
@@ -139,13 +140,15 @@ func (a *App) handleMe(c *gin.Context) {
 }
 
 type updateProfileRequest struct {
-	Nickname   string `json:"nickname"`
-	Email      string `json:"email"`
-	Phone      string `json:"phone"`
-	Gender     string `json:"gender"`
-	Department string `json:"department"`
-	Title      string `json:"title"`
-	Remark     string `json:"remark"`
+	Nickname       string `json:"nickname"`
+	Email          string `json:"email"`
+	Phone          string `json:"phone"`
+	Gender         string `json:"gender"`
+	Department     string `json:"department"`
+	Title          string `json:"title"`
+	Remark         string `json:"remark"`
+	Timezone       string `json:"timezone"`
+	MarketingOptIn *bool  `json:"marketingOptIn"`
 }
 
 type changePasswordRequest struct {
@@ -177,6 +180,17 @@ func (a *App) handleUpdateProfile(c *gin.Context) {
 	a.applyDepartmentLink(&user)
 	user.Title = req.Title
 	user.Remark = req.Remark
+	if req.Timezone != "" {
+		tz, err := mailer.NormalizeTimezone(req.Timezone)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeInvalidTimezone, "invalid timezone")
+			return
+		}
+		user.Timezone = tz
+	}
+	if req.MarketingOptIn != nil {
+		user.MarketingOptIn = *req.MarketingOptIn
+	}
 	if err := a.DB.Save(&user).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50041, "failed to update profile")
 		return

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { Navigate, useLocation, useNavigate } from "react-router-dom"
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom"
 import { RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
@@ -7,16 +7,18 @@ import { ApiError } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { useCaptcha, useLoginMutation } from "@/hooks/queries"
+import { PageFallback } from "@/components/PageFallback"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export function LoginPage() {
-  const { user, login } = useAuth()
+  const { user, loading, login } = useAuth()
   const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: string } | null)?.from || "/"
+  const fromRaw = (location.state as { from?: string } | null)?.from || "/"
+  const from = fromRaw.startsWith("/login") || fromRaw.startsWith("/forgot-password") ? "/" : fromRaw
 
   const [username, setUsername] = useState("admin")
   const [password, setPassword] = useState("admin123")
@@ -24,6 +26,7 @@ export function LoginPage() {
   const captcha = useCaptcha()
   const loginMut = useLoginMutation()
 
+  if (loading) return <PageFallback />
   if (user) return <Navigate to="/" replace />
 
   async function refreshCaptcha() {
@@ -80,6 +83,11 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+            <div className="flex justify-end">
+              <Button variant="link" className="h-auto px-0 text-xs" asChild>
+                <Link to="/forgot-password">{t("login.forgot")}</Link>
+              </Button>
+            </div>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="captcha">{t("login.captcha")}</Label>
@@ -92,10 +100,11 @@ export function LoginPage() {
                 onChange={(e) => setCaptchaCode(e.target.value)}
                 className="flex-1"
               />
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => void refreshCaptcha()}
-                className="relative h-9 w-[120px] overflow-hidden rounded-md border bg-muted"
+                className="relative h-9 w-[120px] overflow-hidden p-0"
                 aria-label={t("login.refreshCaptcha")}
               >
                 {captcha.data?.image ? (
@@ -104,7 +113,7 @@ export function LoginPage() {
                   <span className="text-xs text-muted-foreground">{t("app.loading")}</span>
                 )}
                 <RefreshCw className="absolute right-1 bottom-1 size-3 text-foreground/40" />
-              </button>
+              </Button>
             </div>
           </div>
           {captcha.error ? <p className="text-sm text-destructive">{t("login.captchaLoadFailed")}</p> : null}

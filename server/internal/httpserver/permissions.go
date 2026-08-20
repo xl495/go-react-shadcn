@@ -36,6 +36,8 @@ func normalizeKind(k string) string {
 func (a *App) handleListPermissions(c *gin.Context) {
 	p := parsePage(c, 50, 500)
 	q := a.DB.Model(&models.Permission{})
+	q = applyEqual(q, "kind", c.Query("kind"))
+	q = applyContains(q, c.Query("q"), "name", "code", "path", "method", "description")
 	var total int64
 	_ = q.Count(&total).Error
 	var perms []models.Permission

@@ -3,7 +3,7 @@ import type { DashboardStats, Department, PageResult } from "@/types"
 
 export const departmentsApi = {
   stats: () => request<DashboardStats>("/api/v1/dashboard/stats"),
-  departments: (params?: { page?: number; pageSize?: number }) =>
+  departments: (params?: { page?: number; pageSize?: number; q?: string }) =>
     request<PageResult<Department>>(`/api/v1/departments${qs(params ?? {})}`),
   createDepartment: (body: {
     name: string

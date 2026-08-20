@@ -1,8 +1,10 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
+import { Button } from "@/components/ui/button"
 
 type Props = {
   children: ReactNode
   fallback?: ReactNode
+  resetKey?: string
 }
 
 type State = {
@@ -11,6 +13,7 @@ type State = {
 
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null }
+  private disposeHot: (() => void) | undefined
 
   static getDerivedStateFromError(error: Error): State {
     return { error }
@@ -18,6 +21,24 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("ui error", error, info.componentStack)
+  }
+
+  componentDidMount() {
+    const hot = import.meta.hot
+    if (!hot) return
+    this.disposeHot = hot.on("vite:beforeUpdate", () => {
+      if (this.state.error) this.setState({ error: null })
+    })
+  }
+
+  componentWillUnmount() {
+    this.disposeHot?.()
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.state.error && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ error: null })
+    }
   }
 
   render() {
@@ -31,13 +52,9 @@ export class ErrorBoundary extends Component<Props, State> {
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 p-8 text-center">
         <p className="text-sm font-medium">Something went wrong.</p>
         <p className="max-w-md text-xs text-muted-foreground">{this.state.error.message}</p>
-        <button
-          type="button"
-          className="rounded-md border px-3 py-1.5 text-sm"
-          onClick={() => this.setState({ error: null })}
-        >
+        <Button type="button" variant="outline" size="sm" onClick={() => this.setState({ error: null })}>
           Retry
-        </button>
+        </Button>
       </div>
     )
   }

@@ -5,6 +5,7 @@ import { Can } from "@/components/auth/Can"
 import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { DICT, useDict } from "@/hooks/dict"
+import { useUserListParams } from "@/hooks/list-params"
 import { formatDateTime } from "@/utils/format"
 import { roleLabel, translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
@@ -22,6 +23,7 @@ import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/com
 import { Avatar } from "@/components/ui/avatar"
 import { AvatarField } from "@/components/ui/avatar-field"
 import { Badge } from "@/components/ui/badge"
+import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
 import { DictSelect } from "@/components/ui/dict-select"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -34,6 +36,9 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { TimezoneSelect } from "@/components/ui/timezone-select"
 import {
   Table,
   TableBody,
@@ -54,6 +59,8 @@ const emptyForm = {
   department: "",
   title: "",
   remark: "",
+  timezone: "Asia/Shanghai",
+  marketingOptIn: true,
   status: "active",
 }
 
@@ -63,13 +70,47 @@ export function UsersPage() {
   const genderDict = useDict(DICT.gender)
   const statusDict = useDict(DICT.userStatus)
   const deptDict = useDict(DICT.department)
-  const [page, setPage] = useState(1)
-  const [query, setQuery] = useState("")
-  const { data, isLoading, error } = useUsers({ page, pageSize: PAGE_SIZE, q: query || undefined })
+  const [{ q, page, gender, status, department, roleId }, setParams] = useUserListParams()
+  const [draftQ, setDraftQ] = useSyncedDraft(q)
+  const [draftGender, setDraftGender] = useSyncedDraft(gender)
+  const [draftStatus, setDraftStatus] = useSyncedDraft(status)
+  const [draftDepartment, setDraftDepartment] = useSyncedDraft(department)
+  const [draftRoleId, setDraftRoleId] = useSyncedDraft(roleId)
+  const { data, isLoading, error } = useUsers({
+    page,
+    pageSize: PAGE_SIZE,
+    q: q || undefined,
+    gender: gender || undefined,
+    status: status || undefined,
+    department: department || undefined,
+    roleId: roleId ?? undefined,
+  })
   const needRoles = can(P.roleList) || can(P.userRoles) || can(P.userCreate) || can(P.userUpdate)
   const { data: rolesPage } = useRoles({ pageSize: PICKER_PAGE_SIZE }, needRoles)
   const users = data?.items ?? []
   const roles = rolesPage?.items ?? []
+  const filtered = Boolean(q || gender || status || department || roleId)
+  const draftFiltered = Boolean(draftQ || draftGender || draftStatus || draftDepartment || draftRoleId)
+
+  function searchUsers() {
+    void setParams({
+      q: draftQ.trim(),
+      gender: draftGender,
+      status: draftStatus,
+      department: draftDepartment,
+      roleId: draftRoleId,
+      page: 1,
+    })
+  }
+
+  function resetUsers() {
+    setDraftQ("")
+    setDraftGender("")
+    setDraftStatus("")
+    setDraftDepartment("")
+    setDraftRoleId(null)
+    void setParams({ q: "", page: 1, gender: "", status: "", department: "", roleId: null })
+  }
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
@@ -99,6 +140,8 @@ export function UsersPage() {
       department: u.department ?? "",
       title: u.title ?? "",
       remark: u.remark ?? "",
+      timezone: u.timezone || "Asia/Shanghai",
+      marketingOptIn: u.marketingOptIn ?? true,
       status: u.status || "active",
     })
     setRoleIds((u.roles ?? []).map((r) => r.id))
@@ -122,6 +165,8 @@ export function UsersPage() {
             department: form.department,
             title: form.title,
             remark: form.remark,
+            timezone: form.timezone,
+            marketingOptIn: form.marketingOptIn,
             status: form.status,
             password: form.password || undefined,
           },
@@ -140,6 +185,8 @@ export function UsersPage() {
           department: form.department,
           title: form.title,
           remark: form.remark,
+          timezone: form.timezone,
+          marketingOptIn: form.marketingOptIn,
           status: form.status,
           roleIds,
         })
@@ -158,21 +205,77 @@ export function UsersPage() {
           <h2 className="text-xl font-semibold tracking-tight">{t("users.title")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("users.subtitle")}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Input
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              setPage(1)
-            }}
-            placeholder={t("users.search")}
-            className="w-56"
-          />
-          <Can perm={P.userCreate}>
-            <Button onClick={openCreate}>{t("users.create")}</Button>
-          </Can>
-        </div>
+        <Can perm={P.userCreate}>
+          <Button onClick={openCreate}>{t("users.create")}</Button>
+        </Can>
       </div>
+      <FilterForm onSubmit={searchUsers}>
+        <SearchField
+          id="user-q"
+          label={t("app.search")}
+          value={draftQ}
+          placeholder={t("users.search")}
+          inputClassName="w-64"
+          onChange={setDraftQ}
+        />
+        <DictSelect
+          id="user-gender"
+          className="w-36"
+          label={t("users.gender")}
+          value={draftGender}
+          items={genderDict.items}
+          allowEmpty
+          emptyLabel={t("app.all")}
+          onChange={setDraftGender}
+        />
+        <DictSelect
+          id="user-status"
+          className="w-36"
+          label={t("app.status")}
+          value={draftStatus}
+          items={statusDict.items}
+          allowEmpty
+          emptyLabel={t("app.all")}
+          onChange={setDraftStatus}
+        />
+        <DictSelect
+          id="user-dept"
+          className="w-36"
+          label={t("users.department")}
+          value={draftDepartment}
+          items={deptDict.items}
+          allowEmpty
+          emptyLabel={t("app.all")}
+          onChange={setDraftDepartment}
+        />
+        {can(P.roleList) ? (
+          <div className="grid w-40 gap-1.5">
+            <Label htmlFor="user-role">{t("users.roles")}</Label>
+            <Select
+              value={draftRoleId == null ? "__all__" : String(draftRoleId)}
+              onValueChange={(value) => setDraftRoleId(value === "__all__" ? null : Number(value))}
+            >
+              <SelectTrigger id="user-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">{t("app.all")}</SelectItem>
+                {roles.map((r) => (
+                  <SelectItem key={r.id} value={String(r.id)}>
+                    {roleLabel(r.code, r.name, t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        <SearchSubmitButton />
+        {filtered || draftFiltered ? (
+          <Button type="button" variant="outline" onClick={resetUsers}>
+            {t("app.resetFilters")}
+          </Button>
+        ) : null}
+      </FilterForm>
       {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
       <div className="rounded-lg border bg-card">
         {isLoading ? (
@@ -263,7 +366,7 @@ export function UsersPage() {
         page={page}
         pageSize={PAGE_SIZE}
         total={data?.total ?? 0}
-        onPageChange={setPage}
+        onPageChange={(next) => void setParams({ page: next })}
       />
 
       <ConfirmAlert
@@ -364,16 +467,43 @@ export function UsersPage() {
               items={statusDict.items}
               onChange={(value) => setForm((f) => ({ ...f, status: value }))}
             />
+            <div className="grid gap-1.5">
+              <Label htmlFor="utz">{t("users.timezone")}</Label>
+              <TimezoneSelect
+                id="utz"
+                value={form.timezone}
+                onChange={(timezone) => setForm((f) => ({ ...f, timezone }))}
+              />
+            </div>
+            <div className="flex items-center gap-2 text-sm sm:col-span-2">
+              <Switch
+                id="umkt"
+                checked={form.marketingOptIn}
+                onCheckedChange={(checked) => setForm((f) => ({ ...f, marketingOptIn: checked }))}
+              />
+              <Label htmlFor="umkt" className="font-normal">
+                {t("users.marketingOptIn")}
+              </Label>
+            </div>
             {(can(P.userRoles) || !editing) && (
               <div className="grid gap-2 sm:col-span-2">
                 <Label>{t("users.roles")}</Label>
-                {roles.map((r) => (
-                  <label key={r.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={roleIds.includes(r.id)} onCheckedChange={() => toggle(r.id)} />
-                    {roleLabel(r.code, r.name, t)}
-                    <span className="text-muted-foreground">({r.code})</span>
-                  </label>
-                ))}
+                {roles.map((r) => {
+                  const id = `ur-${r.id}`
+                  return (
+                    <div key={r.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        id={id}
+                        checked={roleIds.includes(r.id)}
+                        onCheckedChange={() => toggle(r.id)}
+                      />
+                      <label htmlFor={id} className="cursor-pointer">
+                        {roleLabel(r.code, r.name, t)}
+                        <span className="ml-1 text-muted-foreground">({r.code})</span>
+                      </label>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

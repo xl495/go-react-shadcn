@@ -2,6 +2,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 import { AuthProvider, RequireAuth, RequireGuest } from "@/lib/auth"
 import { HomePage } from "@/pages/Home"
 import { LoginPage } from "@/pages/Login"
+import { ForgotPasswordPage, ResetPasswordPage } from "@/pages/ForgotPassword"
+import { UnsubscribePage } from "@/pages/Unsubscribe"
 
 export function App() {
   return (
@@ -16,6 +18,16 @@ export function App() {
               </RequireGuest>
             }
           />
+          <Route
+            path="/forgot-password"
+            element={
+              <RequireGuest>
+                <ForgotPasswordPage />
+              </RequireGuest>
+            }
+          />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/unsubscribe" element={<UnsubscribePage />} />
           <Route
             path="/"
             element={

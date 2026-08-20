@@ -4,39 +4,47 @@ package httpserver
 const (
 	CodeOK = 0
 
-	CodeInvalidBody       = 40001
-	CodeCaptchaRequired   = 40002
-	CodeInvalidCaptcha    = 40003
-	CodeUserPassRequired  = 40010
-	CodeInvalidRoleIDs    = 40011
-	CodeInvalidUserBody   = 40012
-	CodeCannotDeleteSeed  = 40013
-	CodeInvalidAssignBody = 40014
-	CodeInvalidDictValue  = 40015
-	CodePasswordTooShort  = 40016
-	CodeRoleNameRequired  = 40020
-	CodeInvalidPermIDs    = 40021
-	CodeInvalidRoleBody   = 40022
-	CodeCannotDeleteRole  = 40023
-	CodeInvalidRolePerms  = 40024
-	CodePermRequired      = 40030
-	CodeInvalidPermBody   = 40031
-	CodeProfileBody       = 40040
-	CodeWrongPassword     = 40041
-	CodePasswordRequired  = 40042
-	CodeNewPasswordShort  = 40043
-	CodeAvatarRequired    = 40050
-	CodeAvatarTooLarge    = 40051
-	CodeAvatarType        = 40052
-	CodeDictRequired      = 40060
-	CodeInvalidDictBody   = 40061
-	CodeDictItemRequired  = 40062
-	CodeInvalidItemBody   = 40063
-	CodeConfigRequired    = 40070
-	CodeInvalidConfigBody = 40071
-	CodeDeptRequired      = 40090
-	CodeInvalidDeptBody   = 40091
-	CodeDeptHasChildren   = 40092
+	CodeInvalidBody        = 40001
+	CodeCaptchaRequired    = 40002
+	CodeInvalidCaptcha     = 40003
+	CodeUserPassRequired   = 40010
+	CodeInvalidRoleIDs     = 40011
+	CodeInvalidUserBody    = 40012
+	CodeCannotDeleteSeed   = 40013
+	CodeInvalidAssignBody  = 40014
+	CodeInvalidDictValue   = 40015
+	CodePasswordTooShort   = 40016
+	CodeRoleNameRequired   = 40020
+	CodeInvalidPermIDs     = 40021
+	CodeInvalidRoleBody    = 40022
+	CodeCannotDeleteRole   = 40023
+	CodeInvalidRolePerms   = 40024
+	CodePermRequired       = 40030
+	CodeInvalidPermBody    = 40031
+	CodeProfileBody        = 40040
+	CodeWrongPassword      = 40041
+	CodePasswordRequired   = 40042
+	CodeNewPasswordShort   = 40043
+	CodeResetTokenInvalid  = 40044
+	CodeEmailRequired      = 40045
+	CodeMailIncomplete     = 40080
+	CodeMailRecipient      = 40081
+	CodeInvalidTimezone    = 40082
+	CodeInvalidUnsubToken  = 40083
+	CodeMailJobCannotRetry = 40084
+	CodeMailCampaignState  = 40085
+	CodeAvatarRequired     = 40050
+	CodeAvatarTooLarge     = 40051
+	CodeAvatarType         = 40052
+	CodeDictRequired       = 40060
+	CodeInvalidDictBody    = 40061
+	CodeDictItemRequired   = 40062
+	CodeInvalidItemBody    = 40063
+	CodeConfigRequired     = 40070
+	CodeInvalidConfigBody  = 40071
+	CodeDeptRequired       = 40090
+	CodeInvalidDeptBody    = 40091
+	CodeDeptHasChildren    = 40092
 
 	CodeMissingToken   = 40101
 	CodeInvalidToken   = 40102
@@ -45,14 +53,16 @@ const (
 	CodeForbidden     = 40301
 	CodeAccountLocked = 40310
 
-	CodeUserMissingMe   = 40401
-	CodeUserNotFound    = 40410
-	CodeRoleNotFound    = 40420
-	CodePermNotFound    = 40430
-	CodeDictNotFound    = 40460
-	CodeDictItemMissing = 40461
-	CodeConfigNotFound  = 40470
-	CodeDeptNotFound    = 40490
+	CodeUserMissingMe        = 40401
+	CodeUserNotFound         = 40410
+	CodeRoleNotFound         = 40420
+	CodePermNotFound         = 40430
+	CodeDictNotFound         = 40460
+	CodeDictItemMissing      = 40461
+	CodeConfigNotFound       = 40470
+	CodeMailJobNotFound      = 40480
+	CodeMailCampaignNotFound = 40481
+	CodeDeptNotFound         = 40490
 
 	CodeUserExists   = 40910
 	CodeRoleExists   = 40920
@@ -62,7 +72,8 @@ const (
 	CodeConfigExists = 40970
 	CodeDeptExists   = 40990
 
-	CodeLoginRateLimited = 42901
+	CodeLoginRateLimited  = 42901
+	CodeForgotRateLimited = 42902
 
 	CodeCasbinCheck     = 50001
 	CodeCaptchaIssue    = 50002
@@ -102,5 +113,7 @@ const (
 	CodeDeleteDept      = 50092
 	CodeListMenus       = 50093
 
-	CodeUnhealthy = 50301
+	CodeSendMail     = 50085
+	CodeUnhealthy    = 50301
+	CodeMailDisabled = 50310
 )

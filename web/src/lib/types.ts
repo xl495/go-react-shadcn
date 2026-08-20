@@ -5,7 +5,13 @@ export type User = {
   avatar: string
   email?: string
   phone: string
+  gender?: string
+  department?: string
+  title?: string
+  remark?: string
   status?: string
+  timezone?: string
+  marketingOptIn?: boolean
 }
 
 export type LoginResult = {

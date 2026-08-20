@@ -7,6 +7,7 @@ import { dictsApi } from "./dicts"
 import { configsApi } from "./configs"
 import { logsApi } from "./logs"
 import { departmentsApi } from "./departments"
+import { mailApi } from "./mail"
 
 export const api = {
   ...authApi,
@@ -17,4 +18,5 @@ export const api = {
   ...configsApi,
   ...logsApi,
   ...departmentsApi,
+  ...mailApi,
 }

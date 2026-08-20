@@ -20,7 +20,7 @@ web/         Lightweight user-facing React app
 
 Permissions have three types: `menu` (sidebar), `button` (page actions), `api` (endpoint only). The admin UI hides buttons via `permissionCodes`; the server still enforces via Casbin.
 
-The UI supports **Simplified Chinese / Traditional Chinese / English**. Switch from the login page or sidebar; the choice is stored locally. API errors are translated by error code; seed roles/permissions are translated by code.
+The UI supports **Simplified Chinese / English**. Switch from the login page or sidebar; the choice is stored locally. API errors are translated by error code; seed roles/permissions are translated by code.
 
 ### Getting Started
 

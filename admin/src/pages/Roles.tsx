@@ -4,9 +4,9 @@ import { Can } from "@/components/auth/Can"
 import { useAuth } from "@/providers/auth"
 import { permLabel, roleDesc, roleLabel, translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
+import { useSearchPageParams } from "@/hooks/list-params"
 import {
   PAGE_SIZE,
-  PICKER_PAGE_SIZE,
   useAssignRolePermissions,
   useCreateRole,
   useDeleteRole,
@@ -15,6 +15,7 @@ import {
   useUpdateRole,
 } from "@/hooks/queries"
 import { ConfirmAlert, EmptyState, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { Role } from "@/types"
 
 const SCOPES = ["all", "dept_sub", "dept", "self"] as const
@@ -34,9 +36,10 @@ const SCOPES = ["all", "dept_sub", "dept", "self"] as const
 export function RolesPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const [page, setPage] = useState(1)
-  const { data: rolesPage, isLoading, error: rolesError } = useRoles({ page, pageSize: PAGE_SIZE })
-  const { data: permsPage } = usePermissions({ pageSize: PICKER_PAGE_SIZE })
+  const [{ page, q }, setParams] = useSearchPageParams()
+  const [draftQ, setDraftQ] = useSyncedDraft(q)
+  const { data: rolesPage, isLoading, error: rolesError } = useRoles({ page, pageSize: PAGE_SIZE, q: q || undefined })
+  const { data: permsPage } = usePermissions({ pageSize: 500 })
   const roles = rolesPage?.items ?? []
   const perms = permsPage?.items ?? []
   const createRole = useCreateRole()
@@ -81,6 +84,29 @@ export function RolesPage() {
           <Button onClick={() => setOpen(true)}>{t("roles.create")}</Button>
         </Can>
       </div>
+      <FilterForm onSubmit={() => void setParams({ q: draftQ.trim(), page: 1 })}>
+        <SearchField
+          id="role-q"
+          label={t("app.search")}
+          value={draftQ}
+          placeholder={t("roles.search")}
+          inputClassName="w-64"
+          onChange={setDraftQ}
+        />
+        <SearchSubmitButton />
+        {q || draftQ ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setDraftQ("")
+              void setParams({ q: "", page: 1 })
+            }}
+          >
+            {t("app.resetFilters")}
+          </Button>
+        ) : null}
+      </FilterForm>
       {rolesError ? <p className="text-sm text-destructive">{translateApiError(rolesError, t)}</p> : null}
       {isLoading ? <TableSkeleton rows={4} cols={3} /> : null}
       {!isLoading && roles.length === 0 ? <EmptyState /> : null}
@@ -101,14 +127,13 @@ export function RolesPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Can perm={P.roleUpdate}>
-                    <label className="flex items-center gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-xs">
                       <span className="text-muted-foreground">{t("roles.dataScope")}</span>
-                      <select
-                        className="h-8 rounded-md border border-input bg-card px-2"
+                      <Select
                         value={role.dataScope || "self"}
-                        onChange={(e) => {
+                        onValueChange={(dataScope) => {
                           updateRole.mutate(
-                            { id: role.id, body: { dataScope: e.target.value } },
+                            { id: role.id, body: { dataScope } },
                             {
                               onSuccess: () => toast.success(t("app.saved")),
                               onError: (err) => toast.error(translateApiError(err, t)),
@@ -116,13 +141,18 @@ export function RolesPage() {
                           )
                         }}
                       >
-                        {SCOPES.map((s) => (
-                          <option key={s} value={s}>
-                            {t(`roles.scope.${s}`)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                        <SelectTrigger size="sm" className="w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SCOPES.map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {t(`roles.scope.${s}`)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </Can>
                   <Can perm={P.roleDelete}>
                     <Button variant="ghost" size="sm" onClick={() => setPending(role)}>
@@ -132,6 +162,9 @@ export function RolesPage() {
                 </div>
               </div>
               <div className="mt-4 space-y-3">
+                {!can(P.rolePerms) ? (
+                  <p className="text-xs text-muted-foreground">{t("roles.readonlyHint")}</p>
+                ) : null}
                 {(["menu", "button", "api"] as const).map((kind) => {
                   const items = perms.filter((p) => (p.kind || "api") === kind)
                   if (items.length === 0) return null
@@ -143,33 +176,41 @@ export function RolesPage() {
                       <div className="flex flex-wrap gap-3">
                         {items.map((p) => {
                           const checked = assigned.has(p.id)
+                          const id = `rp-${role.id}-${p.id}`
+                          const busy = assignPerms.isPending && assignPerms.variables?.id === role.id
+                          const editable = can(P.rolePerms) && !busy
                           return (
-                            <label
+                            <div
                               key={p.id}
                               className="flex items-center gap-2 rounded-md border px-2 py-1 text-xs"
                             >
-                              {can(P.rolePerms) ? (
-                                <Checkbox
-                                  checked={checked}
-                                  onCheckedChange={() => {
-                                    const next = checked
-                                      ? [...assigned].filter((id) => id !== p.id)
-                                      : [...assigned, p.id]
-                                    assignPerms.mutate(
-                                      { id: role.id, permissionIds: next },
-                                      {
-                                        onError: (e) =>
-                                          toast.error(translateApiError(e, t) || t("roles.assignFailed")),
-                                      },
-                                    )
-                                  }}
-                                />
-                              ) : null}
-                              <span>{permLabel(p.code, p.name, t)}</span>
+                              <Checkbox
+                                id={id}
+                                checked={checked}
+                                disabled={!editable}
+                                onCheckedChange={(value) => {
+                                  if (!can(P.rolePerms)) return
+                                  const want = value === true
+                                  if (want === checked) return
+                                  const next = want
+                                    ? [...assigned, p.id]
+                                    : [...assigned].filter((item) => item !== p.id)
+                                  assignPerms.mutate(
+                                    { id: role.id, permissionIds: next },
+                                    {
+                                      onError: (e) =>
+                                        toast.error(translateApiError(e, t) || t("roles.assignFailed")),
+                                    },
+                                  )
+                                }}
+                              />
+                              <label htmlFor={id} className={editable ? "cursor-pointer" : "cursor-default"}>
+                                {permLabel(p.code, p.name, t)}
+                              </label>
                               <Badge variant={p.kind === "button" ? "default" : "muted"}>
                                 {p.kind === "button" ? t("kinds.button") : `${p.method} ${p.path}`}
                               </Badge>
-                            </label>
+                            </div>
                           )
                         })}
                       </div>
@@ -185,7 +226,7 @@ export function RolesPage() {
         page={page}
         pageSize={PAGE_SIZE}
         total={rolesPage?.total ?? 0}
-        onPageChange={setPage}
+        onPageChange={(next) => void setParams({ page: next })}
       />
 
       <ConfirmAlert
@@ -227,33 +268,39 @@ export function RolesPage() {
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="rs">{t("roles.dataScope")}</Label>
-              <select
-                id="rs"
-                className="h-9 rounded-md border border-input bg-card px-3 text-sm"
-                value={dataScope}
-                onChange={(e) => setDataScope(e.target.value)}
-              >
-                {SCOPES.map((s) => (
-                  <option key={s} value={s}>
-                    {t(`roles.scope.${s}`)}
-                  </option>
-                ))}
-              </select>
+              <Select value={dataScope} onValueChange={setDataScope}>
+                <SelectTrigger id="rs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SCOPES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {t(`roles.scope.${s}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label>{t("roles.permissions")}</Label>
-              {perms.map((p) => (
-                <label key={p.id} className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={permissionIds.includes(p.id)}
-                    onCheckedChange={() => toggle(p.id)}
-                  />
-                  {permLabel(p.code, p.name, t)}
-                  <span className="text-muted-foreground">
-                    {p.method} {p.path}
-                  </span>
-                </label>
-              ))}
+              {perms.map((p) => {
+                const id = `nrp-${p.id}`
+                return (
+                  <div key={p.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      id={id}
+                      checked={permissionIds.includes(p.id)}
+                      onCheckedChange={() => toggle(p.id)}
+                    />
+                    <label htmlFor={id} className="cursor-pointer">
+                      {permLabel(p.code, p.name, t)}
+                    </label>
+                    <span className="text-muted-foreground">
+                      {p.method} {p.path}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
           <DialogFooter>

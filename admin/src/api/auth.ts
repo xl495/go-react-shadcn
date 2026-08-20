@@ -23,11 +23,23 @@ export const authApi = {
     department: string
     title: string
     remark: string
+    timezone?: string
+    marketingOptIn?: boolean
   }) => request<User>("/api/v1/auth/profile", { method: "PUT", body: JSON.stringify(body) }),
   uploadOwnAvatar: (file: File) => uploadAvatar("/api/v1/auth/avatar", file),
   changePassword: (body: { oldPassword: string; newPassword: string }) =>
     request<{ changed: boolean }>("/api/v1/auth/password", {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  forgotPassword: (body: { email: string; captchaId: string; captchaCode: string }) =>
+    request<{ sent: boolean }>("/api/v1/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  resetPassword: (body: { token: string; newPassword: string }) =>
+    request<{ reset: boolean }>("/api/v1/auth/reset-password", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 }

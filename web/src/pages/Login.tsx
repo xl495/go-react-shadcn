@@ -80,6 +80,9 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
+            <a href="/forgot-password" className="text-xs text-primary underline-offset-4 hover:underline">
+              忘记密码
+            </a>
           </div>
           <div className="grid gap-2">
             <label htmlFor="captcha" className="text-sm font-medium">

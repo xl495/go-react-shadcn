@@ -2,7 +2,7 @@ import { request, qs } from "./http"
 import type { PageResult, Permission } from "@/types"
 
 export const permissionsApi = {
-  permissions: (params?: { page?: number; pageSize?: number }) =>
+  permissions: (params?: { page?: number; pageSize?: number; q?: string; kind?: string }) =>
     request<PageResult<Permission>>(`/api/v1/permissions${qs(params ?? {})}`),
   createPermission: (body: {
     name: string

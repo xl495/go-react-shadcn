@@ -30,6 +30,7 @@ type assignPermissionsRequest struct {
 func (a *App) handleListRoles(c *gin.Context) {
 	p := parsePage(c, 50, 500)
 	q := a.DB.Model(&models.Role{})
+	q = applyContains(q, c.Query("q"), "name", "code", "description")
 	var total int64
 	_ = q.Count(&total).Error
 	var roles []models.Role

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/captcha"
 	"go-react-shadcn/internal/config"
+	"go-react-shadcn/internal/mailer"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/rbac"
 	"go-react-shadcn/internal/security"
@@ -21,18 +22,21 @@ import (
 )
 
 type App struct {
-	Cfg        config.Config
-	DB         *gorm.DB
-	Captcha    *captcha.Service
-	Tokens     *token.Service
-	Enforcer   *casbin.Enforcer
-	LoginGuard *security.LoginGuard
-	Router     *gin.Engine
-	metrics    *httpMetrics
-	sessions   *sessionCache
-	apiLogs    *apiLogQueue
-	stopOnce   sync.Once
-	stopCh     chan struct{}
+	Cfg         config.Config
+	DB          *gorm.DB
+	Captcha     *captcha.Service
+	Tokens      *token.Service
+	Enforcer    *casbin.Enforcer
+	LoginGuard  *security.LoginGuard
+	ForgotGuard *security.LoginGuard
+	Mail        mailer.Sender
+	MailQ       *mailer.Queue
+	Router      *gin.Engine
+	metrics     *httpMetrics
+	sessions    *sessionCache
+	apiLogs     *apiLogQueue
+	stopOnce    sync.Once
+	stopCh      chan struct{}
 }
 
 func New(cfg config.Config, db *gorm.DB) (*App, error) {
@@ -53,20 +57,25 @@ func New(cfg config.Config, db *gorm.DB) (*App, error) {
 	if err := seed.Run(db, enforcer, cfg.UploadDir); err != nil {
 		return nil, fmt.Errorf("seed: %w", err)
 	}
+	mailSender := &mailer.SMTP{DB: db}
 	app := &App{
-		Cfg:        cfg,
-		DB:         db,
-		Captcha:    captcha.New(cfg.CaptchaDebug),
-		Tokens:     token.New(cfg.JWTSecret, cfg.JWTTTL),
-		Enforcer:   enforcer,
-		LoginGuard: security.NewLoginGuard(),
-		metrics:    newHTTPMetrics(),
-		sessions:   newSessionCache(cfg.SessionCache),
-		apiLogs:    newAPILogQueue(db, cfg.APILogEnabled, cfg.APILogSample),
-		stopCh:     make(chan struct{}),
+		Cfg:         cfg,
+		DB:          db,
+		Captcha:     captcha.New(cfg.CaptchaDebug),
+		Tokens:      token.New(cfg.JWTSecret, cfg.JWTTTL),
+		Enforcer:    enforcer,
+		LoginGuard:  security.NewLoginGuard(),
+		ForgotGuard: security.NewIPLimiter(8, time.Minute),
+		Mail:        mailSender,
+		MailQ:       mailer.NewQueue(db, mailSender, cfg.JWTSecret),
+		metrics:     newHTTPMetrics(),
+		sessions:    newSessionCache(cfg.SessionCache),
+		apiLogs:     newAPILogQueue(db, cfg.APILogEnabled, cfg.APILogSample),
+		stopCh:      make(chan struct{}),
 	}
 	app.Router = app.buildRouter()
 	go app.sweepLoginGuard()
+	go app.MailQ.Run()
 	return app, nil
 }
 
@@ -91,6 +100,9 @@ func (a *App) Close() {
 			close(a.stopCh)
 		}
 	})
+	if a.MailQ != nil {
+		a.MailQ.Stop()
+	}
 	if a.apiLogs != nil {
 		a.apiLogs.Stop()
 	}
@@ -120,6 +132,9 @@ func (a *App) buildRouter() *gin.Engine {
 	api.GET("/openapi.yaml", a.handleOpenAPI)
 	api.GET("/auth/captcha", a.handleCaptcha)
 	api.POST("/auth/login", a.handleLogin)
+	api.POST("/auth/forgot-password", a.handleForgotPassword)
+	api.POST("/auth/reset-password", a.handleResetPassword)
+	api.POST("/mail/unsubscribe", a.handleUnsubscribe)
 
 	self := api.Group("")
 	self.Use(a.requireJWT(), a.logMutations())
@@ -171,6 +186,16 @@ func (a *App) buildRouter() *gin.Engine {
 	authed.POST("/configs", a.handleCreateConfig)
 	authed.PUT("/configs/:id", a.handleUpdateConfig)
 	authed.DELETE("/configs/:id", a.handleDeleteConfig)
+	authed.POST("/mail/test", a.handleTestMail)
+	authed.GET("/mail/jobs", a.handleListMailJobs)
+	authed.POST("/mail/jobs/:id/retry", a.handleRetryMailJob)
+	authed.POST("/mail/jobs/:id/cancel", a.handleCancelMailJob)
+	authed.GET("/mail/campaigns", a.handleListMailCampaigns)
+	authed.GET("/mail/campaigns/:id", a.handleGetMailCampaign)
+	authed.POST("/mail/campaigns", a.handleCreateMailCampaign)
+	authed.PUT("/mail/campaigns/:id", a.handleUpdateMailCampaign)
+	authed.DELETE("/mail/campaigns/:id", a.handleDeleteMailCampaign)
+	authed.POST("/mail/campaigns/:id/schedule", a.handleScheduleMailCampaign)
 
 	authed.GET("/logs", a.handleListLogs)
 	authed.GET("/logs/login", a.handleListLoginLogs)

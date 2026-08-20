@@ -98,6 +98,8 @@ func moduleOf(path string) string {
 		return "perm"
 	case strings.Contains(path, "/dicts") || strings.Contains(path, "/dict-items"):
 		return "dict"
+	case strings.Contains(path, "/mail"):
+		return "mail"
 	case strings.Contains(path, "/configs"):
 		return "config"
 	case strings.Contains(path, "/departments"):
@@ -112,12 +114,8 @@ func moduleOf(path string) string {
 func (a *App) handleListLoginLogs(c *gin.Context) {
 	p := parsePage(c, 20, 200)
 	q := a.DB.Model(&models.LoginLog{})
-	if u := c.Query("username"); u != "" {
-		q = q.Where("username = ?", u)
-	}
-	if s := c.Query("status"); s != "" {
-		q = q.Where("status = ?", s)
-	}
+	q = applyContains(q, c.Query("username"), "username")
+	q = applyEqual(q, "status", c.Query("status"))
 	var total int64
 	_ = q.Count(&total).Error
 	var rows []models.LoginLog
@@ -131,15 +129,9 @@ func (a *App) handleListLoginLogs(c *gin.Context) {
 func (a *App) handleListOpLogs(c *gin.Context) {
 	p := parsePage(c, 20, 200)
 	q := a.DB.Model(&models.OpLog{})
-	if u := c.Query("username"); u != "" {
-		q = q.Where("username = ?", u)
-	}
-	if m := c.Query("module"); m != "" {
-		q = q.Where("module = ?", m)
-	}
-	if act := c.Query("action"); act != "" {
-		q = q.Where("action = ?", act)
-	}
+	q = applyContains(q, c.Query("username"), "username")
+	q = applyContains(q, c.Query("module"), "module")
+	q = applyContains(q, c.Query("action"), "action")
 	var total int64
 	_ = q.Count(&total).Error
 	var rows []models.OpLog
@@ -153,12 +145,8 @@ func (a *App) handleListOpLogs(c *gin.Context) {
 func (a *App) handleListAPILogs(c *gin.Context) {
 	p := parsePage(c, 20, 200)
 	q := a.DB.Model(&models.APILog{})
-	if tid := c.Query("traceId"); tid != "" {
-		q = q.Where("trace_id = ?", tid)
-	}
-	if path := c.Query("path"); path != "" {
-		q = q.Where("path LIKE ?", "%"+path+"%")
-	}
+	q = applyContains(q, c.Query("traceId"), "trace_id")
+	q = applyContains(q, c.Query("path"), "path")
 	var total int64
 	_ = q.Count(&total).Error
 	var rows []models.APILog

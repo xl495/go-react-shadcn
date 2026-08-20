@@ -2,9 +2,9 @@ package httpserver
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go-react-shadcn/internal/mailer"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/passwd"
 	"go-react-shadcn/internal/seed"
@@ -23,6 +23,8 @@ type userDTO struct {
 	Title           string    `json:"title"`
 	Remark          string    `json:"remark"`
 	Status          string    `json:"status"`
+	Timezone        string    `json:"timezone"`
+	MarketingOptIn  bool      `json:"marketingOptIn"`
 	LastLoginAt     any       `json:"lastLoginAt"`
 	LastLoginIP     string    `json:"lastLoginIp"`
 	Roles           []roleDTO `json:"roles"`
@@ -57,14 +59,16 @@ type permissionDTO struct {
 }
 
 type userProfileFields struct {
-	Nickname   string `json:"nickname"`
-	Avatar     string `json:"avatar"`
-	Email      string `json:"email"`
-	Phone      string `json:"phone"`
-	Gender     string `json:"gender"`
-	Department string `json:"department"`
-	Title      string `json:"title"`
-	Remark     string `json:"remark"`
+	Nickname       string `json:"nickname"`
+	Avatar         string `json:"avatar"`
+	Email          string `json:"email"`
+	Phone          string `json:"phone"`
+	Gender         string `json:"gender"`
+	Department     string `json:"department"`
+	Title          string `json:"title"`
+	Remark         string `json:"remark"`
+	Timezone       string `json:"timezone"`
+	MarketingOptIn *bool  `json:"marketingOptIn"`
 }
 
 type createUserRequest struct {
@@ -76,16 +80,18 @@ type createUserRequest struct {
 }
 
 type updateUserRequest struct {
-	Password   *string `json:"password"`
-	Status     *string `json:"status"`
-	Nickname   *string `json:"nickname"`
-	Avatar     *string `json:"avatar"`
-	Email      *string `json:"email"`
-	Phone      *string `json:"phone"`
-	Gender     *string `json:"gender"`
-	Department *string `json:"department"`
-	Title      *string `json:"title"`
-	Remark     *string `json:"remark"`
+	Password       *string `json:"password"`
+	Status         *string `json:"status"`
+	Nickname       *string `json:"nickname"`
+	Avatar         *string `json:"avatar"`
+	Email          *string `json:"email"`
+	Phone          *string `json:"phone"`
+	Gender         *string `json:"gender"`
+	Department     *string `json:"department"`
+	Title          *string `json:"title"`
+	Remark         *string `json:"remark"`
+	Timezone       *string `json:"timezone"`
+	MarketingOptIn *bool   `json:"marketingOptIn"`
 }
 
 type assignRolesRequest struct {
@@ -109,6 +115,8 @@ func toUserDTO(u models.User) userDTO {
 		Title:           u.Title,
 		Remark:          u.Remark,
 		Status:          u.Status,
+		Timezone:        u.Timezone,
+		MarketingOptIn:  u.MarketingOptIn,
 		LastLoginAt:     u.LastLoginAt,
 		LastLoginIP:     u.LastLoginIP,
 		Roles:           roles,
@@ -176,13 +184,13 @@ func (a *App) handleListUsers(c *gin.Context) {
 	}
 	p := parsePage(c, 20, 200)
 	q := a.applyUserDataScope(a.DB.Model(&models.User{}), actor)
-	if s := c.Query("status"); s != "" {
-		q = q.Where("status = ?", s)
+	q = applyEqual(q, "users.status", c.Query("status"))
+	q = applyEqual(q, "users.gender", c.Query("gender"))
+	q = applyEqual(q, "users.department", c.Query("department"))
+	if roleID := parseQueryUint(c, "roleId"); roleID > 0 {
+		q = q.Where("users.id IN (SELECT user_id FROM user_roles WHERE role_id = ?)", roleID)
 	}
-	if kw := strings.TrimSpace(c.Query("q")); kw != "" {
-		like := "%" + kw + "%"
-		q = q.Where("username LIKE ? OR nickname LIKE ? OR email LIKE ?", like, like, like)
-	}
+	q = applyUserKeyword(q, c.Query("q"))
 	var total int64
 	_ = q.Count(&total).Error
 	var users []models.User
@@ -227,10 +235,24 @@ func (a *App) handleCreateUser(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40011, "invalid role ids")
 		return
 	}
+	tz := mailer.DefaultTimezone
+	if req.Timezone != "" {
+		parsed, err := mailer.NormalizeTimezone(req.Timezone)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeInvalidTimezone, "invalid timezone")
+			return
+		}
+		tz = parsed
+	}
+	optIn := true
+	if req.MarketingOptIn != nil {
+		optIn = *req.MarketingOptIn
+	}
 	user := models.User{
 		Username: req.Username, PasswordHash: hash, Status: status,
 		Nickname: req.Nickname, Avatar: req.Avatar, Email: req.Email, Phone: req.Phone,
 		Gender: req.Gender, Department: req.Department, Title: req.Title, Remark: req.Remark,
+		Timezone: tz, MarketingOptIn: optIn,
 	}
 	a.applyDepartmentLink(&user)
 	if err := a.withTx(func(tx *gorm.DB) error {
@@ -311,6 +333,17 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 	}
 	if req.Remark != nil {
 		user.Remark = *req.Remark
+	}
+	if req.Timezone != nil {
+		tz, err := mailer.NormalizeTimezone(*req.Timezone)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeInvalidTimezone, "invalid timezone")
+			return
+		}
+		user.Timezone = tz
+	}
+	if req.MarketingOptIn != nil {
+		user.MarketingOptIn = *req.MarketingOptIn
 	}
 	if err := a.DB.Save(&user).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50014, "failed to update user")

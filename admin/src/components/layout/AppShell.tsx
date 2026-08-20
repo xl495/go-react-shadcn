@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
   BookMarked,
   Building2,
   ChevronDown,
   ClipboardList,
+  FileText,
+  FolderTree,
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Mail,
+  Monitor,
   Settings,
   Settings2,
   Shield,
@@ -16,6 +20,14 @@ import {
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { Avatar } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/providers/auth"
 import { roleLabel, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
@@ -32,17 +44,111 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   BookMarked,
   Settings2,
   ClipboardList,
+  Mail,
+  FileText,
+  FolderTree,
+  Monitor,
 }
 
-type NavLinkDef = { to: string; label: string; icon: typeof LayoutDashboard; perm: string }
+type SidebarItem = {
+  key: string
+  label: string
+  icon: typeof LayoutDashboard
+  to?: string
+  perm?: string
+  children?: SidebarItem[]
+}
 
-function flattenMenus(nodes: MenuNode[]): MenuNode[] {
-  const out: MenuNode[] = []
+function sidebarFromMenus(nodes: MenuNode[]): SidebarItem[] {
+  const out: SidebarItem[] = []
   for (const n of nodes) {
-    if (n.kind === "menu" && n.routePath && !n.hidden) out.push(n)
-    if (n.children?.length) out.push(...flattenMenus(n.children))
+    if (n.kind !== "menu" || n.hidden) continue
+    const children = sidebarFromMenus(n.children ?? [])
+    if (n.routePath) {
+      out.push({
+        key: n.code,
+        label: n.name,
+        icon: ICONS[n.icon] ?? LayoutDashboard,
+        to: n.routePath,
+        perm: n.code,
+      })
+      continue
+    }
+    if (children.length > 0) {
+      out.push({
+        key: n.code,
+        label: n.name,
+        icon: ICONS[n.icon] ?? FolderTree,
+        children,
+      })
+    }
   }
-  return out.sort((a, b) => a.sort - b.sort)
+  return out
+}
+
+function fallbackSidebar(t: (key: string) => string): SidebarItem[] {
+  return [
+    { key: P.dashboard, label: t("nav.dashboard"), icon: LayoutDashboard, to: "/", perm: P.dashboard },
+    {
+      key: "org",
+      label: t("nav.org"),
+      icon: FolderTree,
+      children: [
+        { key: P.userList, label: t("nav.users"), icon: Users, to: "/users", perm: P.userList },
+        { key: P.deptList, label: t("nav.departments"), icon: Building2, to: "/departments", perm: P.deptList },
+        { key: P.roleList, label: t("nav.roles"), icon: Shield, to: "/roles", perm: P.roleList },
+        { key: P.permList, label: t("nav.permissions"), icon: KeyRound, to: "/permissions", perm: P.permList },
+      ],
+    },
+    {
+      key: "system",
+      label: t("nav.system"),
+      icon: Monitor,
+      children: [
+        { key: P.dictList, label: t("nav.dicts"), icon: BookMarked, to: "/dicts", perm: P.dictList },
+        { key: P.configList, label: t("nav.configs"), icon: Settings2, to: "/configs", perm: P.configList },
+        { key: P.mailJobsList, label: t("nav.mailJobs"), icon: Mail, to: "/mail/jobs", perm: P.mailJobsList },
+        { key: P.mailCampaignList, label: t("nav.mailCampaigns"), icon: FileText, to: "/mail/campaigns", perm: P.mailCampaignList },
+        { key: P.logList, label: t("nav.logs"), icon: ClipboardList, to: "/logs", perm: P.logList },
+      ],
+    },
+  ]
+}
+
+function filterSidebar(items: SidebarItem[], can: (code: string) => boolean): SidebarItem[] {
+  const out: SidebarItem[] = []
+  for (const item of items) {
+    if (item.children?.length) {
+      const children = filterSidebar(item.children, can)
+      if (children.length) out.push({ ...item, children })
+      continue
+    }
+    if (!item.perm || can(item.perm)) out.push(item)
+  }
+  return out
+}
+
+function pathMatches(to: string, pathname: string) {
+  return to === "/" ? pathname === "/" : pathname === to || pathname.startsWith(`${to}/`)
+}
+
+function isPathInGroup(item: SidebarItem, pathname: string): boolean {
+  if (item.to) return pathMatches(item.to, pathname)
+  return (item.children ?? []).some((child) => isPathInGroup(child, pathname))
+}
+
+function findCurrentLabel(items: SidebarItem[], pathname: string): string | undefined {
+  let best: { label: string; len: number } | undefined
+  function walk(nodes: SidebarItem[]) {
+    for (const item of nodes) {
+      if (item.to && pathMatches(item.to, pathname)) {
+        if (!best || item.to.length > best.len) best = { label: item.label, len: item.to.length }
+      }
+      if (item.children) walk(item.children)
+    }
+  }
+  walk(items)
+  return best?.label
 }
 
 export function AppShell() {
@@ -52,37 +158,19 @@ export function AppShell() {
   const location = useLocation()
   const { data: menus = [] } = useMenus()
 
-  const dynamicLinks: NavLinkDef[] = flattenMenus(menus).map((n) => ({
-    to: n.routePath,
-    label: n.name,
-    icon: ICONS[n.icon] ?? LayoutDashboard,
-    perm: n.code,
-  }))
-
-  const fallbackMain: NavLinkDef[] = [
-    { to: "/", label: t("nav.dashboard"), icon: LayoutDashboard, perm: P.dashboard },
-    { to: "/users", label: t("nav.users"), icon: Users, perm: P.userList },
-    { to: "/departments", label: t("nav.departments"), icon: Building2, perm: P.deptList },
-    { to: "/roles", label: t("nav.roles"), icon: Shield, perm: P.roleList },
-    { to: "/permissions", label: t("nav.permissions"), icon: KeyRound, perm: P.permList },
-  ]
-  const fallbackSystem: NavLinkDef[] = [
-    { to: "/dicts", label: t("nav.dicts"), icon: BookMarked, perm: P.dictList },
-    { to: "/configs", label: t("nav.configs"), icon: Settings2, perm: P.configList },
-    { to: "/logs", label: t("nav.logs"), icon: ClipboardList, perm: P.logList },
-  ]
-
-  const systemPaths = new Set(["/dicts", "/configs", "/logs"])
-  const useDynamic = dynamicLinks.length > 0
-  const sourceMain = useDynamic ? dynamicLinks.filter((l) => !systemPaths.has(l.to)) : fallbackMain
-  const sourceSystem = useDynamic ? dynamicLinks.filter((l) => systemPaths.has(l.to)) : fallbackSystem
-  const visibleMain = sourceMain.filter((l) => can(l.perm))
-  const visibleSystem = sourceSystem.filter((l) => can(l.perm))
-  const all = [...visibleMain, ...visibleSystem]
+  const source = menus.length > 0 ? sidebarFromMenus(menus) : fallbackSidebar(t)
+  const visible = filterSidebar(source, can)
   const current =
-    all.find((l) => (l.to === "/" ? location.pathname === "/" : location.pathname.startsWith(l.to)))
-      ?.label ??
-    (location.pathname.startsWith("/settings") ? t("nav.settings") : t("nav.dashboard"))
+    location.pathname === "/mail/campaigns/new"
+      ? t("mail.createCampaign")
+      : /^\/mail\/campaigns\/\d+/.test(location.pathname)
+        ? t("mail.editCampaign")
+        : findCurrentLabel(visible, location.pathname) ??
+          (location.pathname.startsWith("/settings/password")
+            ? t("nav.password")
+            : location.pathname.startsWith("/settings")
+              ? t("nav.settings")
+              : t("nav.dashboard"))
   const displayName = user?.nickname || user?.username || ""
 
   return (
@@ -92,19 +180,13 @@ export function AppShell() {
           <span className="text-sm font-semibold tracking-tight">Latch</span>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 p-2">
-          {visibleMain.map((l) => (
-            <NavItem key={l.to} to={l.to} label={l.label} icon={l.icon} />
-          ))}
-          {visibleSystem.length > 0 ? (
-            <div className="mt-3">
-              <p className="px-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                {t("nav.system")}
-              </p>
-              {visibleSystem.map((l) => (
-                <NavItem key={l.to} to={l.to} label={l.label} icon={l.icon} />
-              ))}
-            </div>
-          ) : null}
+          {visible.map((item) =>
+            item.children?.length ? (
+              <NavGroup key={item.key} item={item} pathname={location.pathname} />
+            ) : (
+              <NavItem key={item.key} to={item.to!} label={item.label} icon={item.icon} />
+            ),
+          )}
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -119,7 +201,6 @@ export function AppShell() {
               name={displayName}
               avatar={user?.avatar}
               subtitle={(user?.roles ?? []).map((r) => roleLabel(r.code, r.name, t)).join(" · ")}
-              onProfile={() => navigate("/settings")}
               onLogout={() => {
                 logout()
                 navigate("/login")
@@ -131,6 +212,45 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+    </div>
+  )
+}
+
+function NavGroup({ item, pathname }: { item: SidebarItem; pathname: string }) {
+  const Icon = item.icon
+  const containsActive = isPathInGroup(item, pathname)
+  const [open, setOpen] = useState(containsActive)
+  useEffect(() => {
+    if (containsActive) setOpen(true)
+  }, [containsActive])
+
+  return (
+    <div>
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={cn(
+          "h-auto w-full justify-start gap-2 px-3 py-2 font-normal",
+          containsActive ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        <Icon className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+        <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")} />
+      </Button>
+      {open ? (
+        <div className="ml-3 border-l border-border/70 pl-1">
+          {item.children!.map((child) =>
+            child.children?.length ? (
+              <NavGroup key={child.key} item={child} pathname={pathname} />
+            ) : (
+              <NavItem key={child.key} to={child.to!} label={child.label} icon={child.icon} />
+            ),
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -167,66 +287,42 @@ function UserMenu({
   name,
   avatar,
   subtitle,
-  onProfile,
   onLogout,
 }: {
   name: string
   avatar?: string
   subtitle: string
-  onProfile: () => void
   onLogout: () => void
 }) {
   const { t } = useI18n()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", onDoc)
-    return () => document.removeEventListener("mousedown", onDoc)
-  }, [])
-
+  const navigate = useNavigate()
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-accent"
-      >
-        <Avatar name={name} src={avatar} />
-        <span className="hidden text-left text-sm sm:block">
-          <span className="block leading-tight font-medium">{name}</span>
-          <span className="block text-[11px] text-muted-foreground">{subtitle || t("app.noRole")}</span>
-        </span>
-        <ChevronDown className="size-3.5 text-muted-foreground" />
-      </button>
-      {open ? (
-        <div className="absolute right-0 z-50 mt-1 w-48 rounded-md border bg-popover py-1 shadow-md">
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
-            onClick={() => {
-              setOpen(false)
-              onProfile()
-            }}
-          >
-            <Settings className="size-4" />
-            {t("nav.settings")}
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
-            onClick={() => {
-              setOpen(false)
-              onLogout()
-            }}
-          >
-            <LogOut className="size-4" />
-            {t("app.logout")}
-          </button>
-        </div>
-      ) : null}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="ghost" className="h-auto gap-2 px-1.5 py-1">
+          <Avatar name={name} src={avatar} />
+          <span className="hidden text-left text-sm sm:block">
+            <span className="block leading-tight font-medium">{name}</span>
+            <span className="block text-[11px] text-muted-foreground">{subtitle || t("app.noRole")}</span>
+          </span>
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem onClick={() => navigate("/settings")}>
+          <Settings />
+          {t("nav.settings")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate("/settings/password")}>
+          <KeyRound />
+          {t("nav.password")}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onLogout}>
+          <LogOut />
+          {t("app.logout")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

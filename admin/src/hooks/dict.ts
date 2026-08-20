@@ -8,6 +8,7 @@ export const DICT = {
   gender: "sys_gender",
   department: "sys_department",
   yesNo: "sys_yes_no",
+  permKind: "sys_perm_kind",
 } as const
 
 export function dictLabel(items: DictItem[], value?: string | null, fallback = "—") {

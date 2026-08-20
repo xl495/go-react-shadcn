@@ -10,41 +10,43 @@ const (
 )
 
 type Department struct {
-	ID        uint          `json:"id" gorm:"primaryKey"`
-	Name      string        `json:"name" gorm:"size:64;not null"`
-	Code      string        `json:"code" gorm:"uniqueIndex;size:64;not null"`
-	ParentID  *uint         `json:"parentId" gorm:"index"`
-	Sort      int           `json:"sort" gorm:"not null;default:0"`
-	Leader    string        `json:"leader" gorm:"size:64"`
-	Status    string        `json:"status" gorm:"size:16;not null;default:active"`
-	CreatedAt time.Time     `json:"createdAt"`
-	UpdatedAt time.Time     `json:"updatedAt"`
-	Children  []Department  `json:"children,omitempty" gorm:"-"`
+	ID        uint         `json:"id" gorm:"primaryKey"`
+	Name      string       `json:"name" gorm:"size:64;not null"`
+	Code      string       `json:"code" gorm:"uniqueIndex;size:64;not null"`
+	ParentID  *uint        `json:"parentId" gorm:"index"`
+	Sort      int          `json:"sort" gorm:"not null;default:0"`
+	Leader    string       `json:"leader" gorm:"size:64"`
+	Status    string       `json:"status" gorm:"size:16;not null;default:active"`
+	CreatedAt time.Time    `json:"createdAt"`
+	UpdatedAt time.Time    `json:"updatedAt"`
+	Children  []Department `json:"children,omitempty" gorm:"-"`
 }
 
 type User struct {
-	ID                uint       `json:"id" gorm:"primaryKey"`
-	Username          string     `json:"username" gorm:"uniqueIndex;size:64;not null"`
-	PasswordHash      string     `json:"-" gorm:"not null"`
-	Nickname          string     `json:"nickname" gorm:"size:64"`
-	Avatar            string     `json:"avatar" gorm:"size:255"`
-	Email             string     `json:"email" gorm:"size:128"`
-	Phone             string     `json:"phone" gorm:"size:32"`
-	Gender            string     `json:"gender" gorm:"size:16"`
-	Department        string     `json:"department" gorm:"size:64"`
-	DepartmentID      *uint      `json:"departmentId" gorm:"index"`
-	Title             string     `json:"title" gorm:"size:64"`
-	Remark            string     `json:"remark" gorm:"size:255"`
-	Status            string     `json:"status" gorm:"size:16;not null;default:active"`
-	TokenVersion      int        `json:"-" gorm:"not null;default:0"`
-	FailedLoginCount  int        `json:"-" gorm:"not null;default:0"`
-	LockedUntil       *time.Time `json:"-"`
-	LastLoginAt       *time.Time `json:"lastLoginAt"`
-	LastLoginIP       string     `json:"lastLoginIp" gorm:"size:64"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
-	Roles             []Role     `json:"roles,omitempty" gorm:"many2many:user_roles;"`
-	Dept              *Department `json:"dept,omitempty" gorm:"foreignKey:DepartmentID"`
+	ID               uint        `json:"id" gorm:"primaryKey"`
+	Username         string      `json:"username" gorm:"uniqueIndex;size:64;not null"`
+	PasswordHash     string      `json:"-" gorm:"not null"`
+	Nickname         string      `json:"nickname" gorm:"size:64"`
+	Avatar           string      `json:"avatar" gorm:"size:255"`
+	Email            string      `json:"email" gorm:"size:128"`
+	Phone            string      `json:"phone" gorm:"size:32"`
+	Gender           string      `json:"gender" gorm:"size:16"`
+	Department       string      `json:"department" gorm:"size:64"`
+	DepartmentID     *uint       `json:"departmentId" gorm:"index"`
+	Title            string      `json:"title" gorm:"size:64"`
+	Remark           string      `json:"remark" gorm:"size:255"`
+	Status           string      `json:"status" gorm:"size:16;not null;default:active"`
+	TokenVersion     int         `json:"-" gorm:"not null;default:0"`
+	FailedLoginCount int         `json:"-" gorm:"not null;default:0"`
+	LockedUntil      *time.Time  `json:"-"`
+	LastLoginAt      *time.Time  `json:"lastLoginAt"`
+	LastLoginIP      string      `json:"lastLoginIp" gorm:"size:64"`
+	Timezone         string      `json:"timezone" gorm:"size:64;not null;default:Asia/Shanghai"`
+	MarketingOptIn   bool        `json:"marketingOptIn" gorm:"not null;default:true"`
+	CreatedAt        time.Time   `json:"createdAt"`
+	UpdatedAt        time.Time   `json:"updatedAt"`
+	Roles            []Role      `json:"roles,omitempty" gorm:"many2many:user_roles;"`
+	Dept             *Department `json:"dept,omitempty" gorm:"foreignKey:DepartmentID"`
 }
 
 type Role struct {
@@ -60,22 +62,22 @@ type Role struct {
 }
 
 type Permission struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	Name        string    `json:"name" gorm:"size:64;not null"`
-	Code        string    `json:"code" gorm:"uniqueIndex;size:64;not null"`
-	Path        string    `json:"path" gorm:"size:128;not null"`
-	Method      string    `json:"method" gorm:"size:16;not null"`
-	Kind        string    `json:"kind" gorm:"size:16;not null;default:api"`
-	Description string    `json:"description" gorm:"size:255"`
-	ParentID    *uint     `json:"parentId" gorm:"index"`
-	Sort        int       `json:"sort" gorm:"not null;default:0"`
-	Icon        string    `json:"icon" gorm:"size:64"`
-	RoutePath   string    `json:"routePath" gorm:"size:128"`
-	Component   string    `json:"component" gorm:"size:128"`
-	Hidden      bool      `json:"hidden" gorm:"not null;default:false"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	Roles       []Role    `json:"-" gorm:"many2many:role_permissions;"`
+	ID          uint         `json:"id" gorm:"primaryKey"`
+	Name        string       `json:"name" gorm:"size:64;not null"`
+	Code        string       `json:"code" gorm:"uniqueIndex;size:64;not null"`
+	Path        string       `json:"path" gorm:"size:128;not null"`
+	Method      string       `json:"method" gorm:"size:16;not null"`
+	Kind        string       `json:"kind" gorm:"size:16;not null;default:api"`
+	Description string       `json:"description" gorm:"size:255"`
+	ParentID    *uint        `json:"parentId" gorm:"index"`
+	Sort        int          `json:"sort" gorm:"not null;default:0"`
+	Icon        string       `json:"icon" gorm:"size:64"`
+	RoutePath   string       `json:"routePath" gorm:"size:128"`
+	Component   string       `json:"component" gorm:"size:128"`
+	Hidden      bool         `json:"hidden" gorm:"not null;default:false"`
+	CreatedAt   time.Time    `json:"createdAt"`
+	UpdatedAt   time.Time    `json:"updatedAt"`
+	Roles       []Role       `json:"-" gorm:"many2many:role_permissions;"`
 	Children    []Permission `json:"children,omitempty" gorm:"-"`
 }
 
@@ -156,10 +158,81 @@ type APILog struct {
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
+type PasswordResetToken struct {
+	ID        uint       `json:"id" gorm:"primaryKey"`
+	UserID    uint       `json:"userId" gorm:"index;not null"`
+	TokenHash string     `json:"-" gorm:"uniqueIndex;size:64;not null"`
+	ExpiresAt time.Time  `json:"expiresAt" gorm:"index;not null"`
+	UsedAt    *time.Time `json:"usedAt"`
+	CreatedAt time.Time  `json:"createdAt"`
+}
+
+const (
+	MailClassTransactional = "transactional"
+	MailClassOperational   = "operational"
+	MailClassMarketing     = "marketing"
+
+	MailStatusQueued   = "queued"
+	MailStatusSending  = "sending"
+	MailStatusSent     = "sent"
+	MailStatusFailed   = "failed"
+	MailStatusDead     = "dead"
+	MailStatusCanceled = "canceled"
+
+	MailPriorityUrgent = 1
+	MailPriorityNormal = 5
+	MailPriorityLow    = 9
+
+	CampaignDraft     = "draft"
+	CampaignScheduled = "scheduled"
+	CampaignRunning   = "running"
+	CampaignPaused    = "paused"
+	CampaignDone      = "done"
+
+	AudienceOptedIn   = "opted_in"
+	AudienceAllActive = "all_active"
+)
+
+type MailJob struct {
+	ID         uint       `json:"id" gorm:"primaryKey"`
+	CampaignID *uint      `json:"campaignId" gorm:"index"`
+	Class      string     `json:"class" gorm:"size:16;index;not null"`
+	Priority   int        `json:"priority" gorm:"not null;default:5;index"`
+	UserID     *uint      `json:"userId" gorm:"index"`
+	ToEmail    string     `json:"toEmail" gorm:"size:128;not null"`
+	Timezone   string     `json:"timezone" gorm:"size:64"`
+	Subject    string     `json:"subject" gorm:"size:255;not null"`
+	Body       string     `json:"body" gorm:"type:text"`
+	Status     string     `json:"status" gorm:"size:16;index;not null;default:queued"`
+	SendAfter  time.Time  `json:"sendAfter" gorm:"index;not null"`
+	Attempts   int        `json:"attempts" gorm:"not null;default:0"`
+	LastError  string     `json:"lastError" gorm:"size:512"`
+	DedupeKey  string     `json:"dedupeKey" gorm:"size:128;index"`
+	SentAt     *time.Time `json:"sentAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+}
+
+type MailCampaign struct {
+	ID          uint       `json:"id" gorm:"primaryKey"`
+	Name        string     `json:"name" gorm:"size:128;not null"`
+	Subject     string     `json:"subject" gorm:"size:255;not null"`
+	Body        string     `json:"body" gorm:"type:text"`
+	Audience    string     `json:"audience" gorm:"size:32;not null;default:opted_in"`
+	Status      string     `json:"status" gorm:"size:16;index;not null;default:draft"`
+	ScheduledAt *time.Time `json:"scheduledAt"`
+	StartedAt   *time.Time `json:"startedAt"`
+	FinishedAt  *time.Time `json:"finishedAt"`
+	JobCount    int        `json:"jobCount" gorm:"not null;default:0"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+}
+
 func AllModels() []any {
 	return []any{
 		&User{}, &Role{}, &Permission{}, &Department{},
 		&DictType{}, &DictItem{}, &SysConfig{},
-		&LoginLog{}, &OpLog{}, &APILog{},
+		&LoginLog{}, &OpLog{}, &APILog{}, &PasswordResetToken{},
+		&MailJob{}, &MailCampaign{},
 	}
 }
