@@ -1,9 +1,9 @@
-backend/data/
-backend/server
-backend/tmp/
-backend/internal/httpserver/data/
-frontend/node_modules/
-frontend/dist/
+server/data/
+server/server
+server/tmp/
+server/internal/httpserver/data/
+admin/node_modules/
+admin/dist/
 web/node_modules/
 web/dist/
 *.exe

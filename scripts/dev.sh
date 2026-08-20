@@ -19,11 +19,11 @@ for port in 8080 5173; do
   fi
 done
 
-cd "$ROOT/backend"
+cd "$ROOT/server"
 "$GO" run ./cmd/server &
 API_PID=$!
 
-cd "$ROOT/frontend"
+cd "$ROOT/admin"
 npm run dev -- --host 127.0.0.1 --port 5173 &
 WEB_PID=$!
 
@@ -32,6 +32,6 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-echo "api  http://127.0.0.1:8080"
-echo "web  http://127.0.0.1:5173"
+echo "server  http://127.0.0.1:8080"
+echo "admin   http://127.0.0.1:5173"
 wait

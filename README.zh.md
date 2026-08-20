@@ -5,8 +5,9 @@
 ### 目录
 
 ```
-backend/     Go 1.24 + Gin + GORM/SQLite + Casbin + JWT + 图形验证码
-frontend/    React 19 + Vite + Tailwind v4 + shadcn v4
+server/      Go 1.24 + Gin + GORM/SQLite + Casbin + JWT + 图形验证码
+admin/       React 19 + Vite + Tailwind v4 + shadcn v4（管理端）
+web/         面向用户的轻量 React 应用
 ```
 
 ### 种子账号
@@ -32,8 +33,8 @@ make dev
 分别启动：
 
 ```bash
-cd backend && go run ./cmd/server
-cd frontend && npm run dev          # 管理端 :5173
+cd server && go run ./cmd/server
+cd admin && npm run dev             # 管理端 :5173
 cd web && npm run dev               # Web 端 :5174
 ```
 
@@ -46,7 +47,7 @@ CAPTCHA_DEBUG=1 go run ./cmd/server
 生产构建：
 
 ```bash
-cd frontend && npm run build
+cd admin && npm run build
 ```
 
 ### 认证流程
@@ -59,7 +60,7 @@ cd frontend && npm run build
 ### 测试
 
 ```bash
-cd backend && go test ./...
+cd server && go test ./...
 ```
 
 ### Docker
@@ -72,6 +73,6 @@ docker compose up --build -d
 
 ### 运维
 
-- 表结构变更放在 `backend/internal/migrate/sql`，服务启动时自动执行。
+- 表结构变更放在 `server/internal/migrate/sql`，服务启动时自动执行。
 - 登录与写操作会写入 `op_logs`，管理端 `/logs` 可查。
 - `GET /metrics` 提供 Prometheus 风格请求计数。

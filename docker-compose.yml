@@ -1,7 +1,7 @@
 services:
-  backend:
+  server:
     build:
-      context: ./backend
+      context: ./server
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
@@ -17,14 +17,14 @@ services:
       timeout: 3s
       retries: 12
 
-  frontend:
+  admin:
     build:
-      context: ./frontend
+      context: ./admin
       dockerfile: Dockerfile
     ports:
       - "5173:80"
     depends_on:
-      backend:
+      server:
         condition: service_healthy
 
 volumes:

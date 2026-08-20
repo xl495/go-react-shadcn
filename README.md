@@ -5,8 +5,9 @@ Graphical CAPTCHA login, JWT auth, Casbin RBAC, and SQLite persistence. The admi
 ## Structure
 
 ```
-backend/     Go 1.24 + Gin + GORM/SQLite + Casbin + JWT + CAPTCHA
-frontend/    React 19 + Vite + Tailwind v4 + shadcn v4
+server/      Go 1.24 + Gin + GORM/SQLite + Casbin + JWT + CAPTCHA
+admin/       React 19 + Vite + Tailwind v4 + shadcn v4 (admin console)
+web/         Lightweight user-facing React app
 ```
 
 ### Seed Accounts
@@ -17,13 +18,13 @@ frontend/    React 19 + Vite + Tailwind v4 + shadcn v4
 | operator | operator123  | User/Role/Permission/Dict/Config/Log pages, only "Create User" button |
 | viewer   | viewer123    | Dashboard only                                                |
 
-Permissions have three types: `menu` (sidebar), `button` (page actions), `api` (endpoint only). The frontend hides buttons via `permissionCodes`; the backend still enforces via Casbin.
+Permissions have three types: `menu` (sidebar), `button` (page actions), `api` (endpoint only). The admin UI hides buttons via `permissionCodes`; the server still enforces via Casbin.
 
 The UI supports **Simplified Chinese / Traditional Chinese / English**. Switch from the login page or sidebar; the choice is stored locally. API errors are translated by error code; seed roles/permissions are translated by code.
 
 ### Getting Started
 
-Run both frontend and backend concurrently:
+Run server and admin concurrently:
 
 ```bash
 make dev
@@ -32,8 +33,8 @@ make dev
 Or start them separately:
 
 ```bash
-cd backend && go run ./cmd/server
-cd frontend && npm run dev          # Admin panel :5173
+cd server && go run ./cmd/server
+cd admin && npm run dev             # Admin console :5173
 cd web && npm run dev               # Web app :5174
 ```
 
@@ -46,7 +47,7 @@ CAPTCHA_DEBUG=1 go run ./cmd/server
 Production build:
 
 ```bash
-cd frontend && npm run build
+cd admin && npm run build
 ```
 
 ### Auth Flow
@@ -59,7 +60,7 @@ cd frontend && npm run build
 ### Testing
 
 ```bash
-cd backend && go test ./...
+cd server && go test ./...
 ```
 
 ### Docker
@@ -72,6 +73,6 @@ Admin UI is on `:5173`, API on `:8080`. `GET /health` returns `{ "message": "ok"
 
 ### Operations
 
-- Schema changes live in `backend/internal/migrate/sql` and run on server start.
+- Schema changes live in `server/internal/migrate/sql` and run on server start.
 - Mutating API calls and login attempts are written to `op_logs` and listed at `/logs`.
 - `GET /metrics` exposes a Prometheus-style request counter.
