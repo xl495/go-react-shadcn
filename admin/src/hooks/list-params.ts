@@ -83,9 +83,8 @@ export function useMailCampaignListParams() {
 export function useConfigListParams() {
   return useQueryStates(
     {
-      page: pageParser,
-      q: textParser,
-      group: parseAsStringLiteral(["all", "app", "mail"] as const).withDefault("all"),
+      tab: parseAsStringLiteral(["app", "auth", "mail", "other"] as const).withDefault("app"),
+      section: parseAsStringLiteral(["smtp", "policy"] as const).withDefault("smtp"),
     },
     replace,
   )

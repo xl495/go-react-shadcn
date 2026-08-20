@@ -40,6 +40,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public auth settings for login and registration */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeAuthSettings"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -60,6 +96,46 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["LoginRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeLoginResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sign in or register with a Google ID token */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GoogleAuthRequest"];
                 };
             };
             responses: {
@@ -586,7 +662,43 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Menu tree for current user */
+        /** Admin menu tree for current user */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeMenuNodes"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/web-menus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Web menu tree for current user */
         get: {
             parameters: {
                 query?: never;
@@ -634,6 +746,8 @@ export interface paths {
                     gender?: string;
                     department?: string;
                     roleId?: number;
+                    /** @description admin or web */
+                    kind?: string;
                 };
                 header?: never;
                 path?: never;
@@ -754,6 +868,7 @@ export interface paths {
             parameters: {
                 query?: {
                     traceId?: string;
+                    path?: string;
                 };
                 header?: never;
                 path?: never;
@@ -793,6 +908,7 @@ export interface paths {
                 query?: {
                     page?: number;
                     pageSize?: number;
+                    q?: string;
                 };
                 header?: never;
                 path?: never;
@@ -832,6 +948,7 @@ export interface paths {
                 query?: {
                     page?: number;
                     pageSize?: number;
+                    q?: string;
                 };
                 header?: never;
                 path?: never;
@@ -912,6 +1029,7 @@ export interface paths {
                 query?: {
                     page?: number;
                     pageSize?: number;
+                    q?: string;
                 };
                 header?: never;
                 path?: never;
@@ -952,6 +1070,7 @@ export interface paths {
                     page?: number;
                     pageSize?: number;
                     group?: string;
+                    q?: string;
                 };
                 header?: never;
                 path?: never;
@@ -1036,6 +1155,8 @@ export interface components {
             status: string;
             timezone: string;
             marketingOptIn: boolean;
+            /** @description admin or web */
+            kind?: string;
             lastLoginAt?: string | null;
             lastLoginIp?: string;
             permissionCodes?: string[];
@@ -1076,6 +1197,7 @@ export interface components {
             icon: string;
             sort: number;
             hidden: boolean;
+            permCode?: string;
             children?: components["schemas"]["MenuNode"][];
         };
         OpLog: {
@@ -1174,13 +1296,31 @@ export interface components {
         LoginRequest: {
             username: string;
             password: string;
-            captchaId: string;
-            captchaCode: string;
+            client?: string;
+            captchaId?: string;
+            captchaCode?: string;
+            captchaToken?: string;
+            captchaVersion?: string;
+        };
+        GoogleAuthRequest: {
+            idToken: string;
+            client?: string;
         };
         ForgotPasswordRequest: {
             email: string;
-            captchaId: string;
-            captchaCode: string;
+            captchaId?: string;
+            captchaCode?: string;
+            captchaToken?: string;
+            captchaVersion?: string;
+        };
+        AuthSettings: {
+            googleEnabled: boolean;
+            googleRegisterEnabled: boolean;
+            googleClientId: string;
+            captchaProvider: string;
+            recaptchaSiteKeyV3?: string;
+            recaptchaSiteKeyV2?: string;
+            turnstileSiteKey?: string;
         };
         ResetPasswordRequest: {
             token: string;
@@ -1254,6 +1394,9 @@ export interface components {
         };
         EnvelopeLoginResult: components["schemas"]["EnvelopeBase"] & {
             data?: components["schemas"]["LoginResult"];
+        };
+        EnvelopeAuthSettings: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["AuthSettings"];
         };
         EnvelopeMenuNodes: components["schemas"]["EnvelopeBase"] & {
             data?: components["schemas"]["MenuNode"][];

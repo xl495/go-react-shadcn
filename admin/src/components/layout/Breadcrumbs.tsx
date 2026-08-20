@@ -36,12 +36,17 @@ function crumbsFor(pathname: string, t: (k: string) => string): Crumb[] {
   if (parts.length === 0) return crumbs
 
   const head = parts[0]
-  const org = new Set(["users", "departments", "roles", "permissions"])
+  const org = new Set(["users", "web-users", "departments", "roles", "permissions"])
   const system = new Set(["dicts", "configs", "logs", "mail"])
   if (org.has(head)) {
     crumbs.push({ label: t("nav.org") })
     if (head === "users") {
       crumbs.push({ label: t("nav.users"), to: "/users" })
+      if (parts[1]) crumbs.push({ label: t("users.detail") })
+      return crumbs
+    }
+    if (head === "web-users") {
+      crumbs.push({ label: t("nav.webUsers"), to: "/web-users" })
       if (parts[1]) crumbs.push({ label: t("users.detail") })
       return crumbs
     }

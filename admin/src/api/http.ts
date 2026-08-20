@@ -30,10 +30,16 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY)
 }
 
+function localeHeaders() {
+  return localStorage.getItem("latch.locale") || navigator.language || "zh-CN"
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
+  const locale = localeHeaders()
   headers.set("Accept", "application/json")
-  headers.set("Accept-Language", localStorage.getItem("latch.locale") || navigator.language || "zh-CN")
+  headers.set("Accept-Language", locale)
+  headers.set("X-Locale", locale)
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json")
   }
@@ -59,7 +65,10 @@ export async function uploadAvatar(path: string, file: File): Promise<User> {
   const body = new FormData()
   body.append("file", file)
   const headers = new Headers()
+  const locale = localeHeaders()
   headers.set("Accept", "application/json")
+  headers.set("Accept-Language", locale)
+  headers.set("X-Locale", locale)
   const token = getToken()
   if (token) headers.set("Authorization", `Bearer ${token}`)
   const res = await fetch(path, { method: "POST", headers, body })

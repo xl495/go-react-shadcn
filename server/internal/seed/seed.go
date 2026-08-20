@@ -19,9 +19,12 @@ const (
 	ViewerPassword   = "viewer123"
 	OperatorUsername = "operator"
 	OperatorPassword = "operator123"
+	MemberUsername   = "webuser"
+	MemberPassword   = "webuser123"
 	RoleAdmin        = "admin"
 	RoleViewer       = "viewer"
 	RoleOperator     = "operator"
+	RoleMember       = "member"
 	DictUserStatus   = "sys_user_status"
 	DictGender       = "sys_gender"
 	DictDepartment   = "sys_department"
@@ -94,6 +97,7 @@ func catalog() []catalogPerm {
 		{"更新部门", "dept:update", "/api/v1/departments/:id", "PUT", KindButton, ""},
 		{"删除部门", "dept:delete", "/api/v1/departments/:id", "DELETE", KindButton, ""},
 		{"菜单树", "menu:read", "/api/v1/auth/menus", "GET", KindAPI, "读取当前用户菜单"},
+		{"用户端菜单", "menu:web:read", "/api/v1/auth/web-menus", "GET", KindAPI, "读取用户端菜单"},
 	}
 }
 
@@ -108,6 +112,9 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 		return err
 	}
 	if err := syncMenuParents(db); err != nil {
+		return err
+	}
+	if err := ensureNavMenus(db); err != nil {
 		return err
 	}
 	if err := ensureDepartments(db); err != nil {
@@ -134,6 +141,10 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	if err != nil {
 		return err
 	}
+	memberRole, err := ensureRole(db, "会员", RoleMember, "用户端账号，仅个人资料")
+	if err != nil {
+		return err
+	}
 
 	adminPerms := perms
 	viewerPerms := pick(byCode, "me:read", "dashboard:read")
@@ -147,6 +158,7 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 		"log:list",
 		"mail:jobs:list", "mail:campaign:list", "mail:campaign:detail",
 	)
+	memberPerms := pick(byCode, "me:read")
 
 	if err := db.Model(&adminRole).Association("Permissions").Replace(adminPerms); err != nil {
 		return err
@@ -155,6 +167,9 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 		return err
 	}
 	if err := db.Model(&operatorRole).Association("Permissions").Replace(operatorPerms); err != nil {
+		return err
+	}
+	if err := db.Model(&memberRole).Association("Permissions").Replace(memberPerms); err != nil {
 		return err
 	}
 
@@ -173,6 +188,7 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	adminUser, err := ensureUser(db, AdminUsername, AdminPassword, seedProfile{
 		Nickname: "系统管理员", Avatar: adminAvatar, Email: "admin@latch.local", Phone: "13800000001",
 		Gender: "male", Department: "tech", Title: "负责人", Remark: "种子管理员账号",
+		Kind: models.UserKindAdmin,
 	})
 	if err != nil {
 		return err
@@ -180,6 +196,7 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	viewerUser, err := ensureUser(db, ViewerUsername, ViewerPassword, seedProfile{
 		Nickname: "李访客", Avatar: viewerAvatar, Email: "viewer@latch.local", Phone: "13800000003",
 		Gender: "female", Department: "market", Title: "观察员", Remark: "只读演示账号",
+		Kind: models.UserKindAdmin,
 	})
 	if err != nil {
 		return err
@@ -187,6 +204,19 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	operatorUser, err := ensureUser(db, OperatorUsername, OperatorPassword, seedProfile{
 		Nickname: "张操作", Avatar: operatorAvatar, Email: "operator@latch.local", Phone: "13800000002",
 		Gender: "male", Department: "ops", Title: "运营专员", Remark: "按钮级权限演示",
+		Kind: models.UserKindAdmin,
+	})
+	if err != nil {
+		return err
+	}
+	memberAvatar, err := writeSeedAvatar(uploadDir, "webuser", "王", "#2563eb")
+	if err != nil {
+		return err
+	}
+	memberUser, err := ensureUser(db, MemberUsername, MemberPassword, seedProfile{
+		Nickname: "王会员", Avatar: memberAvatar, Email: "webuser@latch.local", Phone: "13800000004",
+		Gender: "male", Remark: "用户端演示账号",
+		Kind: models.UserKindWeb,
 	})
 	if err != nil {
 		return err
@@ -200,6 +230,9 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	if err := db.Model(&operatorUser).Association("Roles").Replace([]models.Role{operatorRole}); err != nil {
 		return err
 	}
+	if err := db.Model(&memberUser).Association("Roles").Replace([]models.Role{memberRole}); err != nil {
+		return err
+	}
 
 	if err := syncRolePolicies(enforcer, adminRole.Code, adminPerms); err != nil {
 		return err
@@ -210,6 +243,9 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	if err := syncRolePolicies(enforcer, operatorRole.Code, operatorPerms); err != nil {
 		return err
 	}
+	if err := syncRolePolicies(enforcer, memberRole.Code, memberPerms); err != nil {
+		return err
+	}
 	if err := SyncUserRoles(enforcer, adminUser.Username, []models.Role{adminRole}); err != nil {
 		return err
 	}
@@ -217,6 +253,9 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 		return err
 	}
 	if err := SyncUserRoles(enforcer, operatorUser.Username, []models.Role{operatorRole}); err != nil {
+		return err
+	}
+	if err := SyncUserRoles(enforcer, memberUser.Username, []models.Role{memberRole}); err != nil {
 		return err
 	}
 	if err := ensureDicts(db); err != nil {
@@ -263,11 +302,11 @@ func syncUserDepartmentIDs(db *gorm.DB) error {
 }
 
 func IsSeedUsername(name string) bool {
-	return name == AdminUsername || name == ViewerUsername || name == OperatorUsername
+	return name == AdminUsername || name == ViewerUsername || name == OperatorUsername || name == MemberUsername
 }
 
 func IsSeedRole(code string) bool {
-	return code == RoleAdmin || code == RoleViewer || code == RoleOperator
+	return code == RoleAdmin || code == RoleViewer || code == RoleOperator || code == RoleMember
 }
 
 func SyncRolePolicies(enforcer *casbin.Enforcer, roleCode string, perms []models.Permission) error {
@@ -357,7 +396,7 @@ func ensureRole(db *gorm.DB, name, code, desc string) (models.Role, error) {
 }
 
 type seedProfile struct {
-	Nickname, Avatar, Email, Phone, Gender, Department, Title, Remark string
+	Nickname, Avatar, Email, Phone, Gender, Department, Title, Remark, Kind string
 }
 
 func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (models.User, error) {
@@ -368,12 +407,16 @@ func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (mo
 		if err != nil {
 			return user, err
 		}
+		kind := profile.Kind
+		if kind == "" {
+			kind = models.UserKindAdmin
+		}
 		user = models.User{
 			Username: username, PasswordHash: hash, Status: "active",
 			Nickname: profile.Nickname, Avatar: profile.Avatar, Email: profile.Email,
 			Phone: profile.Phone, Gender: profile.Gender,
 			Department: profile.Department, Title: profile.Title, Remark: profile.Remark,
-			Timezone: mailerDefaultTZ(), MarketingOptIn: true,
+			Timezone: mailerDefaultTZ(), MarketingOptIn: true, Kind: kind,
 		}
 		if id := lookupDepartmentID(db, profile.Department); id != nil {
 			user.DepartmentID = id
@@ -400,6 +443,11 @@ func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (mo
 	}
 	if user.Timezone == "" {
 		user.Timezone = mailerDefaultTZ()
+	}
+	if profile.Kind != "" {
+		user.Kind = profile.Kind
+	} else if user.Kind == "" {
+		user.Kind = models.UserKindAdmin
 	}
 	return user, db.Save(&user).Error
 }
@@ -469,8 +517,20 @@ func ensureDicts(db *gorm.DB) error {
 func ensureConfigs(db *gorm.DB) error {
 	rows := []models.SysConfig{
 		{Key: "app.name", Value: "Latch Admin", Name: "系统名称", Group: "app", Remark: "浏览器标题与侧栏品牌"},
-		{Key: "app.captcha_enabled", Value: "1", Name: "登录验证码", Group: "app", Remark: "1 开启 / 0 关闭"},
+		{Key: "app.captcha_enabled", Value: "1", Name: "登录验证码", Group: "app", Remark: "兼容项；优先使用 auth.captcha_provider"},
 		{Key: "app.default_locale", Value: "zh-CN", Name: "默认语言", Group: "app", Remark: "zh-CN / en"},
+		{Key: "auth.google_enabled", Value: "0", Name: "Google 登录", Group: "auth", Remark: "1 开启 / 0 关闭"},
+		{Key: "auth.google_register_enabled", Value: "0", Name: "Google 注册", Group: "auth", Remark: "1 允许用 Google 创建新账号"},
+		{Key: "auth.google_client_id", Value: "", Name: "Google Client ID", Group: "auth", Remark: "OAuth / GIS 客户端 ID"},
+		{Key: "auth.google_client_secret", Value: "", Name: "Google Client Secret", Group: "auth", Remark: "列表中不会回显明文"},
+		{Key: "auth.captcha_provider", Value: "image", Name: "验证码提供方", Group: "auth", Remark: "none / image / recaptcha / turnstile"},
+		{Key: "auth.recaptcha_site_key_v3", Value: "", Name: "reCAPTCHA v3 Site Key", Group: "auth", Remark: "前端 v3 站点密钥"},
+		{Key: "auth.recaptcha_secret_v3", Value: "", Name: "reCAPTCHA v3 Secret", Group: "auth", Remark: "服务端 v3 密钥"},
+		{Key: "auth.recaptcha_site_key_v2", Value: "", Name: "reCAPTCHA v2 Site Key", Group: "auth", Remark: "v3 失败时回退的勾选框密钥"},
+		{Key: "auth.recaptcha_secret_v2", Value: "", Name: "reCAPTCHA v2 Secret", Group: "auth", Remark: "服务端 v2 密钥"},
+		{Key: "auth.recaptcha_min_score", Value: "0.5", Name: "reCAPTCHA 最低分", Group: "auth", Remark: "v3 低于此分数则回退 v2"},
+		{Key: "auth.turnstile_site_key", Value: "", Name: "Turnstile Site Key", Group: "auth", Remark: "Cloudflare Turnstile 站点密钥"},
+		{Key: "auth.turnstile_secret", Value: "", Name: "Turnstile Secret", Group: "auth", Remark: "Cloudflare Turnstile 服务端密钥"},
 		{Key: "mail.enabled", Value: "0", Name: "启用发信", Group: "mail", Remark: "1 开启 / 0 关闭，关闭时不发送任何邮件"},
 		{Key: "mail.host", Value: "", Name: "SMTP 主机", Group: "mail", Remark: "例如 smtp.example.com"},
 		{Key: "mail.port", Value: "587", Name: "SMTP 端口", Group: "mail", Remark: "587 STARTTLS / 465 SSL"},
@@ -491,7 +551,7 @@ func ensureConfigs(db *gorm.DB) error {
 	}
 	for _, row := range rows {
 		var existing models.SysConfig
-		err := db.Where("key = ?", row.Key).First(&existing).Error
+		err := db.Where(`"key" = ?`, row.Key).First(&existing).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if err := db.Create(&row).Error; err != nil {
 				return err

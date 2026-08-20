@@ -7,7 +7,8 @@ export const PICKER_PAGE_SIZE = 200
 
 export const FALLBACK_MENU_ROUTES: MenuNode[] = [
   { id: 0, code: "dashboard:read", name: "Dashboard", kind: "menu", routePath: "/", component: "DashboardPage", icon: "LayoutDashboard", sort: 10, hidden: false },
-  { id: 0, code: "user:list", name: "Users", kind: "menu", routePath: "/users", component: "UsersPage", icon: "Users", sort: 20, hidden: false },
+  { id: 0, code: "user:list", name: "Staff users", kind: "menu", routePath: "/users", component: "UsersPage", icon: "Users", sort: 20, hidden: false, permCode: "user:list" },
+  { id: 0, code: "webuser:list", name: "Web users", kind: "menu", routePath: "/web-users", component: "WebUsersPage", icon: "Globe", sort: 21, hidden: false, permCode: "user:list" },
   { id: 0, code: "dept:list", name: "Departments", kind: "menu", routePath: "/departments", component: "DepartmentsPage", icon: "Building2", sort: 25, hidden: false },
   { id: 0, code: "role:list", name: "Roles", kind: "menu", routePath: "/roles", component: "RolesPage", icon: "Shield", sort: 30, hidden: false },
   { id: 0, code: "perm:list", name: "Permissions", kind: "menu", routePath: "/permissions", component: "PermissionsPage", icon: "KeyRound", sort: 40, hidden: false },
@@ -51,12 +52,11 @@ export function useDashboardStats() {
   })
 }
 
-export function useCaptcha() {
+export function useAuthSettings() {
   return useQuery({
-    queryKey: ["auth", "captcha"],
-    queryFn: () => api.captcha(),
-    staleTime: 0,
-    refetchOnMount: "always",
+    queryKey: ["auth", "settings"],
+    queryFn: () => api.settings(),
+    staleTime: 30_000,
   })
 }
 
@@ -64,6 +64,17 @@ export function useLoginMutation() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: api.login,
+    onSuccess: (result) => {
+      qc.setQueryData(["auth", "me"], result.user)
+      void invalidate(qc, ["menus"])
+    },
+  })
+}
+
+export function useGoogleAuthMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.google,
     onSuccess: (result) => {
       qc.setQueryData(["auth", "me"], result.user)
       void invalidate(qc, ["menus"])
@@ -104,6 +115,7 @@ export function useUsers(params?: {
   gender?: string
   department?: string
   roleId?: number
+  kind?: string
 }) {
   return useQuery({
     queryKey: ["users", params],
@@ -290,6 +302,29 @@ export function useUpdateConfig() {
   return useMutation({
     mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateConfig>[1] }) =>
       api.updateConfig(id, body),
+    onSuccess: () => void invalidate(qc, ["configs"]),
+  })
+}
+
+export function useSaveConfigs() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (
+      items: Array<
+        | { id: number; body: Parameters<typeof api.updateConfig>[1] }
+        | { create: Parameters<typeof api.createConfig>[0] }
+      >,
+    ) => {
+      const out: Awaited<ReturnType<typeof api.updateConfig>>[] = []
+      for (const item of items) {
+        if ("create" in item) {
+          out.push(await api.createConfig(item.create))
+        } else {
+          out.push(await api.updateConfig(item.id, item.body))
+        }
+      }
+      return out
+    },
     onSuccess: () => void invalidate(qc, ["configs"]),
   })
 }

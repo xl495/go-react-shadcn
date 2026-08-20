@@ -10,14 +10,14 @@ import (
 )
 
 type apiLogQueue struct {
-	db       *gorm.DB
-	ch       chan models.APILog
-	enabled  bool
-	sampleN  uint64
-	counter  atomic.Uint64
-	stop     chan struct{}
-	done     chan struct{}
-	flushMu  sync.Mutex
+	db      *gorm.DB
+	ch      chan models.APILog
+	enabled bool
+	sampleN uint64
+	counter atomic.Uint64
+	stop    chan struct{}
+	done    chan struct{}
+	flushMu sync.Mutex
 }
 
 func newAPILogQueue(db *gorm.DB, enabled bool, sampleN int) *apiLogQueue {

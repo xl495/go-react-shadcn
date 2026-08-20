@@ -56,6 +56,41 @@ func TestUserListSearchAndFilters(t *testing.T) {
 	if len(wild) != 0 {
 		t.Fatalf("LIKE wildcard should be escaped, got %+v", usernames(wild))
 	}
+
+	staff := decodeUserPage(t, doJSON(t, app, http.MethodGet, "/api/v1/users?kind=admin&pageSize=50", admin, nil))
+	webUsers := decodeUserPage(t, doJSON(t, app, http.MethodGet, "/api/v1/users?kind=web&pageSize=50", admin, nil))
+	if len(staff) < 3 {
+		t.Fatalf("kind=admin want >=3 staff, got %+v", usernames(staff))
+	}
+	for _, u := range staff {
+		if u.Kind != "admin" {
+			t.Fatalf("kind=admin leaked %s kind=%s", u.Username, u.Kind)
+		}
+		if u.Username == seed.MemberUsername {
+			t.Fatal("webuser must not appear in staff list")
+		}
+	}
+	if len(webUsers) != 1 || webUsers[0].Username != seed.MemberUsername || webUsers[0].Kind != "web" {
+		t.Fatalf("kind=web: %+v", webUsers)
+	}
+
+	id, answer, _ := issueCaptcha(t, app)
+	blocked := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username":    seed.MemberUsername,
+		"password":    seed.MemberPassword,
+		"captchaId":   id,
+		"captchaCode": answer,
+		"client":      "admin",
+	})
+	if blocked.Code != http.StatusForbidden {
+		t.Fatalf("web user on admin login want 403 got %d %s", blocked.Code, blocked.Body.String())
+	}
+	if decodeEnv(t, blocked).Code != CodeWrongClient {
+		t.Fatalf("web user on admin login code=%d want %d", decodeEnv(t, blocked).Code, CodeWrongClient)
+	}
+	if loginOK(t, app, seed.MemberUsername, seed.MemberPassword) == "" {
+		t.Fatal("web user should still login without client")
+	}
 }
 
 func TestPermissionListSearch(t *testing.T) {

@@ -12,6 +12,7 @@ import { I18nProvider } from "@/providers/i18n"
 import { queryClient } from "@/providers/query-client"
 
 const LoginPage = lazy(() => import("@/pages/Login").then((m) => ({ default: m.LoginPage })))
+const RegisterPage = lazy(() => import("@/pages/Register").then((m) => ({ default: m.RegisterPage })))
 const ForgotPasswordPage = lazy(() =>
   import("@/pages/ForgotPassword").then((m) => ({ default: m.ForgotPasswordPage })),
 )
@@ -28,6 +29,7 @@ function AppRoutes() {
   const dynamicRoutes = useDynamicAuthRoutes()
   return useRoutes([
     { path: "/login", element: <LoginPage /> },
+    { path: "/register", element: <RegisterPage /> },
     { path: "/forgot-password", element: <ForgotPasswordPage /> },
     { path: "/reset-password", element: <ResetPasswordPage /> },
     { path: "/unsubscribe", element: <UnsubscribePage /> },

@@ -16,6 +16,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnvelopeCaptcha"
+  /auth/settings:
+    get:
+      summary: Public auth settings for login and registration
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeAuthSettings"
   /auth/login:
     post:
       summary: Login
@@ -25,6 +35,22 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeLoginResult"
+  /auth/google:
+    post:
+      summary: Sign in or register with a Google ID token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleAuthRequest"
       responses:
         "200":
           description: OK
@@ -231,7 +257,18 @@ paths:
                 $ref: "#/components/schemas/EnvelopeUser"
   /auth/menus:
     get:
-      summary: Menu tree for current user
+      summary: Admin menu tree for current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeMenuNodes"
+  /auth/web-menus:
+    get:
+      summary: Web menu tree for current user
       security: [{ bearerAuth: [] }]
       responses:
         "200":
@@ -252,6 +289,7 @@ paths:
         - { name: gender, in: query, schema: { type: string } }
         - { name: department, in: query, schema: { type: string } }
         - { name: roleId, in: query, schema: { type: integer } }
+        - { name: kind, in: query, schema: { type: string }, description: admin or web }
       responses:
         "200":
           description: OK
@@ -423,6 +461,7 @@ components:
         status: { type: string }
         timezone: { type: string }
         marketingOptIn: { type: boolean }
+        kind: { type: string, description: "admin or web" }
         lastLoginAt: { type: string, nullable: true }
         lastLoginIp: { type: string }
         permissionCodes: { type: array, items: { type: string } }
@@ -469,6 +508,7 @@ components:
         icon: { type: string }
         sort: { type: integer }
         hidden: { type: boolean }
+        permCode: { type: string }
         children: { type: array, items: { $ref: "#/components/schemas/MenuNode" } }
     OpLog:
       type: object
@@ -585,19 +625,41 @@ components:
         pageSize: { type: integer }
     LoginRequest:
       type: object
-      required: [username, password, captchaId, captchaCode]
+      required: [username, password]
       properties:
         username: { type: string }
         password: { type: string }
+        client: { type: string }
         captchaId: { type: string }
         captchaCode: { type: string }
+        captchaToken: { type: string }
+        captchaVersion: { type: string }
+    GoogleAuthRequest:
+      type: object
+      required: [idToken]
+      properties:
+        idToken: { type: string }
+        client: { type: string }
     ForgotPasswordRequest:
       type: object
-      required: [email, captchaId, captchaCode]
+      required: [email]
       properties:
         email: { type: string }
         captchaId: { type: string }
         captchaCode: { type: string }
+        captchaToken: { type: string }
+        captchaVersion: { type: string }
+    AuthSettings:
+      type: object
+      required: [googleEnabled, googleRegisterEnabled, googleClientId, captchaProvider]
+      properties:
+        googleEnabled: { type: boolean }
+        googleRegisterEnabled: { type: boolean }
+        googleClientId: { type: string }
+        captchaProvider: { type: string }
+        recaptchaSiteKeyV3: { type: string }
+        recaptchaSiteKeyV2: { type: string }
+        turnstileSiteKey: { type: string }
     ResetPasswordRequest:
       type: object
       required: [token, newPassword]
@@ -695,6 +757,12 @@ components:
         - type: object
           properties:
             data: { $ref: "#/components/schemas/LoginResult" }
+    EnvelopeAuthSettings:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/AuthSettings" }
     EnvelopeMenuNodes:
       allOf:
         - $ref: "#/components/schemas/EnvelopeBase"

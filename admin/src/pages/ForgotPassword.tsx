@@ -1,20 +1,20 @@
-import { useState, type FormEvent, type ReactNode } from "react"
+import { useRef, useState, type FormEvent, type ReactNode } from "react"
 import { Link, Navigate, useNavigate } from "react-router-dom"
-import { RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { ApiError } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
-import { useCaptcha } from "@/hooks/queries"
+import { useAuthSettings } from "@/hooks/queries"
 import { api } from "@/api/client"
+import { AuthChallenge, CAPTCHA_FALLBACK_CODE, type AuthChallengeHandle } from "@/components/auth/AuthChallenge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 function GuestShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-full flex-col overflow-y-auto bg-background">
       <header className="flex h-14 items-center justify-between border-b px-6">
         <span className="text-sm font-semibold">Latch</span>
         <LanguageSwitcher />
@@ -30,31 +30,24 @@ export function ForgotPasswordPage() {
   const { user } = useAuth()
   const { t } = useI18n()
   const [email, setEmail] = useState("")
-  const [captchaCode, setCaptchaCode] = useState("")
   const [pending, setPending] = useState(false)
-  const captcha = useCaptcha()
+  const settings = useAuthSettings()
+  const challengeRef = useRef<AuthChallengeHandle>(null)
 
   if (user) return <Navigate to="/" replace />
-
-  async function refreshCaptcha() {
-    setCaptchaCode("")
-    await captcha.refetch()
-  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setPending(true)
     try {
-      await api.forgotPassword({
-        email,
-        captchaId: captcha.data?.captchaId ?? "",
-        captchaCode,
-      })
+      const challenge = (await challengeRef.current?.collect()) ?? {}
+      await api.forgotPassword({ email, ...challenge })
       toast.success(t("login.forgotSent"))
-      await refreshCaptcha()
     } catch (err) {
+      if (err instanceof ApiError && err.code === CAPTCHA_FALLBACK_CODE) {
+        challengeRef.current?.showV2()
+      }
       toast.error(err instanceof ApiError ? translateApiError(err, t) : t("login.failed"))
-      await refreshCaptcha()
     } finally {
       setPending(false)
     }
@@ -77,33 +70,7 @@ export function ForgotPasswordPage() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="captcha">{t("login.captcha")}</Label>
-          <div className="flex items-center gap-3">
-            <Input
-              id="captcha"
-              inputMode="numeric"
-              autoComplete="off"
-              value={captchaCode}
-              onChange={(e) => setCaptchaCode(e.target.value)}
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void refreshCaptcha()}
-              className="relative h-9 w-[120px] overflow-hidden p-0"
-              aria-label={t("login.refreshCaptcha")}
-            >
-              {captcha.data?.image ? (
-                <img src={captcha.data.image} alt={t("login.captchaAlt")} className="h-full w-full object-cover" />
-              ) : (
-                <span className="text-xs text-muted-foreground">{t("app.loading")}</span>
-              )}
-              <RefreshCw className="absolute right-1 bottom-1 size-3 text-foreground/40" />
-            </Button>
-          </div>
-        </div>
+        <AuthChallenge ref={challengeRef} settings={settings.data} action="forgot" t={t} />
         <Button type="submit" disabled={pending} className="h-10 w-full">
           {pending ? t("login.forgotSubmitting") : t("login.forgotSubmit")}
         </Button>

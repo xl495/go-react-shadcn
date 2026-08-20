@@ -2,6 +2,9 @@ server/data/
 server/server
 server/tmp/
 server/internal/httpserver/data/
+/node_modules/
+/package.json
+/package-lock.json
 admin/node_modules/
 admin/dist/
 web/node_modules/

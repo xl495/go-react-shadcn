@@ -7,6 +7,8 @@ const (
 	CodeInvalidBody        = 40001
 	CodeCaptchaRequired    = 40002
 	CodeInvalidCaptcha     = 40003
+	CodeCaptchaFallback    = 40004
+	CodeCaptchaUnavailable = 40005
 	CodeUserPassRequired   = 40010
 	CodeInvalidRoleIDs     = 40011
 	CodeInvalidUserBody    = 40012
@@ -46,12 +48,17 @@ const (
 	CodeInvalidDeptBody    = 40091
 	CodeDeptHasChildren    = 40092
 
-	CodeMissingToken   = 40101
-	CodeInvalidToken   = 40102
-	CodeBadCredentials = 40103
+	CodeMissingToken          = 40101
+	CodeInvalidToken          = 40102
+	CodeBadCredentials        = 40103
+	CodeGoogleTokenInvalid    = 40104
+	CodeGoogleEmailUnverified = 40105
 
-	CodeForbidden     = 40301
-	CodeAccountLocked = 40310
+	CodeForbidden              = 40301
+	CodeAccountLocked          = 40310
+	CodeWrongClient            = 40312
+	CodeGoogleRegisterDisabled = 40313
+	CodeGoogleAccountConflict  = 40314
 
 	CodeUserMissingMe        = 40401
 	CodeUserNotFound         = 40410
@@ -113,7 +120,8 @@ const (
 	CodeDeleteDept      = 50092
 	CodeListMenus       = 50093
 
-	CodeSendMail     = 50085
-	CodeUnhealthy    = 50301
-	CodeMailDisabled = 50310
+	CodeSendMail       = 50085
+	CodeUnhealthy      = 50301
+	CodeMailDisabled   = 50310
+	CodeGoogleDisabled = 50320
 )

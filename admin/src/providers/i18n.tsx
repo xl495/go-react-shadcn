@@ -10,7 +10,7 @@ const loaders: Record<Locale, () => Promise<Record<string, unknown>>> = {
 }
 
 export const LOCALE_META: Record<Locale, { short: string; label: string; html: string }> = {
-  "zh-CN": { short: "简", label: "简体中文", html: "zh-CN" },
+  "zh-CN": { short: "中", label: "简体中文", html: "zh-CN" },
   en: { short: "EN", label: "English", html: "en" },
 }
 
@@ -127,6 +127,33 @@ export function roleLabel(code: string, fallback: string, t: I18nState["t"]) {
 
 export function permLabel(code: string, fallback: string, t: I18nState["t"]) {
   const key = `perm.${code}`
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
+
+const MENU_NAV_KEYS: Record<string, string> = {
+  "dashboard:read": "nav.dashboard",
+  "org:menu": "nav.org",
+  "user:list": "nav.users",
+  "webuser:list": "nav.webUsers",
+  "dept:list": "nav.departments",
+  "role:list": "nav.roles",
+  "perm:list": "nav.permissions",
+  "system:menu": "nav.system",
+  "dict:list": "nav.dicts",
+  "config:list": "nav.configs",
+  "mail:jobs:list": "nav.mailJobs",
+  "mail:campaign:list": "nav.mailCampaigns",
+  "log:list": "nav.logs",
+}
+
+export function menuLabel(code: string, fallback: string, t: I18nState["t"]) {
+  const navKey = MENU_NAV_KEYS[code]
+  if (navKey) {
+    const translated = t(navKey)
+    if (translated !== navKey) return translated
+  }
+  const key = `menu.${code}`
   const translated = t(key)
   return translated === key ? fallback : translated
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go-react-shadcn/internal/i18n"
 )
 
 type body struct {
@@ -17,5 +18,6 @@ func ok(c *gin.Context, data any) {
 }
 
 func fail(c *gin.Context, status, code int, message string) {
-	c.AbortWithStatusJSON(status, body{Code: code, Message: message})
+	msg := i18n.Error(i18n.FromRequest(c.Request), code, message)
+	c.AbortWithStatusJSON(status, body{Code: code, Message: msg})
 }

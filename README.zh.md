@@ -1,11 +1,15 @@
 # Latch · React 19 + Gin + Casbin 登录权限系统
 
+[English](README.md) · [中文](README.zh.md)
+
+JWT 认证、Casbin RBAC、SQLite 持久化。登录可使用图形验证码、Google reCAPTCHA、Cloudflare Turnstile 或 Google 账号，均在系统设置中切换。管理端覆盖用户、角色、权限、字典、邮件、系统参数与审计日志。
+
 ## 中文
 
 ### 目录
 
 ```
-server/      Go 1.24 + Gin + GORM/SQLite + Casbin + JWT + 图形验证码
+server/      Go 1.24 + Gin + GORM/SQLite + Casbin + JWT + 多种人机验证
 admin/       React 19 + Vite + Tailwind v4 + shadcn v4（管理端）
 web/         面向用户的轻量 React 应用
 ```
@@ -17,10 +21,11 @@ web/         面向用户的轻量 React 应用
 | admin    | admin123     | 全部菜单与按钮                                    |
 | operator | operator123  | 能进用户/角色/权限/字典/参数/日志页，但只有「新建用户」按钮 |
 | viewer   | viewer123    | 仅仪表盘                                          |
+| webuser  | webuser123   | 仅用户端（`member` 角色）                         |
 
 权限分三类：`menu`（侧栏）、`button`（页面按钮）、`api`（纯接口）。前端按 `permissionCodes` 隐藏按钮，后端 Casbin 仍拦截对应 HTTP 方法。
 
-界面支持 **简体中文 / English**。登录页右上角和侧栏可切换，选择会记在本地；接口错误按错误码翻译，种子角色/权限按编码翻译。
+用户端账号不能登录管理端。界面支持 **简体中文 / English**。登录页右上角和侧栏可切换，选择会记在本地；接口错误按错误码翻译，种子角色/权限按编码翻译。
 
 ### 启动
 
@@ -38,7 +43,7 @@ cd admin && npm run dev             # 管理端 :5173
 cd web && npm run dev               # Web 端 :5174
 ```
 
-调试登录时让验证码接口回传答案（仅本地验证用）：
+调试登录时让图形验证码接口回传答案（仅本地验证用）：
 
 ```bash
 CAPTCHA_DEBUG=1 go run ./cmd/server
@@ -47,15 +52,42 @@ CAPTCHA_DEBUG=1 go run ./cmd/server
 生产构建：
 
 ```bash
-cd admin && npm run build
+make build
 ```
 
 ### 认证流程
 
-1. `GET /api/v1/auth/captcha` 下发一次性图形验证码（`captchaId` + base64 图）。
-2. `POST /api/v1/auth/login` 必须同时匹配用户名、密码与验证码，才签发 HS256 JWT。
-3. 受保护接口带 `Authorization: Bearer <token>`。Casbin 用用户名 + Gin `FullPath` + Method 判定。
-4. 角色权限写入 SQLite `casbin_rule`，`PUT /api/v1/roles/:id/permissions` 后立即改变 Enforce 结果。
+1. `GET /api/v1/auth/settings` 公开可读，供登录/注册页判断是否开启 Google、使用哪种验证码，以及站点公钥。
+2. 密码登录：`POST /api/v1/auth/login`，`client` 为 `admin` 或 `web`。验证码提供方不是 `none` 时必须过人机验证。
+3. Google：浏览器通过 Google Identity Services 拿到 ID token，再 `POST /api/v1/auth/google`，body 为 `{ idToken, client }`。服务端按 `auth.google_client_id` 校验 token。
+4. 受保护接口带 `Authorization: Bearer <token>`。Casbin 用用户名 + Gin `FullPath` + Method 判定。
+5. 角色权限写入 SQLite `casbin_rule`，`PUT /api/v1/roles/:id/permissions` 后立即改变 Enforce 结果。
+
+忘记密码与登录使用同一套人机验证。
+
+### 登录与验证设置
+
+管理端 **系统设置 → 登录**。种子数据里 Google 与第三方验证码默认关闭。拉代码后请重启一次 API，以便写入 `auth.*` 配置；若表单项仍为空，填好后保存即可创建缺失的键。
+
+#### Google
+
+1. 在 Google Cloud 创建 OAuth **Web application** 客户端 ID（GIS）。
+2. 配置授权 JavaScript 来源，例如 `http://127.0.0.1:5173`（管理端）和 `http://127.0.0.1:5174`（用户端）。
+3. 把 Client ID 填到 **Google Client ID**，Client Secret 可选、仅保存在服务端，然后打开 **Google 登录**。
+4. 打开 **Google 注册** 后，首次 Google 登录会建号。用户端注册获得 `member` 角色；管理端自助注册不额外赋权。已有邮箱会在账号类型与客户端一致时绑定 Google。
+
+#### 人机验证
+
+`auth.captcha_provider`：
+
+| 值           | 行为 |
+| ------------ | ---- |
+| `none`       | 不验证 |
+| `image`      | 内置图形验证码（默认；`GET /api/v1/auth/captcha`） |
+| `recaptcha`  | reCAPTCHA v3；分数低于 `auth.recaptcha_min_score`（默认 `0.5`）且已配置 v2 时，前端回退勾选框 |
+| `turnstile`  | Cloudflare Turnstile |
+
+站点密钥可公开。服务端密钥只存在服务端，配置列表中会掩码。未设置 `auth.captcha_provider` 时仍回退 `app.captcha_enabled`。
 
 ### 测试
 

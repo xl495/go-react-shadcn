@@ -24,8 +24,8 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	if dirty {
 		t.Fatal("expected clean migration state")
 	}
-	if version != 5 {
-		t.Fatalf("version=%d, want 5", version)
+	if version != 8 {
+		t.Fatalf("version=%d, want 8", version)
 	}
 
 	db, err := sql.Open("sqlite", path)
@@ -34,7 +34,7 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	required := []string{"users", "roles", "permissions", "op_logs", "login_logs", "api_logs", "departments", "casbin_rule", "schema_migrations", "password_reset_tokens", "mail_jobs", "mail_campaigns"}
+	required := []string{"users", "roles", "permissions", "op_logs", "login_logs", "api_logs", "departments", "casbin_rule", "schema_migrations", "password_reset_tokens", "mail_jobs", "mail_campaigns", "admin_menus", "web_menus"}
 	for _, name := range required {
 		var got string
 		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&got)

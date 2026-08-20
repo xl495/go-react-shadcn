@@ -7,11 +7,14 @@ import {
   ClipboardList,
   FileText,
   FolderTree,
+  Globe,
   KeyRound,
   LayoutDashboard,
   LogOut,
   Mail,
   Monitor,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   Settings2,
   Shield,
@@ -29,9 +32,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/providers/auth"
-import { roleLabel, useI18n } from "@/providers/i18n"
+import { menuLabel, roleLabel, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
 import { useMenus } from "@/hooks/queries"
+import { useResizableSidebar } from "@/hooks/use-resizable-sidebar"
 import { cn } from "@/utils/cn"
 import type { MenuNode } from "@/types"
 
@@ -47,6 +51,7 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   Mail,
   FileText,
   FolderTree,
+  Globe,
   Monitor,
 }
 
@@ -59,25 +64,26 @@ type SidebarItem = {
   children?: SidebarItem[]
 }
 
-function sidebarFromMenus(nodes: MenuNode[]): SidebarItem[] {
+function sidebarFromMenus(nodes: MenuNode[], t: (key: string) => string): SidebarItem[] {
   const out: SidebarItem[] = []
   for (const n of nodes) {
     if (n.kind !== "menu" || n.hidden) continue
-    const children = sidebarFromMenus(n.children ?? [])
+    const children = sidebarFromMenus(n.children ?? [], t)
+    const label = menuLabel(n.code, n.name, t)
     if (n.routePath) {
       out.push({
         key: n.code,
-        label: n.name,
+        label,
         icon: ICONS[n.icon] ?? LayoutDashboard,
         to: n.routePath,
-        perm: n.code,
+        perm: n.permCode || n.code,
       })
       continue
     }
     if (children.length > 0) {
       out.push({
         key: n.code,
-        label: n.name,
+        label,
         icon: ICONS[n.icon] ?? FolderTree,
         children,
       })
@@ -95,6 +101,7 @@ function fallbackSidebar(t: (key: string) => string): SidebarItem[] {
       icon: FolderTree,
       children: [
         { key: P.userList, label: t("nav.users"), icon: Users, to: "/users", perm: P.userList },
+        { key: "webuser:list", label: t("nav.webUsers"), icon: Globe, to: "/web-users", perm: P.userList },
         { key: P.deptList, label: t("nav.departments"), icon: Building2, to: "/departments", perm: P.deptList },
         { key: P.roleList, label: t("nav.roles"), icon: Shield, to: "/roles", perm: P.roleList },
         { key: P.permList, label: t("nav.permissions"), icon: KeyRound, to: "/permissions", perm: P.permList },
@@ -157,8 +164,9 @@ export function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const { data: menus = [] } = useMenus()
+  const sidebar = useResizableSidebar("latch.sidebar.width")
 
-  const source = menus.length > 0 ? sidebarFromMenus(menus) : fallbackSidebar(t)
+  const source = menus.length > 0 ? sidebarFromMenus(menus, t) : fallbackSidebar(t)
   const visible = filterSidebar(source, can)
   const current =
     location.pathname === "/mail/campaigns/new"
@@ -174,12 +182,20 @@ export function AppShell() {
   const displayName = user?.nickname || user?.username || ""
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar">
-        <div className="flex h-14 items-center border-b px-5">
-          <span className="text-sm font-semibold tracking-tight">Latch</span>
+    <div className="flex h-full overflow-hidden bg-background">
+      <aside
+        style={{ width: sidebar.width }}
+        className={cn(
+          "relative flex h-full shrink-0 flex-col overflow-x-hidden border-r bg-sidebar",
+          sidebar.resizing
+            ? "transition-none"
+            : "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        )}
+      >
+        <div className="flex h-14 shrink-0 items-center border-b px-4">
+          <span className="truncate text-sm font-semibold tracking-tight">Latch</span>
         </div>
-        <nav className="flex flex-1 flex-col gap-0.5 p-2">
+        <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {visible.map((item) =>
             item.children?.length ? (
               <NavGroup key={item.key} item={item} pathname={location.pathname} />
@@ -188,14 +204,37 @@ export function AppShell() {
             ),
           )}
         </nav>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuemin={64}
+          aria-valuemax={420}
+          aria-valuenow={sidebar.width}
+          aria-label={t("nav.resizeSidebar")}
+          tabIndex={0}
+          className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none bg-transparent after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-transparent hover:after:bg-foreground/30 focus-visible:bg-foreground/10 focus-visible:outline-none"
+          onPointerDown={sidebar.onResizePointerDown}
+          onKeyDown={sidebar.onResizeKeyDown}
+          onDoubleClick={sidebar.resetWidth}
+        />
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b bg-background px-6">
-          <div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background pr-6 pl-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            aria-label={sidebar.compact ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
+            onClick={sidebar.toggleCollapsed}
+          >
+            {sidebar.compact ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </Button>
+          <div className="min-w-0 flex-1">
             <Breadcrumbs />
-            <h1 className="text-sm font-medium">{current}</h1>
+            <h1 className="truncate text-sm font-medium">{current}</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <LanguageSwitcher />
             <UserMenu
               name={displayName}
@@ -208,7 +247,7 @@ export function AppShell() {
             />
           </div>
         </header>
-        <main className="min-w-0 flex-1 overflow-auto bg-muted/40 p-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain bg-muted/40 p-6">
           <Outlet />
         </main>
       </div>
@@ -231,6 +270,7 @@ function NavGroup({ item, pathname }: { item: SidebarItem; pathname: string }) {
         variant="ghost"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        title={item.label}
         className={cn(
           "h-auto w-full justify-start gap-2 px-3 py-2 font-normal",
           containsActive ? "text-foreground" : "text-muted-foreground",
@@ -268,6 +308,7 @@ function NavItem({
     <NavLink
       to={to}
       end={to === "/"}
+      title={label}
       className={({ isActive }) =>
         cn(
           "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
@@ -277,8 +318,8 @@ function NavItem({
         )
       }
     >
-      <Icon className="size-4" />
-      {label}
+      <Icon className="size-4 shrink-0" />
+      <span className="min-w-0 truncate">{label}</span>
     </NavLink>
   )
 }

@@ -1,60 +1,76 @@
-import { useState, type FormEvent } from "react"
+import { useRef, useState, type FormEvent } from "react"
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom"
-import { RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { ApiError } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
-import { useCaptcha, useLoginMutation } from "@/hooks/queries"
+import { useAuthSettings, useGoogleAuthMutation, useLoginMutation } from "@/hooks/queries"
 import { PageFallback } from "@/components/PageFallback"
+import { AuthChallenge, CAPTCHA_FALLBACK_CODE, type AuthChallengeHandle } from "@/components/auth/AuthChallenge"
+import { GoogleSignIn } from "@/components/auth/GoogleSignIn"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export function LoginPage() {
   const { user, loading, login } = useAuth()
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const fromRaw = (location.state as { from?: string } | null)?.from || "/"
-  const from = fromRaw.startsWith("/login") || fromRaw.startsWith("/forgot-password") ? "/" : fromRaw
+  const from = fromRaw.startsWith("/login") || fromRaw.startsWith("/forgot-password") || fromRaw.startsWith("/register") ? "/" : fromRaw
 
   const [username, setUsername] = useState("admin")
   const [password, setPassword] = useState("admin123")
-  const [captchaCode, setCaptchaCode] = useState("")
-  const captcha = useCaptcha()
+  const settings = useAuthSettings()
   const loginMut = useLoginMutation()
+  const googleMut = useGoogleAuthMutation()
+  const challengeRef = useRef<AuthChallengeHandle>(null)
+  const pending = loginMut.isPending || googleMut.isPending
 
   if (loading) return <PageFallback />
   if (user) return <Navigate to="/" replace />
 
-  async function refreshCaptcha() {
-    setCaptchaCode("")
-    await captcha.refetch()
+  function finish(token: string, nextUser: typeof user) {
+    if (!nextUser) return
+    login(token, nextUser)
+    toast.success(t("login.submit"))
+    navigate(from, { replace: true })
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     try {
+      const challenge = (await challengeRef.current?.collect()) ?? {}
       const result = await loginMut.mutateAsync({
         username,
         password,
-        captchaId: captcha.data?.captchaId ?? "",
-        captchaCode,
+        client: "admin",
+        ...challenge,
       })
-      login(result.token, result.user)
-      toast.success(t("login.submit"))
-      navigate(from, { replace: true })
+      finish(result.token, result.user)
     } catch (err) {
-      const message = err instanceof ApiError ? translateApiError(err, t) : t("login.failed")
-      toast.error(message)
-      await refreshCaptcha()
+      if (err instanceof ApiError && err.code === CAPTCHA_FALLBACK_CODE) {
+        challengeRef.current?.showV2()
+        toast.error(translateApiError(err, t))
+        return
+      }
+      toast.error(err instanceof ApiError ? translateApiError(err, t) : t("login.failed"))
+    }
+  }
+
+  async function onGoogle(idToken: string) {
+    try {
+      const result = await googleMut.mutateAsync({ idToken, client: "admin" })
+      finish(result.token, result.user)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? translateApiError(err, t) : t("login.failed"))
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-full flex-col overflow-y-auto bg-background">
       <header className="flex h-14 items-center justify-between border-b px-6">
         <span className="text-sm font-semibold">Latch</span>
         <LanguageSwitcher />
@@ -65,6 +81,19 @@ export function LoginPage() {
             <h1 className="text-2xl font-semibold tracking-tight">{t("login.title")}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{t("login.subtitle")}</p>
           </div>
+          {settings.data?.googleEnabled ? (
+            <div className="space-y-3">
+              <GoogleSignIn clientId={settings.data.googleClientId} locale={locale} onCredential={onGoogle} disabled={pending} />
+              {settings.data.googleRegisterEnabled ? (
+                <p className="text-center text-xs text-muted-foreground">{t("login.googleRegisterHint")}</p>
+              ) : null}
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                {t("login.or")}
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            </div>
+          ) : null}
           <div className="grid gap-2">
             <Label htmlFor="username">{t("login.username")}</Label>
             <Input
@@ -89,37 +118,18 @@ export function LoginPage() {
               </Button>
             </div>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="captcha">{t("login.captcha")}</Label>
-            <div className="flex items-center gap-3">
-              <Input
-                id="captcha"
-                inputMode="numeric"
-                autoComplete="off"
-                value={captchaCode}
-                onChange={(e) => setCaptchaCode(e.target.value)}
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void refreshCaptcha()}
-                className="relative h-9 w-[120px] overflow-hidden p-0"
-                aria-label={t("login.refreshCaptcha")}
-              >
-                {captcha.data?.image ? (
-                  <img src={captcha.data.image} alt={t("login.captchaAlt")} className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-xs text-muted-foreground">{t("app.loading")}</span>
-                )}
-                <RefreshCw className="absolute right-1 bottom-1 size-3 text-foreground/40" />
-              </Button>
-            </div>
-          </div>
-          {captcha.error ? <p className="text-sm text-destructive">{t("login.captchaLoadFailed")}</p> : null}
-          <Button type="submit" disabled={loginMut.isPending} className="h-10 w-full">
-            {loginMut.isPending ? t("login.submitting") : t("login.submit")}
+          <AuthChallenge ref={challengeRef} settings={settings.data} action="login" t={t} />
+          <Button type="submit" disabled={pending} className="h-10 w-full">
+            {pending ? t("login.submitting") : t("login.submit")}
           </Button>
+          {settings.data?.googleRegisterEnabled ? (
+            <p className="text-center text-sm text-muted-foreground">
+              {t("login.noAccount")}{" "}
+              <Link to="/register" className="text-foreground underline-offset-4 hover:underline">
+                {t("login.register")}
+              </Link>
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             admin / admin123 · operator / operator123 · viewer / viewer123
           </p>

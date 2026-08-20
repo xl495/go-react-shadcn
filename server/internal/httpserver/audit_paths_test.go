@@ -113,13 +113,20 @@ func TestMenuTreeFollowsPermissions(t *testing.T) {
 		t.Fatalf("admin menus missing department page: %+v", adminMenus)
 	}
 	foundUsers := false
+	foundWebUsers := false
 	for _, c := range org.Children {
 		if c.Code == "user:list" {
 			foundUsers = true
 		}
+		if c.Code == "webuser:list" && c.RoutePath == "/web-users" && c.PermCode == "user:list" {
+			foundWebUsers = true
+		}
 	}
 	if !foundUsers {
 		t.Fatalf("user:list should nest under org:menu: %+v", org.Children)
+	}
+	if !foundWebUsers {
+		t.Fatalf("webuser:list should nest under org:menu: %+v", org.Children)
 	}
 
 	op := loginOK(t, app, seed.OperatorUsername, seed.OperatorPassword)

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 
 function GuestShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-full flex-col overflow-y-auto bg-background">
       <header className="flex h-14 items-center justify-between border-b px-6">
         <span className="text-sm font-semibold">Latch</span>
         <LanguageSwitcher />

@@ -18,6 +18,7 @@ export type MailCampaign = Schema["MailCampaign"]
 export type DashboardStats = Schema["DashboardStats"]
 export type CaptchaChallenge = Schema["CaptchaChallenge"]
 export type LoginResult = Schema["LoginResult"]
+export type AuthSettings = Schema["AuthSettings"]
 export type DictLookup = Schema["DictLookup"]
 
 export type PageResult<T> = {

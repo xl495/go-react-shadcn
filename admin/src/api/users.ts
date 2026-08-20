@@ -10,6 +10,7 @@ export const usersApi = {
     gender?: string
     department?: string
     roleId?: number
+    kind?: string
   }) => request<PageResult<User>>(`/api/v1/users${qs(params ?? {})}`),
   getUser: (id: number) => request<User>(`/api/v1/users/${id}`),
   createUser: (body: {
@@ -25,6 +26,7 @@ export const usersApi = {
     remark?: string
     timezone?: string
     marketingOptIn?: boolean
+    kind?: string
     roleIds: number[]
   }) => request<User>("/api/v1/users", { method: "POST", body: JSON.stringify(body) }),
   updateUser: (

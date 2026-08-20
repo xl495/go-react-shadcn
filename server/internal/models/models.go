@@ -7,6 +7,9 @@ const (
 	DataScopeDept       = "dept"
 	DataScopeDeptAndSub = "dept_sub"
 	DataScopeSelf       = "self"
+
+	UserKindAdmin = "admin"
+	UserKindWeb   = "web"
 )
 
 type Department struct {
@@ -43,6 +46,8 @@ type User struct {
 	LastLoginIP      string      `json:"lastLoginIp" gorm:"size:64"`
 	Timezone         string      `json:"timezone" gorm:"size:64;not null;default:Asia/Shanghai"`
 	MarketingOptIn   bool        `json:"marketingOptIn" gorm:"not null;default:true"`
+	Kind             string      `json:"kind" gorm:"size:16;not null;default:admin;index"`
+	GoogleID         string      `json:"-" gorm:"size:64;index"`
 	CreatedAt        time.Time   `json:"createdAt"`
 	UpdatedAt        time.Time   `json:"updatedAt"`
 	Roles            []Role      `json:"roles,omitempty" gorm:"many2many:user_roles;"`
@@ -80,6 +85,34 @@ type Permission struct {
 	Roles       []Role       `json:"-" gorm:"many2many:role_permissions;"`
 	Children    []Permission `json:"children,omitempty" gorm:"-"`
 }
+
+type NavMenu struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	ParentID  *uint     `json:"parentId" gorm:"index"`
+	Name      string    `json:"name" gorm:"size:64;not null"`
+	Code      string    `json:"code" gorm:"uniqueIndex;size:64;not null"`
+	RoutePath string    `json:"routePath" gorm:"size:128"`
+	Component string    `json:"component" gorm:"size:128"`
+	Icon      string    `json:"icon" gorm:"size:64"`
+	Sort      int       `json:"sort" gorm:"not null;default:0"`
+	Hidden    bool      `json:"hidden" gorm:"not null;default:false"`
+	PermCode  string    `json:"permCode" gorm:"size:64;index"`
+	Status    string    `json:"status" gorm:"size:16;not null;default:active"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type AdminMenu struct {
+	NavMenu
+}
+
+func (AdminMenu) TableName() string { return "admin_menus" }
+
+type WebMenu struct {
+	NavMenu
+}
+
+func (WebMenu) TableName() string { return "web_menus" }
 
 type DictType struct {
 	ID        uint       `json:"id" gorm:"primaryKey"`
@@ -231,6 +264,7 @@ type MailCampaign struct {
 func AllModels() []any {
 	return []any{
 		&User{}, &Role{}, &Permission{}, &Department{},
+		&AdminMenu{}, &WebMenu{},
 		&DictType{}, &DictItem{}, &SysConfig{},
 		&LoginLog{}, &OpLog{}, &APILog{}, &PasswordResetToken{},
 		&MailJob{}, &MailCampaign{},

@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/mailer"
@@ -25,6 +26,7 @@ type userDTO struct {
 	Status          string    `json:"status"`
 	Timezone        string    `json:"timezone"`
 	MarketingOptIn  bool      `json:"marketingOptIn"`
+	Kind            string    `json:"kind"`
 	LastLoginAt     any       `json:"lastLoginAt"`
 	LastLoginIP     string    `json:"lastLoginIp"`
 	Roles           []roleDTO `json:"roles"`
@@ -75,6 +77,7 @@ type createUserRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Status   string `json:"status"`
+	Kind     string `json:"kind"`
 	RoleIDs  []uint `json:"roleIds"`
 	userProfileFields
 }
@@ -117,6 +120,7 @@ func toUserDTO(u models.User) userDTO {
 		Status:          u.Status,
 		Timezone:        u.Timezone,
 		MarketingOptIn:  u.MarketingOptIn,
+		Kind:            normalizeUserKind(u.Kind),
 		LastLoginAt:     u.LastLoginAt,
 		LastLoginIP:     u.LastLoginIP,
 		Roles:           roles,
@@ -187,6 +191,13 @@ func (a *App) handleListUsers(c *gin.Context) {
 	q = applyEqual(q, "users.status", c.Query("status"))
 	q = applyEqual(q, "users.gender", c.Query("gender"))
 	q = applyEqual(q, "users.department", c.Query("department"))
+	if kind := strings.TrimSpace(c.Query("kind")); kind != "" {
+		if kind != models.UserKindAdmin && kind != models.UserKindWeb {
+			fail(c, http.StatusBadRequest, CodeInvalidUserBody, "invalid user kind")
+			return
+		}
+		q = applyEqual(q, "users.kind", kind)
+	}
 	if roleID := parseQueryUint(c, "roleId"); roleID > 0 {
 		q = q.Where("users.id IN (SELECT user_id FROM user_roles WHERE role_id = ?)", roleID)
 	}
@@ -235,6 +246,16 @@ func (a *App) handleCreateUser(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40011, "invalid role ids")
 		return
 	}
+	if req.Kind != "" && req.Kind != models.UserKindAdmin && req.Kind != models.UserKindWeb {
+		fail(c, http.StatusBadRequest, CodeInvalidUserBody, "invalid user kind")
+		return
+	}
+	kind := normalizeUserKind(req.Kind)
+	roles, err = a.defaultRolesForKind(kind, roles)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, 50012, "failed to create user")
+		return
+	}
 	tz := mailer.DefaultTimezone
 	if req.Timezone != "" {
 		parsed, err := mailer.NormalizeTimezone(req.Timezone)
@@ -252,7 +273,7 @@ func (a *App) handleCreateUser(c *gin.Context) {
 		Username: req.Username, PasswordHash: hash, Status: status,
 		Nickname: req.Nickname, Avatar: req.Avatar, Email: req.Email, Phone: req.Phone,
 		Gender: req.Gender, Department: req.Department, Title: req.Title, Remark: req.Remark,
-		Timezone: tz, MarketingOptIn: optIn,
+		Timezone: tz, MarketingOptIn: optIn, Kind: kind,
 	}
 	a.applyDepartmentLink(&user)
 	if err := a.withTx(func(tx *gorm.DB) error {
@@ -405,6 +426,24 @@ func (a *App) handleAssignUserRoles(c *gin.Context) {
 	}
 	user.Roles = roles
 	ok(c, toUserDTO(user))
+}
+
+func normalizeUserKind(v string) string {
+	if strings.EqualFold(strings.TrimSpace(v), models.UserKindWeb) {
+		return models.UserKindWeb
+	}
+	return models.UserKindAdmin
+}
+
+func (a *App) defaultRolesForKind(kind string, roles []models.Role) ([]models.Role, error) {
+	if kind != models.UserKindWeb || len(roles) > 0 {
+		return roles, nil
+	}
+	var member models.Role
+	if err := a.DB.Where("code = ?", seed.RoleMember).First(&member).Error; err != nil {
+		return roles, nil
+	}
+	return []models.Role{member}, nil
 }
 
 func (a *App) loadRoles(ids []uint) ([]models.Role, error) {

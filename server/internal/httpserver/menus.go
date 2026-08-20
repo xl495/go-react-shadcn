@@ -19,10 +19,19 @@ type menuNode struct {
 	Icon      string     `json:"icon"`
 	Sort      int        `json:"sort"`
 	Hidden    bool       `json:"hidden"`
+	PermCode  string     `json:"permCode,omitempty"`
 	Children  []menuNode `json:"children,omitempty"`
 }
 
 func (a *App) handleMenus(c *gin.Context) {
+	a.respondNavMenus(c, "admin_menus")
+}
+
+func (a *App) handleWebMenus(c *gin.Context) {
+	a.respondNavMenus(c, "web_menus")
+}
+
+func (a *App) respondNavMenus(c *gin.Context, table string) {
 	claims := currentUser(c)
 	var user models.User
 	if err := a.DB.Preload("Roles.Permissions").First(&user, claims.UserID).Error; err != nil {
@@ -30,34 +39,32 @@ func (a *App) handleMenus(c *gin.Context) {
 		return
 	}
 	codes := collectCodes(user)
-	isAdmin := hasRole(user.Roles, "admin") || containsCode(codes, "admin:all")
+	isAdmin := hasRole(user.Roles, "admin") || containsCode(codes, "admin:all") || containsCode(codes, "*")
 
-	var perms []models.Permission
-	if err := a.DB.Order("sort asc, id asc").Find(&perms).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50093, "failed to list menus")
+	var rows []models.NavMenu
+	if err := a.DB.Table(table).Where("status = ?", "active").Order("sort asc, id asc").Find(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeListMenus, "failed to list menus")
 		return
 	}
-	filtered := make([]models.Permission, 0, len(perms))
-	for _, p := range perms {
-		if p.Kind != "menu" && p.Kind != "button" {
+	filtered := make([]models.NavMenu, 0, len(rows))
+	for _, row := range rows {
+		if row.PermCode == "" {
 			continue
 		}
-		if isAdmin || containsCode(codes, p.Code) {
-			filtered = append(filtered, p)
+		if isAdmin || containsCode(codes, row.PermCode) {
+			filtered = append(filtered, row)
 		}
 	}
-	ok(c, buildMenuTree(includeMenuAncestors(perms, filtered), nil))
+	ok(c, buildMenuTree(includeMenuAncestors(rows, filtered), nil))
 }
 
-// includeMenuAncestors keeps directory parents in the tree when a child is visible,
-// even if the user was not assigned the parent permission code.
-func includeMenuAncestors(all, filtered []models.Permission) []models.Permission {
-	byID := make(map[uint]models.Permission, len(all))
+func includeMenuAncestors(all, filtered []models.NavMenu) []models.NavMenu {
+	byID := make(map[uint]models.NavMenu, len(all))
 	for _, p := range all {
 		byID[p.ID] = p
 	}
 	seen := make(map[uint]struct{}, len(filtered)+8)
-	out := make([]models.Permission, 0, len(filtered)+8)
+	out := make([]models.NavMenu, 0, len(filtered)+8)
 	for _, p := range filtered {
 		if _, ok := seen[p.ID]; ok {
 			continue
@@ -83,19 +90,19 @@ func includeMenuAncestors(all, filtered []models.Permission) []models.Permission
 	return out
 }
 
-func buildMenuTree(perms []models.Permission, parentID *uint) []menuNode {
+func buildMenuTree(rows []models.NavMenu, parentID *uint) []menuNode {
 	out := make([]menuNode, 0)
-	for _, p := range perms {
+	for _, p := range rows {
 		same := (parentID == nil && p.ParentID == nil) ||
 			(parentID != nil && p.ParentID != nil && *parentID == *p.ParentID)
 		if !same {
 			continue
 		}
 		out = append(out, menuNode{
-			ID: p.ID, Name: p.Name, Code: p.Code, Kind: p.Kind,
+			ID: p.ID, Name: p.Name, Code: p.Code, Kind: "menu",
 			RoutePath: p.RoutePath, Component: p.Component, Icon: p.Icon,
-			Sort: p.Sort, Hidden: p.Hidden,
-			Children: buildMenuTree(perms, &p.ID),
+			Sort: p.Sort, Hidden: p.Hidden, PermCode: p.PermCode,
+			Children: buildMenuTree(rows, &p.ID),
 		})
 	}
 	return out
@@ -179,7 +186,6 @@ func isAnomalousLogin(user models.User, ip string) bool {
 	if user.LastLoginIP == ip {
 		return false
 	}
-	// Simple heuristic: different /16 prefix treated as anomalous.
 	partsA := strings.Split(user.LastLoginIP, ".")
 	partsB := strings.Split(ip, ".")
 	if len(partsA) >= 2 && len(partsB) >= 2 {

@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,10 +14,10 @@ import (
 )
 
 type loginRequest struct {
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	CaptchaID   string `json:"captchaId"`
-	CaptchaCode string `json:"captchaCode"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Client   string `json:"client"`
+	challengeInput
 }
 
 type loginData struct {
@@ -48,16 +49,11 @@ func (a *App) handleLogin(c *gin.Context) {
 		return
 	}
 
-	if a.captchaEnabled() {
-		if req.CaptchaID == "" || req.CaptchaCode == "" {
-			fail(c, http.StatusBadRequest, 40002, "captcha required")
-			return
-		}
-		if !a.Captcha.Verify(req.CaptchaID, req.CaptchaCode) {
+	if !a.requireCaptcha(c, req.challengeInput, "login") {
+		if req.CaptchaID != "" || req.CaptchaToken != "" {
 			a.recordLoginLog(c, req.Username, "failed", "invalid captcha")
-			fail(c, http.StatusBadRequest, 40003, "invalid captcha")
-			return
 		}
+		return
 	}
 
 	if req.Username == "" || req.Password == "" {
@@ -92,6 +88,17 @@ func (a *App) handleLogin(c *gin.Context) {
 		return
 	}
 
+	if strings.EqualFold(strings.TrimSpace(req.Client), "admin") && normalizeUserKind(user.Kind) == models.UserKindWeb {
+		a.recordLoginLog(c, user.Username, "failed", "web user on admin")
+		fail(c, http.StatusForbidden, CodeWrongClient, "use the web app to sign in")
+		return
+	}
+
+	a.finishLogin(c, user, ip, "")
+}
+
+func (a *App) finishLogin(c *gin.Context, user models.User, ip, successDetail string) {
+	now := time.Now()
 	if isAnomalousLogin(user, ip) {
 		a.recordLoginLog(c, user.Username, "warning", "anomalous ip:"+ip+" prev:"+user.LastLoginIP)
 	}
@@ -113,20 +120,12 @@ func (a *App) handleLogin(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, 50003, "failed to issue token")
 		return
 	}
-	a.recordLoginLog(c, user.Username, "success", "")
+	a.recordLoginLog(c, user.Username, "success", successDetail)
 	ok(c, loginData{
 		Token:     tok,
 		ExpiresAt: exp,
 		User:      toUserDTO(user),
 	})
-}
-
-func (a *App) captchaEnabled() bool {
-	var cfg models.SysConfig
-	if err := a.DB.Where(`"key" = ?`, "app.captcha_enabled").First(&cfg).Error; err != nil {
-		return true
-	}
-	return cfg.Value == "1" || cfg.Value == "true"
 }
 
 func (a *App) handleMe(c *gin.Context) {

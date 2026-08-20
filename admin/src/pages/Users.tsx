@@ -65,6 +65,15 @@ const emptyForm = {
 }
 
 export function UsersPage() {
+  return <UserDirectory kind="admin" />
+}
+
+export function WebUsersPage() {
+  return <UserDirectory kind="web" />
+}
+
+function UserDirectory({ kind }: { kind: "admin" | "web" }) {
+  const isWeb = kind === "web"
   const { can } = useAuth()
   const { t } = useI18n()
   const genderDict = useDict(DICT.gender)
@@ -82,15 +91,22 @@ export function UsersPage() {
     q: q || undefined,
     gender: gender || undefined,
     status: status || undefined,
-    department: department || undefined,
+    department: isWeb ? undefined : department || undefined,
     roleId: roleId ?? undefined,
+    kind,
   })
   const needRoles = can(P.roleList) || can(P.userRoles) || can(P.userCreate) || can(P.userUpdate)
   const { data: rolesPage } = useRoles({ pageSize: PICKER_PAGE_SIZE }, needRoles)
   const users = data?.items ?? []
   const roles = rolesPage?.items ?? []
   const filtered = Boolean(q || gender || status || department || roleId)
-  const draftFiltered = Boolean(draftQ || draftGender || draftStatus || draftDepartment || draftRoleId)
+  const draftFiltered = Boolean(
+    draftQ !== q ||
+      draftGender !== gender ||
+      draftStatus !== status ||
+      draftDepartment !== department ||
+      draftRoleId !== roleId,
+  )
 
   function searchUsers() {
     void setParams({
@@ -124,7 +140,8 @@ export function UsersPage() {
   function openCreate() {
     setEditing(null)
     setForm(emptyForm)
-    setRoleIds([])
+    const member = roles.find((r) => r.code === "member")
+    setRoleIds(isWeb && member ? [member.id] : [])
     setOpen(true)
   }
 
@@ -182,12 +199,13 @@ export function UsersPage() {
           email: form.email,
           phone: form.phone,
           gender: form.gender,
-          department: form.department,
-          title: form.title,
+          department: isWeb ? "" : form.department,
+          title: isWeb ? "" : form.title,
           remark: form.remark,
           timezone: form.timezone,
           marketingOptIn: form.marketingOptIn,
           status: form.status,
+          kind,
           roleIds,
         })
       }
@@ -202,11 +220,15 @@ export function UsersPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">{t("users.title")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t("users.subtitle")}</p>
+          <h2 className="text-xl font-semibold tracking-tight">
+            {isWeb ? t("webUsers.title") : t("users.title")}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isWeb ? t("webUsers.subtitle") : t("users.subtitle")}
+          </p>
         </div>
         <Can perm={P.userCreate}>
-          <Button onClick={openCreate}>{t("users.create")}</Button>
+          <Button onClick={openCreate}>{isWeb ? t("webUsers.create") : t("users.create")}</Button>
         </Can>
       </div>
       <FilterForm onSubmit={searchUsers}>
@@ -214,7 +236,7 @@ export function UsersPage() {
           id="user-q"
           label={t("app.search")}
           value={draftQ}
-          placeholder={t("users.search")}
+          placeholder={isWeb ? t("webUsers.search") : t("users.search")}
           inputClassName="w-64"
           onChange={setDraftQ}
         />
@@ -238,6 +260,7 @@ export function UsersPage() {
           emptyLabel={t("app.all")}
           onChange={setDraftStatus}
         />
+        {!isWeb ? (
         <DictSelect
           id="user-dept"
           className="w-36"
@@ -248,6 +271,7 @@ export function UsersPage() {
           emptyLabel={t("app.all")}
           onChange={setDraftDepartment}
         />
+        ) : null}
         {can(P.roleList) ? (
           <div className="grid w-40 gap-1.5">
             <Label htmlFor="user-role">{t("users.roles")}</Label>
@@ -291,8 +315,8 @@ export function UsersPage() {
                 <TableHead>{t("users.phone")}</TableHead>
                 <TableHead>{t("users.email")}</TableHead>
                 <TableHead>{t("users.gender")}</TableHead>
-                <TableHead>{t("users.department")}</TableHead>
-                <TableHead>{t("users.jobTitle")}</TableHead>
+                {!isWeb ? <TableHead>{t("users.department")}</TableHead> : null}
+                {!isWeb ? <TableHead>{t("users.jobTitle")}</TableHead> : null}
                 <TableHead>{t("users.roles")}</TableHead>
                 <TableHead>{t("app.status")}</TableHead>
                 <TableHead>{t("users.lastLogin")}</TableHead>
@@ -302,7 +326,7 @@ export function UsersPage() {
             </TableHeader>
             <TableBody>
               {users.length === 0 ? (
-                <EmptyTableRow colSpan={14} />
+                <EmptyTableRow colSpan={isWeb ? 12 : 14} />
               ) : (
                 users.map((u) => (
                   <TableRow key={u.id}>
@@ -315,8 +339,8 @@ export function UsersPage() {
                     <TableCell>{u.phone || "—"}</TableCell>
                     <TableCell>{u.email || "—"}</TableCell>
                     <TableCell>{genderDict.label(u.gender)}</TableCell>
-                    <TableCell>{deptDict.label(u.department)}</TableCell>
-                    <TableCell>{u.title || "—"}</TableCell>
+                    {!isWeb ? <TableCell>{deptDict.label(u.department)}</TableCell> : null}
+                    {!isWeb ? <TableCell>{u.title || "—"}</TableCell> : null}
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {(u.roles ?? []).map((r) => (
@@ -389,7 +413,7 @@ export function UsersPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? t("users.edit") : t("users.create")}</DialogTitle>
+          <DialogTitle>{editing ? t("users.edit") : isWeb ? t("webUsers.create") : t("users.create")}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             {editing ? (
@@ -424,14 +448,20 @@ export function UsersPage() {
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
               />
             </div>
-            {(
-              [
-                ["nickname", "users.nickname"],
-                ["phone", "users.phone"],
-                ["email", "users.email"],
-                ["title", "users.jobTitle"],
-                ["remark", "users.remark"],
-              ] as const
+            {(isWeb
+              ? ([
+                  ["nickname", "users.nickname"],
+                  ["phone", "users.phone"],
+                  ["email", "users.email"],
+                  ["remark", "users.remark"],
+                ] as const)
+              : ([
+                  ["nickname", "users.nickname"],
+                  ["phone", "users.phone"],
+                  ["email", "users.email"],
+                  ["title", "users.jobTitle"],
+                  ["remark", "users.remark"],
+                ] as const)
             ).map(([key, label]) => (
               <div key={key} className="grid gap-1.5">
                 <Label htmlFor={key}>{t(label)}</Label>
@@ -451,6 +481,7 @@ export function UsersPage() {
               emptyLabel={t("users.genderUnset")}
               onChange={(value) => setForm((f) => ({ ...f, gender: value }))}
             />
+            {!isWeb ? (
             <DictSelect
               id="dept"
               label={t("users.department")}
@@ -460,6 +491,7 @@ export function UsersPage() {
               emptyLabel={t("app.optional")}
               onChange={(value) => setForm((f) => ({ ...f, department: value }))}
             />
+            ) : null}
             <DictSelect
               id="st"
               label={t("app.status")}

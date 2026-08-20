@@ -24,3 +24,27 @@ export type CaptchaChallenge = {
   captchaId: string
   image: string
 }
+
+export type AuthSettings = {
+  googleEnabled: boolean
+  googleRegisterEnabled: boolean
+  googleClientId: string
+  captchaProvider: string
+  recaptchaSiteKeyV3?: string
+  recaptchaSiteKeyV2?: string
+  turnstileSiteKey?: string
+}
+
+export type MenuNode = {
+  id: number
+  name: string
+  code: string
+  kind: string
+  routePath: string
+  component: string
+  icon: string
+  sort: number
+  hidden: boolean
+  permCode?: string
+  children?: MenuNode[]
+}

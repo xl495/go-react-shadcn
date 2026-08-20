@@ -24,7 +24,7 @@ export function UnsubscribePage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex h-full flex-col overflow-y-auto bg-background text-foreground">
       <header className="flex h-14 items-center justify-between border-b px-6">
         <span className="text-sm font-semibold tracking-tight">Latch</span>
         <Link to="/login" className="text-sm text-muted-foreground hover:text-foreground">

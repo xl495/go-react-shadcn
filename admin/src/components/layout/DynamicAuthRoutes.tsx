@@ -19,7 +19,7 @@ function menuRouteObject(m: MenuNode): RouteObject | null {
   const Page = resolvePage(m.component)
   if (!Page) return null
   const element = (
-    <RequirePerm perm={m.code}>
+    <RequirePerm perm={m.permCode || m.code}>
       <Suspense fallback={<PageFallback />}>
         <Page />
       </Suspense>

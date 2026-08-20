@@ -1,15 +1,24 @@
 import { request, uploadAvatar } from "./http"
-import type { CaptchaChallenge, LoginResult, MenuNode, User } from "@/types"
+import type { AuthSettings, CaptchaChallenge, LoginResult, MenuNode, User } from "@/types"
 
 export const authApi = {
   captcha: () => request<CaptchaChallenge>("/api/v1/auth/captcha"),
+  settings: () => request<AuthSettings>("/api/v1/auth/settings"),
   login: (body: {
     username: string
     password: string
-    captchaId: string
-    captchaCode: string
+    captchaId?: string
+    captchaCode?: string
+    captchaToken?: string
+    captchaVersion?: string
+    client?: string
   }) =>
     request<LoginResult>("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  google: (body: { idToken: string; client?: string }) =>
+    request<LoginResult>("/api/v1/auth/google", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -32,7 +41,13 @@ export const authApi = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  forgotPassword: (body: { email: string; captchaId: string; captchaCode: string }) =>
+  forgotPassword: (body: {
+    email: string
+    captchaId?: string
+    captchaCode?: string
+    captchaToken?: string
+    captchaVersion?: string
+  }) =>
     request<{ sent: boolean }>("/api/v1/auth/forgot-password", {
       method: "POST",
       body: JSON.stringify(body),

@@ -21,9 +21,9 @@ func (a *App) handleListConfigs(c *gin.Context) {
 	p := parsePage(c, 50, 500)
 	q := a.DB.Model(&models.SysConfig{})
 	if g := strings.TrimSpace(c.Query("group")); g != "" {
-		q = q.Where("`group` = ?", g)
+		q = q.Where(`"group" = ?`, g)
 	}
-	q = applyContains(q, c.Query("q"), "`key`", "name", "remark")
+	q = applyContains(q, c.Query("q"), `"key"`, "name", "remark")
 	var total int64
 	_ = q.Count(&total).Error
 	var rows []models.SysConfig

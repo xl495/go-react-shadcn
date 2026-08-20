@@ -1,8 +1,10 @@
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import { RefreshCw } from "lucide-react"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import type { AuthSettings } from "@/lib/types"
+import { AuthChallenge, CAPTCHA_FALLBACK_CODE, type AuthChallengeHandle } from "@/components/AuthChallenge"
+import { GoogleSignIn } from "@/components/GoogleSignIn"
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -12,21 +14,13 @@ export function LoginPage() {
 
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [captchaId, setCaptchaId] = useState("")
-  const [captchaCode, setCaptchaCode] = useState("")
-  const [image, setImage] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-
-  async function loadCaptcha() {
-    const ch = await api.captcha()
-    setCaptchaId(ch.captchaId)
-    setImage(ch.image)
-    setCaptchaCode("")
-  }
+  const [settings, setSettings] = useState<AuthSettings | undefined>()
+  const challengeRef = useRef<AuthChallengeHandle>(null)
 
   useEffect(() => {
-    loadCaptcha().catch(() => setError("验证码加载失败"))
+    api.settings().then(setSettings).catch(() => undefined)
   }, [])
 
   async function onSubmit(e: FormEvent) {
@@ -34,19 +28,36 @@ export function LoginPage() {
     setError("")
     setLoading(true)
     try {
-      const result = await api.login({ username, password, captchaId, captchaCode })
+      const challenge = (await challengeRef.current?.collect()) ?? {}
+      const result = await api.login({ username, password, ...challenge })
       login(result.token, result.user)
-      navigate(from === "/login" ? "/" : from, { replace: true })
+      navigate(from === "/login" || from === "/register" ? "/" : from, { replace: true })
+    } catch (err) {
+      if (err instanceof ApiError && err.code === CAPTCHA_FALLBACK_CODE) {
+        challengeRef.current?.showV2()
+      }
+      setError(err instanceof ApiError ? err.message || "登录失败" : "登录失败")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function onGoogle(idToken: string) {
+    setError("")
+    setLoading(true)
+    try {
+      const result = await api.google({ idToken, client: "web" })
+      login(result.token, result.user)
+      navigate(from === "/login" || from === "/register" ? "/" : from, { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message || "登录失败" : "登录失败")
-      await loadCaptcha().catch(() => undefined)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex h-full flex-col overflow-y-auto bg-background text-foreground">
       <header className="flex h-14 items-center border-b px-6">
         <span className="text-sm font-semibold tracking-tight">Latch</span>
       </header>
@@ -54,8 +65,21 @@ export function LoginPage() {
         <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">登录</h1>
-            <p className="mt-1 text-sm text-muted-foreground">输入账号并完成图形验证码</p>
+            <p className="mt-1 text-sm text-muted-foreground">输入账号并完成人机验证</p>
           </div>
+          {settings?.googleEnabled ? (
+            <div className="space-y-3">
+              <GoogleSignIn clientId={settings.googleClientId} onCredential={onGoogle} disabled={loading} />
+              {settings.googleRegisterEnabled ? (
+                <p className="text-center text-xs text-muted-foreground">未注册的 Google 账号将自动创建</p>
+              ) : null}
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                或
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            </div>
+          ) : null}
           <div className="grid gap-2">
             <label htmlFor="username" className="text-sm font-medium">
               用户名
@@ -84,34 +108,7 @@ export function LoginPage() {
               忘记密码
             </a>
           </div>
-          <div className="grid gap-2">
-            <label htmlFor="captcha" className="text-sm font-medium">
-              验证码
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                id="captcha"
-                inputMode="numeric"
-                autoComplete="off"
-                value={captchaCode}
-                onChange={(e) => setCaptchaCode(e.target.value)}
-                className="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              <button
-                type="button"
-                onClick={() => loadCaptcha().catch(() => setError("验证码加载失败"))}
-                className="relative h-10 w-[120px] overflow-hidden rounded-md border bg-muted"
-                aria-label="刷新验证码"
-              >
-                {image ? (
-                  <img src={image} alt="图形验证码" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-xs text-muted-foreground">加载中</span>
-                )}
-                <RefreshCw className="absolute right-1 bottom-1 size-3 text-foreground/40" />
-              </button>
-            </div>
-          </div>
+          <AuthChallenge ref={challengeRef} settings={settings} action="login" />
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <button
             type="submit"
@@ -120,6 +117,14 @@ export function LoginPage() {
           >
             {loading ? "登录中…" : "登录"}
           </button>
+          {settings?.googleRegisterEnabled ? (
+            <p className="text-center text-sm text-muted-foreground">
+              还没有账号？{" "}
+              <a href="/register" className="text-foreground underline-offset-4 hover:underline">
+                注册
+              </a>
+            </p>
+          ) : null}
         </form>
       </div>
     </div>

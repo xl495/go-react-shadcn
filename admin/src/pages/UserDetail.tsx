@@ -30,7 +30,7 @@ export function UserDetailPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold tracking-tight">{t("users.detail")}</h2>
         <Button asChild variant="outline" size="sm">
-          <Link to="/users">{t("users.backToList")}</Link>
+          <Link to={user.kind === "web" ? "/web-users" : "/users"}>{t("users.backToList")}</Link>
         </Button>
       </div>
       <Card>

@@ -16,9 +16,8 @@ import (
 )
 
 type forgotPasswordRequest struct {
-	Email       string `json:"email"`
-	CaptchaID   string `json:"captchaId"`
-	CaptchaCode string `json:"captchaCode"`
+	Email string `json:"email"`
+	challengeInput
 }
 
 type resetPasswordRequest struct {
@@ -40,15 +39,8 @@ func (a *App) handleForgotPassword(c *gin.Context) {
 		fail(c, http.StatusTooManyRequests, CodeForgotRateLimited, "too many reset requests from this ip")
 		return
 	}
-	if a.captchaEnabled() {
-		if req.CaptchaID == "" || req.CaptchaCode == "" {
-			fail(c, http.StatusBadRequest, CodeCaptchaRequired, "captcha required")
-			return
-		}
-		if !a.Captcha.Verify(req.CaptchaID, req.CaptchaCode) {
-			fail(c, http.StatusBadRequest, CodeInvalidCaptcha, "invalid captcha")
-			return
-		}
+	if !a.requireCaptcha(c, req.challengeInput, "forgot") {
+		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if email == "" || !mailer.ValidAddress(email) {

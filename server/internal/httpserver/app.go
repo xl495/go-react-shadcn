@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/captcha"
 	"go-react-shadcn/internal/config"
+	"go-react-shadcn/internal/googleid"
 	"go-react-shadcn/internal/mailer"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/rbac"
@@ -22,21 +24,24 @@ import (
 )
 
 type App struct {
-	Cfg         config.Config
-	DB          *gorm.DB
-	Captcha     *captcha.Service
-	Tokens      *token.Service
-	Enforcer    *casbin.Enforcer
-	LoginGuard  *security.LoginGuard
-	ForgotGuard *security.LoginGuard
-	Mail        mailer.Sender
-	MailQ       *mailer.Queue
-	Router      *gin.Engine
-	metrics     *httpMetrics
-	sessions    *sessionCache
-	apiLogs     *apiLogQueue
-	stopOnce    sync.Once
-	stopCh      chan struct{}
+	Cfg          config.Config
+	DB           *gorm.DB
+	Captcha      *captcha.Service
+	Tokens       *token.Service
+	Enforcer     *casbin.Enforcer
+	LoginGuard   *security.LoginGuard
+	ForgotGuard  *security.LoginGuard
+	Mail         mailer.Sender
+	HTTP         *http.Client
+	GoogleVerify googleid.Verifier
+	SiteVerify   siteverifyClient
+	MailQ        *mailer.Queue
+	Router       *gin.Engine
+	metrics      *httpMetrics
+	sessions     *sessionCache
+	apiLogs      *apiLogQueue
+	stopOnce     sync.Once
+	stopCh       chan struct{}
 }
 
 func New(cfg config.Config, db *gorm.DB) (*App, error) {
@@ -58,6 +63,7 @@ func New(cfg config.Config, db *gorm.DB) (*App, error) {
 		return nil, fmt.Errorf("seed: %w", err)
 	}
 	mailSender := &mailer.SMTP{DB: db}
+	httpClient := &http.Client{Timeout: 8 * time.Second}
 	app := &App{
 		Cfg:         cfg,
 		DB:          db,
@@ -67,6 +73,7 @@ func New(cfg config.Config, db *gorm.DB) (*App, error) {
 		LoginGuard:  security.NewLoginGuard(),
 		ForgotGuard: security.NewIPLimiter(8, time.Minute),
 		Mail:        mailSender,
+		HTTP:        httpClient,
 		MailQ:       mailer.NewQueue(db, mailSender, cfg.JWTSecret),
 		metrics:     newHTTPMetrics(),
 		sessions:    newSessionCache(cfg.SessionCache),
@@ -131,7 +138,9 @@ func (a *App) buildRouter() *gin.Engine {
 	api.GET("/health", a.handleHealth)
 	api.GET("/openapi.yaml", a.handleOpenAPI)
 	api.GET("/auth/captcha", a.handleCaptcha)
+	api.GET("/auth/settings", a.handleAuthSettings)
 	api.POST("/auth/login", a.handleLogin)
+	api.POST("/auth/google", a.handleGoogleAuth)
 	api.POST("/auth/forgot-password", a.handleForgotPassword)
 	api.POST("/auth/reset-password", a.handleResetPassword)
 	api.POST("/mail/unsubscribe", a.handleUnsubscribe)
@@ -140,6 +149,7 @@ func (a *App) buildRouter() *gin.Engine {
 	self.Use(a.requireJWT(), a.logMutations())
 	self.GET("/auth/me", a.handleMe)
 	self.GET("/auth/menus", a.handleMenus)
+	self.GET("/auth/web-menus", a.handleWebMenus)
 	self.PUT("/auth/profile", a.handleUpdateProfile)
 	self.PUT("/auth/password", a.handleChangePassword)
 	self.POST("/auth/avatar", a.handleUploadOwnAvatar)
