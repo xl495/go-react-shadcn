@@ -12,12 +12,17 @@ export type User = {
   status?: string
   timezone?: string
   marketingOptIn?: boolean
+  totpEnabled?: boolean
 }
 
 export type LoginResult = {
-  token: string
-  expiresAt: string
-  user: User
+  token?: string
+  expiresAt?: string
+  user?: User
+  totpRequired?: boolean
+  totpTicket?: string
+  totpEnroll?: boolean
+  recoveryCodes?: string[]
 }
 
 export type CaptchaChallenge = {

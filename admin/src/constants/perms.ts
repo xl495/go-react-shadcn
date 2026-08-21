@@ -52,6 +52,12 @@ export const P = {
   deptCreate: "dept:create",
   deptUpdate: "dept:update",
   deptDelete: "dept:delete",
+  menuList: "menu:list",
+  menuCreate: "menu:create",
+  menuUpdate: "menu:update",
+  menuDelete: "menu:delete",
+  notifyList: "notify:list",
+  announceCreate: "announce:create",
 } as const
 
 export type PermCode = (typeof P)[keyof typeof P]

@@ -8,6 +8,8 @@ import { configsApi } from "./configs"
 import { logsApi } from "./logs"
 import { departmentsApi } from "./departments"
 import { mailApi } from "./mail"
+import { menusApi, notificationsApi } from "./menus"
+import { totpApi } from "./totp"
 
 export const api = {
   ...authApi,
@@ -19,4 +21,7 @@ export const api = {
   ...logsApi,
   ...departmentsApi,
   ...mailApi,
+  ...menusApi,
+  ...notificationsApi,
+  ...totpApi,
 }

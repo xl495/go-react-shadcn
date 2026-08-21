@@ -23,9 +23,13 @@ type loginRequest struct {
 }
 
 type loginData struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expiresAt"`
-	User      userDTO   `json:"user"`
+	Token         string     `json:"token,omitempty"`
+	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
+	User          *userDTO   `json:"user,omitempty"`
+	TotpRequired  bool       `json:"totpRequired,omitempty"`
+	TotpTicket    string     `json:"totpTicket,omitempty"`
+	TotpEnroll    bool       `json:"totpEnroll,omitempty"`
+	RecoveryCodes []string   `json:"recoveryCodes,omitempty"`
 }
 
 func (a *App) handleCaptcha(c *gin.Context) {
@@ -108,6 +112,23 @@ func (a *App) handleLogin(c *gin.Context) {
 }
 
 func (a *App) finishLogin(c *gin.Context, user models.User, ip, successDetail string) {
+	needed, enroll := a.totpNeeded(user)
+	if needed {
+		purpose := "login"
+		if enroll {
+			purpose = "enroll"
+		}
+		ok(c, loginData{
+			TotpRequired: true,
+			TotpEnroll:   enroll,
+			TotpTicket:   a.issueTotpTicket(user, purpose, ""),
+		})
+		return
+	}
+	a.completeLogin(c, user, ip, successDetail, nil)
+}
+
+func (a *App) completeLogin(c *gin.Context, user models.User, ip, successDetail string, recovery []string) {
 	now := time.Now()
 	if isAnomalousLogin(user, ip) {
 		a.recordLoginLog(c, user.Username, "warning", "anomalous ip:"+ip+" prev:"+user.LastLoginIP)
@@ -143,11 +164,13 @@ func (a *App) finishLogin(c *gin.Context, user models.User, ip, successDetail st
 		fail(c, http.StatusInternalServerError, 50003, "failed to issue token")
 		return
 	}
+	dto := a.toUserDTO(user)
 	a.recordLoginLog(c, user.Username, "success", successDetail)
 	ok(c, loginData{
-		Token:     tok,
-		ExpiresAt: exp,
-		User:      a.toUserDTO(user),
+		Token:         tok,
+		ExpiresAt:     &exp,
+		User:          &dto,
+		RecoveryCodes: recovery,
 	})
 }
 

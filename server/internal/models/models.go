@@ -49,6 +49,9 @@ type User struct {
 	EmailVerified    bool        `json:"emailVerified" gorm:"not null;default:false"`
 	Kind             string      `json:"kind" gorm:"-"`
 	GoogleID         string      `json:"-" gorm:"size:64;index"`
+	TotpEnabled      bool        `json:"totpEnabled" gorm:"not null;default:false"`
+	TotpSecret       string      `json:"-" gorm:"size:255"`
+	TotpVerifiedAt   *time.Time  `json:"-"`
 	CreatedAt        time.Time   `json:"createdAt"`
 	UpdatedAt        time.Time   `json:"updatedAt"`
 	Roles            []Role      `json:"roles,omitempty" gorm:"many2many:user_roles;"`
@@ -113,9 +116,36 @@ type NavMenu struct {
 	Hidden    bool      `json:"hidden" gorm:"not null;default:false"`
 	PermCode  string    `json:"permCode" gorm:"size:64;index"`
 	Status    string    `json:"status" gorm:"size:16;not null;default:active"`
+	IsSystem  bool      `json:"isSystem" gorm:"not null;default:false"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+type Notification struct {
+	ID        uint       `json:"id" gorm:"primaryKey"`
+	UserKind  string     `json:"userKind" gorm:"size:16;not null;index:idx_notifications_inbox"`
+	UserID    uint       `json:"userId" gorm:"not null;index:idx_notifications_inbox"`
+	Type      string     `json:"type" gorm:"size:32;not null"`
+	Title     string     `json:"title" gorm:"size:128;not null"`
+	Body      string     `json:"body" gorm:"size:512"`
+	RefType   string     `json:"refType" gorm:"size:32"`
+	RefID     uint       `json:"refId"`
+	ReadAt    *time.Time `json:"readAt"`
+	CreatedAt time.Time  `json:"createdAt"`
+}
+
+func (Notification) TableName() string { return "notifications" }
+
+type TotpRecoveryCode struct {
+	ID        uint       `json:"-" gorm:"primaryKey"`
+	UserID    uint       `json:"-" gorm:"index;not null"`
+	UserKind  string     `json:"-" gorm:"size:16;not null"`
+	CodeHash  string     `json:"-" gorm:"size:128;not null"`
+	UsedAt    *time.Time `json:"-"`
+	CreatedAt time.Time  `json:"-"`
+}
+
+func (TotpRecoveryCode) TableName() string { return "totp_recovery_codes" }
 
 func (NavMenu) TableName() string { return "nav_menu" }
 
@@ -314,5 +344,6 @@ func AllModels() []any {
 		&DictType{}, &DictItem{}, &SysConfig{},
 		&LoginLog{}, &OpLog{}, &APILog{}, &PasswordResetToken{},
 		&MailJob{}, &MailCampaign{}, &AuthSession{}, &UserImportJob{},
+		&Notification{}, &TotpRecoveryCode{},
 	}
 }

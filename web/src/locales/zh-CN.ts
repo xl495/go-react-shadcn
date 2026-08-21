@@ -19,6 +19,7 @@ export const zhCN = {
     home: "首页",
     profile: "我的资料",
     password: "修改密码",
+    notifications: "消息",
   },
   login: {
     title: "登录",
@@ -33,6 +34,11 @@ export const zhCN = {
     submit: "登录",
     submitting: "登录中…",
     failed: "登录失败",
+    totpTitle: "二次验证",
+    totpHint: "请输入认证器中的 6 位验证码",
+    totpEnroll: "用认证器扫描下方 URI 或手动输入密钥，然后确认",
+    totpSecret: "密钥",
+    totpContinue: "继续",
     noAccount: "还没有账号？",
     register: "注册",
   },
@@ -105,6 +111,12 @@ export const zhCN = {
     failed: "修改失败",
     save: "更新密码",
     saving: "保存中…",
+  },
+  notify: {
+    title: "消息",
+    readAll: "全部已读",
+    markRead: "标为已读",
+    empty: "暂无通知",
   },
   unsub: {
     title: "退订营销邮件",

@@ -7,12 +7,14 @@ export const PICKER_PAGE_SIZE = 200
 
 export const FALLBACK_MENU_ROUTES: MenuNode[] = [
   { id: 0, code: "dashboard:read", name: "Dashboard", kind: "menu", routePath: "/", component: "DashboardPage", icon: "LayoutDashboard", sort: 10, hidden: false },
+  { id: 0, code: "notify:list", name: "Notifications", kind: "menu", routePath: "/notifications", component: "NotificationsPage", icon: "Bell", sort: 12, hidden: false },
   { id: 0, code: "user:list", name: "Staff users", kind: "menu", routePath: "/users", component: "UsersPage", icon: "Users", sort: 20, hidden: false, permCode: "user:list" },
   { id: 0, code: "webuser:list", name: "Web users", kind: "menu", routePath: "/web-users", component: "WebUsersPage", icon: "Globe", sort: 21, hidden: false, permCode: "user:list" },
   { id: 0, code: "dept:list", name: "Departments", kind: "menu", routePath: "/departments", component: "DepartmentsPage", icon: "Building2", sort: 25, hidden: false },
   { id: 0, code: "role:list", name: "Roles", kind: "menu", routePath: "/roles", component: "RolesPage", icon: "Shield", sort: 30, hidden: false },
   { id: 0, code: "perm:list", name: "Permissions", kind: "menu", routePath: "/permissions", component: "PermissionsPage", icon: "KeyRound", sort: 40, hidden: false },
   { id: 0, code: "dict:list", name: "Dicts", kind: "menu", routePath: "/dicts", component: "DictsPage", icon: "BookMarked", sort: 50, hidden: false },
+  { id: 0, code: "menu:list", name: "Menus", kind: "menu", routePath: "/menus", component: "MenusPage", icon: "PanelTop", sort: 55, hidden: false },
   { id: 0, code: "config:list", name: "Configs", kind: "menu", routePath: "/configs", component: "ConfigsPage", icon: "Settings2", sort: 60, hidden: false },
   { id: 0, code: "mail:jobs:list", name: "Mail queue", kind: "menu", routePath: "/mail/jobs", component: "MailJobsPage", icon: "Mail", sort: 65, hidden: false },
   { id: 0, code: "mail:campaign:list", name: "Templates", kind: "menu", routePath: "/mail/campaigns", component: "MailCampaignsPage", icon: "FileText", sort: 66, hidden: false },
@@ -65,6 +67,7 @@ export function useLoginMutation() {
   return useMutation({
     mutationFn: api.login,
     onSuccess: (result) => {
+      if (result.totpRequired || !result.token || !result.user) return
       qc.setQueryData(["auth", "me"], result.user)
       void invalidate(qc, ["menus"])
     },
@@ -76,6 +79,7 @@ export function useGoogleAuthMutation() {
   return useMutation({
     mutationFn: api.google,
     onSuccess: (result) => {
+      if (result.totpRequired || !result.token || !result.user) return
       qc.setQueryData(["auth", "me"], result.user)
       void invalidate(qc, ["menus"])
     },
@@ -607,5 +611,87 @@ export function usePurgeLogs() {
       void qc.invalidateQueries({ queryKey: ["logs", "login"] })
       void qc.invalidateQueries({ queryKey: ["logs", "api"] })
     },
+  })
+}
+
+export function useNavMenus(audience: string) {
+  return useQuery({
+    queryKey: ["nav-menus", audience],
+    queryFn: () => api.navMenus(audience),
+  })
+}
+
+export function useCreateNavMenu() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.createNavMenu,
+    onSuccess: () => void invalidate(qc, ["nav-menus"], ["menus"]),
+  })
+}
+
+export function useUpdateNavMenu() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateNavMenu>[1] }) =>
+      api.updateNavMenu(id, body),
+    onSuccess: () => void invalidate(qc, ["nav-menus"], ["menus"]),
+  })
+}
+
+export function useDeleteNavMenu() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteNavMenu,
+    onSuccess: () => void invalidate(qc, ["nav-menus"], ["menus"]),
+  })
+}
+
+export function useReorderNavMenus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.reorderNavMenus,
+    onSuccess: () => void invalidate(qc, ["nav-menus"], ["menus"]),
+  })
+}
+
+export function useNotifications(params?: { page?: number; pageSize?: number; unread?: boolean }) {
+  return useQuery({
+    queryKey: ["notifications", params],
+    queryFn: () => api.notifications(params),
+    placeholderData: keepPreviousData,
+    refetchInterval: 30_000,
+  })
+}
+
+export function useUnreadCount() {
+  return useQuery({
+    queryKey: ["notifications", "unread"],
+    queryFn: () => api.unreadCount(),
+    enabled: !!getToken(),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useReadNotification() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.readNotification,
+    onSuccess: () => void invalidate(qc, ["notifications"]),
+  })
+}
+
+export function useReadAllNotifications() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.readAllNotifications,
+    onSuccess: () => void invalidate(qc, ["notifications"]),
+  })
+}
+
+export function useAnnounce() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.announce,
+    onSuccess: () => void invalidate(qc, ["notifications"]),
   })
 }

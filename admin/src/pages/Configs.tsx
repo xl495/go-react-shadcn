@@ -65,6 +65,7 @@ const AUTH_GROUP: Group = {
   titleKey: "config.groupAuth",
   hintKey: "config.authHint",
   fields: [
+    { key: "auth.admin_totp_required", kind: "switch" },
     { key: "google", kind: "heading", titleKey: "config.googleAuth" },
     { key: "auth.google_enabled", kind: "switch" },
     {
@@ -178,6 +179,7 @@ const MAIL_GROUPS: Record<MailSection, Group> = {
 
 const FIELD_DEFAULTS: Record<string, string> = {
   "app.default_locale": "zh-CN",
+  "auth.admin_totp_required": "0",
   "auth.google_enabled": "0",
   "auth.google_register_enabled": "0",
   "auth.captcha_provider": "image",

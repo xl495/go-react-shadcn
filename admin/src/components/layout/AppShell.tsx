@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
+  Bell,
   BookMarked,
   Building2,
   ChevronDown,
@@ -16,6 +17,7 @@ import {
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelTop,
   Settings,
   Settings2,
   Shield,
@@ -37,7 +39,7 @@ import {
 import { useAuth } from "@/providers/auth"
 import { menuLabel, roleLabel, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
-import { useMenus } from "@/hooks/queries"
+import { useMenus, useUnreadCount } from "@/hooks/queries"
 import { useResizableSidebar } from "@/hooks/use-resizable-sidebar"
 import { cn } from "@/utils/cn"
 import type { MenuNode } from "@/types"
@@ -56,6 +58,8 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   FolderTree,
   Globe,
   Monitor,
+  PanelTop,
+  Bell,
 }
 
 function menuIcon(name: string): typeof LayoutDashboard {
@@ -254,6 +258,7 @@ export function AppShell() {
             <h1 className="truncate text-sm font-medium">{current}</h1>
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            <NotifyBell />
             <ThemeToggle />
             <LanguageSwitcher />
             <UserMenu
@@ -388,5 +393,23 @@ function UserMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+function NotifyBell() {
+  const { t } = useI18n()
+  const { data } = useUnreadCount()
+  const n = data?.unread ?? 0
+  return (
+    <Button type="button" variant="ghost" size="icon" className="relative" asChild>
+      <NavLink to="/notifications" aria-label={t("nav.notifications")}>
+        <Bell className="size-4" />
+        {n > 0 ? (
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-destructive px-1 text-[10px] leading-4 text-destructive-foreground">
+            {n > 99 ? "99+" : n}
+          </span>
+        ) : null}
+      </NavLink>
+    </Button>
   )
 }

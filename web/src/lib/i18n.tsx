@@ -80,6 +80,7 @@ const MENU_NAV_KEYS: Record<string, string> = {
   "web:home": "nav.home",
   "web:profile": "nav.profile",
   "web:password": "nav.password",
+  "web:notify": "nav.notifications",
 }
 
 export function menuLabel(code: string, fallback: string, t: I18nState["t"]) {

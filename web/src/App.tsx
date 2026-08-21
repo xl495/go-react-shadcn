@@ -19,6 +19,9 @@ const VerifyEmailPage = lazy(() => import("@/pages/VerifyEmail").then((m) => ({ 
 const UnsubscribePage = lazy(() => import("@/pages/Unsubscribe").then((m) => ({ default: m.UnsubscribePage })))
 const ProfilePage = lazy(() => import("@/pages/Profile").then((m) => ({ default: m.ProfilePage })))
 const PasswordPage = lazy(() => import("@/pages/Password").then((m) => ({ default: m.PasswordPage })))
+const NotificationsPage = lazy(() =>
+  import("@/pages/Notifications").then((m) => ({ default: m.NotificationsPage })),
+)
 const NotFoundPage = lazy(() => import("@/pages/NotFound").then((m) => ({ default: m.NotFoundPage })))
 
 function ResettableErrorBoundary({ children }: { children: ReactNode }) {
@@ -75,6 +78,7 @@ export function App() {
                     }
                   >
                     <Route path="/" element={<HomePage />} />
+                    <Route path="/notifications" element={<NotificationsPage />} />
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/password" element={<PasswordPage />} />
                   </Route>

@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -54,7 +55,14 @@ func (a *App) respondNavMenus(c *gin.Context, audience string) {
 			filtered = append(filtered, row)
 		}
 	}
-	ok(c, buildMenuTree(includeMenuAncestors(rows, filtered), nil))
+	filtered = includeMenuAncestors(rows, filtered)
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if filtered[i].Sort != filtered[j].Sort {
+			return filtered[i].Sort < filtered[j].Sort
+		}
+		return filtered[i].ID < filtered[j].ID
+	})
+	ok(c, buildMenuTree(filtered, nil))
 }
 
 func includeMenuAncestors(all, filtered []models.NavMenu) []models.NavMenu {

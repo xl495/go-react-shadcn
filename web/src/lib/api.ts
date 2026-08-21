@@ -197,4 +197,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
+  notifications: () =>
+    request<{ items: NotificationItem[]; total: number }>("/api/v1/notifications?page=1&pageSize=50"),
+  unreadCount: () => request<{ unread: number }>("/api/v1/notifications/unread-count"),
+  readNotification: (id: number) =>
+    request<NotificationItem>(`/api/v1/notifications/${id}/read`, { method: "POST" }),
+  readAllNotifications: () =>
+    request<{ updated: number }>("/api/v1/notifications/read-all", { method: "POST" }),
+  totpSetup: (body?: { ticket?: string }) =>
+    request<{ ticket: string; secret: string; otpauthUri: string }>("/api/v1/auth/totp/setup", {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
+  totpConfirm: (body: { ticket?: string; code: string }) =>
+    request<LoginResult>("/api/v1/auth/totp/confirm", { method: "POST", body: JSON.stringify(body) }),
+  totpVerify: (body: { ticket: string; code?: string; recoveryCode?: string }) =>
+    request<LoginResult>("/api/v1/auth/totp/verify", { method: "POST", body: JSON.stringify(body) }),
+}
+
+export type NotificationItem = {
+  id: number
+  type: string
+  title: string
+  body: string
+  readAt?: string | null
+  createdAt: string
 }

@@ -15,6 +15,7 @@ type navSeed struct {
 func adminNavSeeds() []navSeed {
 	return []navSeed{
 		{"仪表盘", "dashboard:read", "dashboard:read", "/", "DashboardPage", "LayoutDashboard", "", 10},
+		{"通知", "notify:list", "notify:list", "/notifications", "NotificationsPage", "Bell", "", 12},
 		{"组织管理", "org:menu", "", "", "", "FolderTree", "", 15},
 		{"后台用户", "user:list", "user:list", "/users", "UsersPage", "Users", "org:menu", 20},
 		{"Web用户", "webuser:list", "user:list", "/web-users", "WebUsersPage", "Globe", "org:menu", 21},
@@ -23,6 +24,7 @@ func adminNavSeeds() []navSeed {
 		{"权限菜单", "perm:list", "perm:list", "/permissions", "PermissionsPage", "KeyRound", "org:menu", 40},
 		{"系统管理", "system:menu", "", "", "", "Monitor", "", 45},
 		{"字典菜单", "dict:list", "dict:list", "/dicts", "DictsPage", "BookMarked", "system:menu", 50},
+		{"菜单管理", "menu:list", "menu:list", "/menus", "MenusPage", "PanelTop", "system:menu", 55},
 		{"参数菜单", "config:list", "config:list", "/configs", "ConfigsPage", "Settings2", "system:menu", 60},
 		{"邮件队列", "mail:jobs:list", "mail:jobs:list", "/mail/jobs", "MailJobsPage", "Mail", "system:menu", 65},
 		{"邮件模板", "mail:campaign:list", "mail:campaign:list", "/mail/campaigns", "MailCampaignsPage", "FileText", "system:menu", 66},
@@ -33,6 +35,7 @@ func adminNavSeeds() []navSeed {
 func webNavSeeds() []navSeed {
 	return []navSeed{
 		{"首页", "web:home", "me:read", "/", "HomePage", "House", "", 10},
+		{"消息", "web:notify", "notify:list", "/notifications", "NotificationsPage", "Bell", "", 15},
 		{"我的资料", "web:profile", "me:read", "/profile", "ProfilePage", "User", "", 20},
 		{"修改密码", "web:password", "me:read", "/password", "PasswordPage", "KeyRound", "", 30},
 	}
@@ -47,8 +50,9 @@ func ensureNavMenus(db *gorm.DB) error {
 
 func upsertNavAudience(db *gorm.DB, audience string, seeds []navSeed) error {
 	ids := map[string]uint{}
+	created := map[string]bool{}
 	for _, s := range seeds {
-		id, err := upsertNavRow(db, models.NavMenu{
+		id, isNew, err := upsertNavRow(db, models.NavMenu{
 			Audience:  audience,
 			Name:      s.Name,
 			Code:      s.Code,
@@ -58,13 +62,18 @@ func upsertNavAudience(db *gorm.DB, audience string, seeds []navSeed) error {
 			Icon:      s.Icon,
 			Sort:      s.Sort,
 			Status:    "active",
+			IsSystem:  true,
 		})
 		if err != nil {
 			return err
 		}
 		ids[s.Code] = id
+		created[s.Code] = isNew
 	}
 	for _, s := range seeds {
+		if !created[s.Code] {
+			continue
+		}
 		var parentID *uint
 		if s.Parent != "" {
 			pid, ok := ids[s.Parent]
@@ -80,27 +89,25 @@ func upsertNavAudience(db *gorm.DB, audience string, seeds []navSeed) error {
 	return nil
 }
 
-func upsertNavRow(db *gorm.DB, row models.NavMenu) (uint, error) {
+func upsertNavRow(db *gorm.DB, row models.NavMenu) (uint, bool, error) {
 	var existing models.NavMenu
 	err := db.Where("audience = ? AND code = ?", row.Audience, row.Code).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		if err := db.Create(&row).Error; err != nil {
-			return 0, err
+			return 0, false, err
 		}
-		return row.ID, nil
+		return row.ID, true, nil
 	}
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	err = db.Model(&existing).Updates(map[string]any{
-		"name":       row.Name,
 		"perm_code":  row.PermCode,
 		"route_path": row.RoutePath,
 		"component":  row.Component,
 		"icon":       row.Icon,
-		"sort":       row.Sort,
 		"status":     row.Status,
-		"hidden":     false,
+		"is_system":  true,
 	}).Error
-	return existing.ID, err
+	return existing.ID, false, err
 }

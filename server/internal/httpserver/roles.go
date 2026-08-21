@@ -204,7 +204,21 @@ func (a *App) handleAssignRolePermissions(c *gin.Context) {
 		return
 	}
 	role.Permissions = perms
+	a.notifyRoleUsers(role.ID, "perms", "角色权限已更新", role.Name)
 	ok(c, toRoleDTO(role, true))
+}
+
+func (a *App) notifyRoleUsers(roleID uint, typ, title, body string) {
+	var adminIDs []uint
+	_ = a.DB.Table("user_roles").Where("role_id = ?", roleID).Pluck("user_id", &adminIDs).Error
+	for _, id := range adminIDs {
+		a.notify(models.UserKindAdmin, id, typ, title, body, "role", roleID)
+	}
+	var webIDs []uint
+	_ = a.DB.Table("web_user_roles").Where("role_id = ?", roleID).Pluck("user_id", &webIDs).Error
+	for _, id := range webIDs {
+		a.notify(models.UserKindWeb, id, typ, title, body, "role", roleID)
+	}
 }
 
 func (a *App) loadPermissions(ids []uint) ([]models.Permission, error) {

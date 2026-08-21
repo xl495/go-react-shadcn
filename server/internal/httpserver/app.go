@@ -52,6 +52,8 @@ type App struct {
 	importMu         sync.Mutex
 	stopOnce         sync.Once
 	stopCh           chan struct{}
+	totpMu           sync.Mutex
+	totpTickets      map[string]totpTicket
 }
 
 func New(cfg config.Config, db *gorm.DB) (*App, error) {
@@ -99,6 +101,7 @@ func New(cfg config.Config, db *gorm.DB) (*App, error) {
 		apiLogs:          newAPILogQueue(db, cfg.APILogEnabled, cfg.APILogSample),
 		mailDB:           db,
 		stopCh:           make(chan struct{}),
+		totpTickets:      map[string]totpTicket{},
 	}
 	app.Router = app.buildRouter()
 	app.warnSealedConfigs()
@@ -123,6 +126,7 @@ func (a *App) backgroundJobs() {
 			if a.sessions != nil {
 				a.sessions.Sweep()
 			}
+			a.sweepTotpTickets(time.Now())
 		case <-purgeTick.C:
 			now := time.Now()
 			if a.Cfg.LogRetentionDays > 0 {
@@ -196,6 +200,12 @@ func (a *App) buildRouter() *gin.Engine {
 	api.POST("/auth/reset-password", a.handleResetPassword)
 	api.POST("/mail/unsubscribe", a.handleUnsubscribe)
 
+	totp := api.Group("/auth/totp")
+	totp.Use(a.optionalJWT())
+	totp.POST("/setup", a.handleTotpSetup)
+	totp.POST("/confirm", a.handleTotpConfirm)
+	totp.POST("/verify", a.handleTotpVerify)
+
 	self := api.Group("")
 	self.Use(a.requireJWT(), a.logMutations())
 	self.GET("/auth/me", a.handleMe)
@@ -205,7 +215,13 @@ func (a *App) buildRouter() *gin.Engine {
 	self.PUT("/auth/password", a.handleChangePassword)
 	self.POST("/auth/logout", a.handleLogout)
 	self.POST("/auth/avatar", a.handleUploadOwnAvatar)
+	self.POST("/auth/totp/disable", a.handleTotpDisable)
+	self.POST("/auth/totp/recovery", a.handleTotpRecovery)
 	self.GET("/dicts/by/:code", a.handleLookupDict)
+	self.GET("/notifications", a.handleListNotifications)
+	self.GET("/notifications/unread-count", a.handleUnreadNotificationCount)
+	self.POST("/notifications/read-all", a.handleReadAllNotifications)
+	self.POST("/notifications/:id/read", a.handleReadNotification)
 
 	authed := api.Group("")
 	authed.Use(a.requireJWT(), a.requireCasbin(), a.logMutations())
@@ -273,6 +289,13 @@ func (a *App) buildRouter() *gin.Engine {
 	authed.GET("/logs/api", a.handleListAPILogs)
 	authed.DELETE("/logs", a.handleClearLogs)
 	authed.POST("/logs/purge", a.handlePurgeLogs)
+
+	authed.GET("/nav-menus", a.handleListNavMenus)
+	authed.POST("/nav-menus", a.handleCreateNavMenu)
+	authed.PUT("/nav-menus/reorder", a.handleReorderNavMenus)
+	authed.PUT("/nav-menus/:id", a.handleUpdateNavMenu)
+	authed.DELETE("/nav-menus/:id", a.handleDeleteNavMenu)
+	authed.POST("/announcements", a.handleCreateAnnouncement)
 
 	r.NoRoute(notFoundJSON)
 	r.NoMethod(methodNotAllowedJSON)

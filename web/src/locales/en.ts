@@ -21,6 +21,7 @@ export const en: WebMessages = {
     home: "Home",
     profile: "Profile",
     password: "Password",
+    notifications: "Inbox",
   },
   login: {
     title: "Sign in",
@@ -35,6 +36,11 @@ export const en: WebMessages = {
     submit: "Sign in",
     submitting: "Signing in…",
     failed: "Sign-in failed",
+    totpTitle: "Two-factor code",
+    totpHint: "Enter the 6-digit code from your authenticator app",
+    totpEnroll: "Scan this URI or enter the secret in your authenticator, then confirm",
+    totpSecret: "Secret",
+    totpContinue: "Continue",
     noAccount: "No account yet?",
     register: "Register",
   },
@@ -107,6 +113,12 @@ export const en: WebMessages = {
     failed: "Update failed",
     save: "Update password",
     saving: "Saving…",
+  },
+  notify: {
+    title: "Inbox",
+    readAll: "Mark all read",
+    markRead: "Mark read",
+    empty: "No notifications",
   },
   unsub: {
     title: "Unsubscribe from marketing email",

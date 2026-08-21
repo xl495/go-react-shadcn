@@ -109,6 +109,12 @@ func catalog() []catalogPerm {
 		{"删除部门", "dept:delete", "/api/v1/departments/:id", "DELETE", KindButton, ""},
 		{"菜单树", "menu:read", "/api/v1/auth/menus", "GET", KindAPI, "读取当前用户菜单"},
 		{"用户端菜单", "menu:web:read", "/api/v1/auth/web-menus", "GET", KindAPI, "读取用户端菜单"},
+		{"菜单管理", "menu:list", "/api/v1/nav-menus", "GET", KindMenu, "维护导航树"},
+		{"新建菜单", "menu:create", "/api/v1/nav-menus", "POST", KindButton, ""},
+		{"更新菜单", "menu:update", "/api/v1/nav-menus/:id", "PUT", KindButton, ""},
+		{"删除菜单", "menu:delete", "/api/v1/nav-menus/:id", "DELETE", KindButton, ""},
+		{"站内通知", "notify:list", "/api/v1/notifications", "GET", KindMenu, "查看站内通知"},
+		{"发布公告", "announce:create", "/api/v1/announcements", "POST", KindButton, "按端发布公告"},
 	}
 }
 
@@ -163,9 +169,9 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string, autoMigrate b
 	}
 
 	adminPerms := perms
-	viewerPerms := pick(byCode, "me:read", "dashboard:read")
+	viewerPerms := pick(byCode, "me:read", "dashboard:read", "notify:list")
 	operatorPerms := pick(byCode,
-		"me:read", "dashboard:read",
+		"me:read", "dashboard:read", "notify:list",
 		"user:list", "user:create", "user:export", "user:import", "user:import:read",
 		"role:list", "role:detail",
 		"perm:list",
@@ -174,7 +180,7 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string, autoMigrate b
 		"log:list",
 		"mail:jobs:list", "mail:campaign:list", "mail:campaign:detail",
 	)
-	memberPerms := pick(byCode, "me:read")
+	memberPerms := pick(byCode, "me:read", "notify:list")
 
 	if err := db.Model(&adminRole).Association("Permissions").Replace(adminPerms); err != nil {
 		return err
@@ -572,6 +578,7 @@ func ensureConfigs(db *gorm.DB) error {
 		{Key: "app.captcha_enabled", Value: "1", Name: "登录验证码", Group: "app", Remark: "兼容项；优先使用 auth.captcha_provider"},
 		{Key: "app.default_locale", Value: "zh-CN", Name: "默认语言", Group: "app", Remark: "zh-CN / en"},
 		{Key: "auth.register_enabled", Value: "1", Name: "邮箱注册", Group: "auth", Remark: "1 允许用户端用户名密码注册"},
+		{Key: "auth.admin_totp_required", Value: "0", Name: "管理端强制 TOTP", Group: "auth", Remark: "1 要求后台账号绑定二次验证"},
 		{Key: "auth.google_enabled", Value: "0", Name: "Google 登录", Group: "auth", Remark: "1 开启 / 0 关闭"},
 		{Key: "auth.google_register_enabled", Value: "0", Name: "Google 注册", Group: "auth", Remark: "1 允许用 Google 创建新账号"},
 		{Key: "auth.google_client_id", Value: "", Name: "Google Client ID", Group: "auth", Remark: "OAuth / GIS 客户端 ID"},
@@ -688,6 +695,8 @@ func syncMenuMeta(db *gorm.DB) error {
 		"mail:jobs:list":     {"/mail/jobs", "Mail", "MailJobsPage", 65},
 		"mail:campaign:list": {"/mail/campaigns", "FileText", "MailCampaignsPage", 66},
 		"log:list":           {"/logs", "ClipboardList", "LogsPage", 70},
+		"menu:list":          {"/menus", "PanelTop", "MenusPage", 55},
+		"notify:list":        {"/notifications", "Bell", "NotificationsPage", 12},
 	}
 	for code, m := range meta {
 		if err := db.Model(&models.Permission{}).Where("code = ?", code).Updates(map[string]any{
@@ -715,7 +724,7 @@ func syncMenuParents(db *gorm.DB) error {
 			"user:list", "dept:list", "role:list", "perm:list",
 		},
 		"system:menu": {
-			"dict:list", "config:list", "mail:jobs:list", "mail:campaign:list", "log:list",
+			"dict:list", "config:list", "menu:list", "mail:jobs:list", "mail:campaign:list", "log:list",
 		},
 	}
 	for parentCode, children := range groups {

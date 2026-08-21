@@ -158,6 +158,16 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>{t("settings.totp")}</CardTitle>
+          <CardDescription>{t("settings.totpHint")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TotpCard />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>{t("settings.appearance")}</CardTitle>
           <CardDescription>{t("settings.appearanceHint")}</CardDescription>
         </CardHeader>
@@ -185,6 +195,112 @@ export function SettingsPage() {
           <LanguageSwitcher />
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function TotpCard() {
+  const { user, updateUser } = useAuth()
+  const { t } = useI18n()
+  const [code, setCode] = useState("")
+  const [secret, setSecret] = useState("")
+  const [otpauth, setOtpauth] = useState("")
+  const [ticket, setTicket] = useState("")
+  const [recovery, setRecovery] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+
+  async function startBind() {
+    setBusy(true)
+    try {
+      const setup = await api.setup({})
+      setSecret(setup.secret)
+      setOtpauth(setup.otpauthUri)
+      setTicket(setup.ticket)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function confirmBind() {
+    setBusy(true)
+    try {
+      const result = await api.confirm({ ticket, code })
+      setRecovery(result.recoveryCodes ?? [])
+      setSecret("")
+      setOtpauth("")
+      if (user) updateUser({ ...user, totpEnabled: true })
+      toast.success(t("app.saved"))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function disable() {
+    setBusy(true)
+    try {
+      await api.disable({ code })
+      if (user) updateUser({ ...user, totpEnabled: false })
+      setCode("")
+      setRecovery([])
+      toast.success(t("app.saved"))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function regen() {
+    setBusy(true)
+    try {
+      const result = await api.recovery({ code })
+      setRecovery(result.recoveryCodes)
+      toast.success(t("app.saved"))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm">{user?.totpEnabled ? t("settings.totpOn") : t("settings.totpOff")}</p>
+      {secret ? (
+        <div className="space-y-2 text-sm">
+          <p className="break-all font-mono text-xs">{otpauth}</p>
+          <p>
+            {t("login.totpSecret")}: <span className="font-mono">{secret}</span>
+          </p>
+        </div>
+      ) : null}
+      {recovery.length ? (
+        <ul className="grid gap-1 font-mono text-sm">
+          {recovery.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="grid gap-1.5">
+          <Label htmlFor="totp-code">{t("login.totpTitle")}</Label>
+          <Input id="totp-code" value={code} onChange={(e) => setCode(e.target.value)} />
+        </div>
+        {user?.totpEnabled ? (
+          <>
+            <Button type="button" variant="outline" disabled={busy || !code} onClick={() => void disable()}>
+              {t("settings.totpDisable")}
+            </Button>
+            <Button type="button" variant="outline" disabled={busy || !code} onClick={() => void regen()}>
+              {t("settings.totpRegen")}
+            </Button>
+          </>
+        ) : secret ? (
+          <Button type="button" disabled={busy || !code} onClick={() => void confirmBind()}>
+            {t("settings.totpConfirm")}
+          </Button>
+        ) : (
+          <Button type="button" disabled={busy} onClick={() => void startBind()}>
+            {t("settings.totpBind")}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

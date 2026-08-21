@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
-import { CircleHelp, House, KeyRound, LogOut, PanelLeftClose, PanelLeftOpen, User } from "lucide-react"
+import { CircleHelp, House, KeyRound, LogOut, PanelLeftClose, PanelLeftOpen, User, Bell } from "lucide-react"
 import { api, ApiError, isSessionExpired } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { menuLabel, useI18n } from "@/lib/i18n"
@@ -13,6 +13,7 @@ const ICONS: Record<string, typeof House> = {
   House,
   User,
   KeyRound,
+  Bell,
 }
 
 function menuIcon(name: string): typeof House {
@@ -55,6 +56,8 @@ export function AppShell() {
   const [menus, setMenus] = useState<MenuNode[]>([])
   const [error, setError] = useState("")
 
+  const [unread, setUnread] = useState(0)
+
   useEffect(() => {
     let cancelled = false
     api
@@ -76,6 +79,24 @@ export function AppShell() {
       cancelled = true
     }
   }, [logout, navigate, t])
+
+  useEffect(() => {
+    let cancelled = false
+    function tick() {
+      api
+        .unreadCount()
+        .then((row) => {
+          if (!cancelled) setUnread(row.unread)
+        })
+        .catch(() => undefined)
+    }
+    tick()
+    const timer = window.setInterval(tick, 30_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   const items = useMemo(() => navFromMenus(menus, t), [menus, t])
   const sidebar = useResizableSidebar("latch.web.sidebar.width")
@@ -150,6 +171,18 @@ export function AppShell() {
             {sidebar.compact ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
           </button>
           <div className="flex items-center gap-2">
+            <NavLink
+              to="/notifications"
+              aria-label={t("nav.notifications")}
+              className="relative inline-flex size-9 items-center justify-center rounded-md hover:bg-muted"
+            >
+              <Bell className="size-4" />
+              {unread > 0 ? (
+                <span className="absolute top-1 right-1 min-w-4 rounded-full bg-destructive px-1 text-[10px] leading-4 text-destructive-foreground">
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              ) : null}
+            </NavLink>
             <ThemeToggle />
             <LanguageSwitcher />
             <button

@@ -56,12 +56,17 @@ const (
 	CodeDeptHasUsers       = 40093
 	CodeDeptCycle          = 40094
 	CodeInvalidDept        = 40095
+	CodeCannotDeleteSystemMenu = 40096
+	CodeNavMenuHasChildren     = 40097
+	CodeInvalidTotp            = 40098
+	CodeTotpAlreadyEnabled     = 40099
 
 	CodeMissingToken          = 40101
 	CodeInvalidToken          = 40102
 	CodeBadCredentials        = 40103
 	CodeGoogleTokenInvalid    = 40104
 	CodeGoogleEmailUnverified = 40105
+	CodeTotpTicketInvalid     = 40106
 
 	CodeForbidden              = 40301
 	CodeAccountLocked          = 40310
@@ -84,6 +89,8 @@ const (
 	CodeMailJobNotFound      = 40480
 	CodeMailCampaignNotFound = 40481
 	CodeDeptNotFound         = 40490
+	CodeNavMenuNotFound      = 40492
+	CodeNotificationNotFound = 40493
 
 	CodeUserExists   = 40910
 	CodeEmailExists  = 40911
@@ -92,7 +99,8 @@ const (
 	CodeDictExists   = 40960
 	CodeDictItemDup  = 40961
 	CodeConfigExists = 40970
-	CodeDeptExists   = 40990
+	CodeDeptExists     = 40990
+	CodeNavMenuExists  = 40993
 
 	CodeMethodNotAllowed = 40500
 
@@ -138,7 +146,8 @@ const (
 	CodeListDepts       = 50090
 	CodeUpdateDept      = 50091
 	CodeDeleteDept      = 50092
-	CodeListMenus       = 50093
+	CodeListMenus         = 50093
+	CodeListNotifications = 50094
 
 	CodeSendMail       = 50085
 	CodeUnhealthy      = 50301

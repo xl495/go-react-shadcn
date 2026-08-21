@@ -56,6 +56,24 @@ func (a *App) requireJWT() gin.HandlerFunc {
 	}
 }
 
+func (a *App) optionalJWT() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			c.Next()
+			return
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+		claims, err := a.Tokens.Parse(raw)
+		if err != nil {
+			c.Next()
+			return
+		}
+		c.Set(ctxUserKey, claims)
+		c.Next()
+	}
+}
+
 func (a *App) casbinAllowed(sub, path, method string) (bool, error) {
 	allowed, err := a.Enforcer.Enforce(sub, path, method)
 	if err != nil || allowed {
@@ -64,6 +82,9 @@ func (a *App) casbinAllowed(sub, path, method string) (bool, error) {
 	// Saving the settings form uses PUT /configs/batch; treat it as config:update.
 	if method == http.MethodPut && path == "/api/v1/configs/batch" {
 		return a.Enforcer.Enforce(sub, "/api/v1/configs/:id", http.MethodPut)
+	}
+	if method == http.MethodPut && path == "/api/v1/nav-menus/reorder" {
+		return a.Enforcer.Enforce(sub, "/api/v1/nav-menus/:id", http.MethodPut)
 	}
 	return false, nil
 }

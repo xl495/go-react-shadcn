@@ -29,6 +29,7 @@ type userDTO struct {
 	MarketingOptIn  bool      `json:"marketingOptIn"`
 	EmailVerified   bool      `json:"emailVerified"`
 	Kind            string    `json:"kind"`
+	TotpEnabled     bool      `json:"totpEnabled"`
 	LastLoginAt     any       `json:"lastLoginAt"`
 	LastLoginIP     string    `json:"lastLoginIp"`
 	Roles           []roleDTO `json:"roles"`
@@ -138,6 +139,7 @@ func toUserDTOOpts(u models.User, withPerms bool) userDTO {
 		MarketingOptIn: u.MarketingOptIn,
 		EmailVerified:  u.EmailVerified,
 		Kind:           normalizeUserKind(u.Kind),
+		TotpEnabled:    u.TotpEnabled,
 		LastLoginAt:    u.LastLoginAt,
 		LastLoginIP:    u.LastLoginIP,
 		Roles:          roles,
@@ -480,6 +482,7 @@ func (a *App) handleRevokeUser(c *gin.Context) {
 	}
 	a.revokeAuthSessions(user.Kind, user.ID)
 	a.sessions.invalidate(user.Kind, user.ID)
+	a.notify(user.Kind, user.ID, "revoke", "账号已强制下线", "", "user", user.ID)
 	ok(c, gin.H{"revoked": user.ID})
 }
 
@@ -576,6 +579,7 @@ func (a *App) handleAssignUserRoles(c *gin.Context) {
 		return
 	}
 	user.Roles = roles
+	a.notify(user.Kind, user.ID, "roles", "角色已变更", "", "user", user.ID)
 	ok(c, a.toUserDTO(user))
 }
 

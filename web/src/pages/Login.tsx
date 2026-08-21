@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
-import type { AuthSettings } from "@/lib/types"
+import type { AuthSettings, LoginResult, User } from "@/lib/types"
 import { AuthChallenge, CAPTCHA_FALLBACK_CODE, type AuthChallengeHandle } from "@/components/AuthChallenge"
 import { GoogleSignIn } from "@/components/GoogleSignIn"
 import { GuestChrome } from "@/components/GuestChrome"
@@ -23,10 +23,36 @@ export function LoginPage() {
   const [settings, setSettings] = useState<AuthSettings | undefined>()
   const [settingsReady, setSettingsReady] = useState(false)
   const challengeRef = useRef<AuthChallengeHandle>(null)
+  const [totp, setTotp] = useState<{ ticket: string; enroll: boolean } | null>(null)
+  const [code, setCode] = useState("")
+  const [secret, setSecret] = useState("")
+  const [otpauth, setOtpauth] = useState("")
 
   useEffect(() => {
     api.settings().then(setSettings).catch(() => undefined).finally(() => setSettingsReady(true))
   }, [])
+
+  function enter(token: string, user: User) {
+    login(token, user)
+    navigate(from, { replace: true })
+  }
+
+  async function applyResult(result: LoginResult) {
+    if (result.totpRequired && result.totpTicket) {
+      setTotp({ ticket: result.totpTicket, enroll: !!result.totpEnroll })
+      if (result.totpEnroll) {
+        const setup = await api.totpSetup({ ticket: result.totpTicket })
+        setSecret(setup.secret)
+        setOtpauth(setup.otpauthUri)
+      }
+      return
+    }
+    if (!result.token || !result.user) {
+      setError(t("login.failed"))
+      return
+    }
+    enter(result.token, result.user)
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -34,9 +60,7 @@ export function LoginPage() {
     setLoading(true)
     try {
       const challenge = (await challengeRef.current?.collect()) ?? {}
-      const result = await api.login({ username, password, ...challenge })
-      login(result.token, result.user)
-      navigate(from, { replace: true })
+      await applyResult(await api.login({ username, password, ...challenge }))
     } catch (err) {
       if (err instanceof ApiError && err.code === CAPTCHA_FALLBACK_CODE) {
         challengeRef.current?.showV2()
@@ -51,9 +75,24 @@ export function LoginPage() {
     setError("")
     setLoading(true)
     try {
-      const result = await api.google({ idToken, client: "web" })
-      login(result.token, result.user)
-      navigate(from, { replace: true })
+      await applyResult(await api.google({ idToken, client: "web" }))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message || t("login.failed") : t("login.failed"))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function onTotp(e: FormEvent) {
+    e.preventDefault()
+    if (!totp) return
+    setError("")
+    setLoading(true)
+    try {
+      const result = totp.enroll
+        ? await api.totpConfirm({ ticket: totp.ticket, code })
+        : await api.totpVerify({ ticket: totp.ticket, code })
+      await applyResult(result)
     } catch (err) {
       setError(err instanceof ApiError ? err.message || t("login.failed") : t("login.failed"))
     } finally {
@@ -63,7 +102,35 @@ export function LoginPage() {
 
   return (
     <GuestChrome>
-      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5">
+      {totp ? (
+        <form onSubmit={onTotp} className="w-full max-w-sm space-y-5">
+          <div>
+            <p className="font-display text-[13px] text-muted-foreground">gra</p>
+            <h1 className="mt-1 font-display text-[2rem] leading-none tracking-tight">{t("login.totpTitle")}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">{totp.enroll ? t("login.totpEnroll") : t("login.totpHint")}</p>
+          </div>
+          {totp.enroll && secret ? (
+            <div className="space-y-2 text-sm">
+              <p className="break-all font-mono text-xs">{otpauth}</p>
+              <p>
+                {t("login.totpSecret")}: <span className="font-mono">{secret}</span>
+              </p>
+            </div>
+          ) : null}
+          <input
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+          />
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <button type="submit" disabled={loading} className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60">
+            {loading ? t("login.submitting") : t("login.totpContinue")}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5">
         <div>
           <p className="font-display text-[13px] text-muted-foreground">gra</p>
           <h1 className="mt-1 font-display text-[2rem] leading-none tracking-tight">{t("login.title")}</h1>
@@ -133,6 +200,7 @@ export function LoginPage() {
           </p>
         ) : null}
       </form>
+      )}
     </GuestChrome>
   )
 }

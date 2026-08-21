@@ -106,6 +106,7 @@ func (a *App) runUserImport(id uint, data []byte) {
 		"errors":        errs,
 		"updated_at":    time.Now(),
 	}).Error
+	a.notify(models.UserKindAdmin, job.ActorID, "import", "用户导入完成", job.FileName+" "+status, "import", job.ID)
 }
 
 func (a *App) importUsersCSV(data []byte, defaultKind string) (created, failed, total int, errText string) {

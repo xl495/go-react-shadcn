@@ -2,7 +2,7 @@ import type { components } from "./generated/api-schema"
 
 type Schema = components["schemas"]
 
-export type User = Schema["User"]
+export type User = Schema["User"] & { totpEnabled?: boolean }
 export type Role = Schema["Role"] & { permissionIds?: number[] }
 export type Permission = Schema["Permission"]
 export type MenuNode = Schema["MenuNode"]
@@ -17,7 +17,14 @@ export type MailJob = Schema["MailJob"]
 export type MailCampaign = Schema["MailCampaign"]
 export type DashboardStats = Schema["DashboardStats"]
 export type CaptchaChallenge = Schema["CaptchaChallenge"]
-export type LoginResult = Schema["LoginResult"]
+export type LoginResult = Schema["LoginResult"] & {
+  token?: string
+  totpRequired?: boolean
+  totpTicket?: string
+  totpEnroll?: boolean
+  recoveryCodes?: string[]
+  user?: User
+}
 export type AuthSettings = Schema["AuthSettings"]
 export type DictLookup = Schema["DictLookup"]
 
