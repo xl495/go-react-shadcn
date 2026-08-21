@@ -5,6 +5,7 @@ import { useAuth } from "@/providers/auth"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
 import { useConfigListParams } from "@/hooks/list-params"
+import { UnsavedGuard } from "@/hooks/unsaved"
 import { useConfigs, useSaveConfigs, useTestMail } from "@/hooks/queries"
 import { cn } from "@/utils/cn"
 import { Button } from "@/components/ui/button"
@@ -28,6 +29,7 @@ type FieldSpec = {
   kind: FieldKind
   titleKey?: string
   options?: { value: string; labelKey: string }[]
+  visibleWhen?: (values: Record<string, string>) => boolean
 }
 
 type Group = {
@@ -35,6 +37,10 @@ type Group = {
   titleKey: string
   hintKey: string
   fields: FieldSpec[]
+}
+
+function isOn(value: string) {
+  return value === "1" || value.toLowerCase() === "true"
 }
 
 const APP_GROUP: Group = {
@@ -61,9 +67,21 @@ const AUTH_GROUP: Group = {
   fields: [
     { key: "google", kind: "heading", titleKey: "config.googleAuth" },
     { key: "auth.google_enabled", kind: "switch" },
-    { key: "auth.google_register_enabled", kind: "switch" },
-    { key: "auth.google_client_id", kind: "text" },
-    { key: "auth.google_client_secret", kind: "password" },
+    {
+      key: "auth.google_register_enabled",
+      kind: "switch",
+      visibleWhen: (v) => isOn(v["auth.google_enabled"] ?? ""),
+    },
+    {
+      key: "auth.google_client_id",
+      kind: "text",
+      visibleWhen: (v) => isOn(v["auth.google_enabled"] ?? ""),
+    },
+    {
+      key: "auth.google_client_secret",
+      kind: "password",
+      visibleWhen: (v) => isOn(v["auth.google_enabled"] ?? ""),
+    },
     { key: "captcha", kind: "heading", titleKey: "config.captchaAuth" },
     {
       key: "auth.captcha_provider",
@@ -75,13 +93,41 @@ const AUTH_GROUP: Group = {
         { value: "turnstile", labelKey: "config.captchaTurnstile" },
       ],
     },
-    { key: "auth.recaptcha_site_key_v3", kind: "text" },
-    { key: "auth.recaptcha_secret_v3", kind: "password" },
-    { key: "auth.recaptcha_site_key_v2", kind: "text" },
-    { key: "auth.recaptcha_secret_v2", kind: "password" },
-    { key: "auth.recaptcha_min_score", kind: "number" },
-    { key: "auth.turnstile_site_key", kind: "text" },
-    { key: "auth.turnstile_secret", kind: "password" },
+    {
+      key: "auth.recaptcha_site_key_v3",
+      kind: "text",
+      visibleWhen: (v) => (v["auth.captcha_provider"]?.trim() || "image") === "recaptcha",
+    },
+    {
+      key: "auth.recaptcha_secret_v3",
+      kind: "password",
+      visibleWhen: (v) => (v["auth.captcha_provider"]?.trim() || "image") === "recaptcha",
+    },
+    {
+      key: "auth.recaptcha_site_key_v2",
+      kind: "text",
+      visibleWhen: (v) => (v["auth.captcha_provider"]?.trim() || "image") === "recaptcha",
+    },
+    {
+      key: "auth.recaptcha_secret_v2",
+      kind: "password",
+      visibleWhen: (v) => (v["auth.captcha_provider"]?.trim() || "image") === "recaptcha",
+    },
+    {
+      key: "auth.recaptcha_min_score",
+      kind: "number",
+      visibleWhen: (v) => (v["auth.captcha_provider"]?.trim() || "image") === "recaptcha",
+    },
+    {
+      key: "auth.turnstile_site_key",
+      kind: "text",
+      visibleWhen: (v) => (v["auth.captcha_provider"]?.trim() || "image") === "turnstile",
+    },
+    {
+      key: "auth.turnstile_secret",
+      kind: "password",
+      visibleWhen: (v) => (v["auth.captcha_provider"]?.trim() || "image") === "turnstile",
+    },
   ],
 }
 
@@ -92,15 +138,16 @@ const MAIL_GROUPS: Record<MailSection, Group> = {
     hintKey: "config.mailSmtpHint",
     fields: [
       { key: "mail.enabled", kind: "switch" },
-      { key: "mail.host", kind: "text" },
-      { key: "mail.port", kind: "number" },
-      { key: "mail.username", kind: "text" },
-      { key: "mail.password", kind: "password" },
-      { key: "mail.from", kind: "email" },
-      { key: "mail.from_name", kind: "text" },
+      { key: "mail.host", kind: "text", visibleWhen: (v) => isOn(v["mail.enabled"] ?? "") },
+      { key: "mail.port", kind: "number", visibleWhen: (v) => isOn(v["mail.enabled"] ?? "") },
+      { key: "mail.username", kind: "text", visibleWhen: (v) => isOn(v["mail.enabled"] ?? "") },
+      { key: "mail.password", kind: "password", visibleWhen: (v) => isOn(v["mail.enabled"] ?? "") },
+      { key: "mail.from", kind: "email", visibleWhen: (v) => isOn(v["mail.enabled"] ?? "") },
+      { key: "mail.from_name", kind: "text", visibleWhen: (v) => isOn(v["mail.enabled"] ?? "") },
       {
         key: "mail.tls",
         kind: "select",
+        visibleWhen: (v) => isOn(v["mail.enabled"] ?? ""),
         options: [
           { value: "starttls", labelKey: "config.tlsStarttls" },
           { value: "ssl", labelKey: "config.tlsSsl" },
@@ -138,7 +185,7 @@ const FIELD_DEFAULTS: Record<string, string> = {
   "mail.enabled": "0",
   "mail.port": "587",
   "mail.tls": "starttls",
-  "mail.from_name": "Latch",
+  "mail.from_name": "gra",
   "mail.reset_base_url": "http://127.0.0.1:5173",
   "mail.default_timezone": "Asia/Shanghai",
   "mail.quiet_start": "22:00",
@@ -170,16 +217,16 @@ function isSecretKey(key: string) {
   return k.includes("password") || k.includes("secret")
 }
 
-function isOn(value: string) {
-  return value === "1" || value.toLowerCase() === "true"
-}
-
 function fieldLabelKey(key: string) {
   return `config.field.${key}`
 }
 
 function fieldHintKey(key: string) {
   return `config.field.${key}Hint`
+}
+
+function isFieldVisible(field: FieldSpec, values: Record<string, string>) {
+  return !field.visibleWhen || field.visibleWhen(values)
 }
 
 function valueKeys(fields: FieldSpec[]) {
@@ -189,13 +236,14 @@ function valueKeys(fields: FieldSpec[]) {
 export function ConfigsPage() {
   const { can } = useAuth()
   const { t } = useI18n()
-  const writable = can(P.configUpdate)
+  const writable = can(P.configUpdate) || can(P.configBatch)
   const [{ tab, section }, setParams] = useConfigListParams()
   const { data, isLoading, error } = useConfigs({ page: 1, pageSize: PAGE_SIZE })
-  const rows = data?.items ?? []
+  const rows = useMemo(() => data?.items ?? [], [data?.items])
   const saveConfigs = useSaveConfigs()
   const testMail = useTestMail()
   const [values, setValues] = useState<Record<string, string>>({})
+  const [appliedStamp, setAppliedStamp] = useState("")
   const [testTo, setTestTo] = useState("")
 
   const byKey = useMemo(() => Object.fromEntries(rows.map((row) => [row.key, row])), [rows])
@@ -211,13 +259,14 @@ export function ConfigsPage() {
     [],
   )
 
-  useEffect(() => {
+  if (stamp !== appliedStamp) {
+    setAppliedStamp(stamp)
     const next = Object.fromEntries(rows.map((row) => [row.key, row.value]))
     for (const key of specKeys) {
       if (next[key] === undefined) next[key] = FIELD_DEFAULTS[key] ?? ""
     }
     setValues(next)
-  }, [stamp])
+  }
 
   const knownKeys = useMemo(
     () =>
@@ -309,23 +358,15 @@ export function ConfigsPage() {
         }),
       )
       toast.success(t("app.saved"))
-    } catch (e) {
-      toast.error(translateApiError(e, t))
+    } catch {
+      // API message is toasted by the HTTP client.
     }
   }
 
   const saveVisibleRef = useRef(saveVisible)
-  saveVisibleRef.current = saveVisible
-
   useEffect(() => {
-    if (!leavingDirty) return
-    function onLeave(e: BeforeUnloadEvent) {
-      e.preventDefault()
-      e.returnValue = ""
-    }
-    window.addEventListener("beforeunload", onLeave)
-    return () => window.removeEventListener("beforeunload", onLeave)
-  }, [leavingDirty])
+    saveVisibleRef.current = saveVisible
+  })
 
   useEffect(() => {
     function onKey(e: globalThis.KeyboardEvent) {
@@ -351,8 +392,8 @@ export function ConfigsPage() {
     try {
       await testMail.mutateAsync(testTo)
       toast.success(t("config.testMailSent"))
-    } catch (e) {
-      toast.error(translateApiError(e, t))
+    } catch {
+      // API message is toasted by the HTTP client.
     }
   }
 
@@ -376,10 +417,10 @@ export function ConfigsPage() {
 
   if (isLoading && rows.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="-m-6 flex h-[calc(100%+3rem)] flex-col p-6">
         <div className="h-8 w-40 animate-pulse rounded-md bg-muted" />
-        <div className="h-10 animate-pulse rounded-md bg-muted" />
-        <div className="h-64 animate-pulse rounded-xl bg-muted" />
+        <div className="mt-4 h-10 animate-pulse rounded-md bg-muted" />
+        <div className="mt-6 min-h-0 flex-1 animate-pulse rounded-xl bg-muted" />
       </div>
     )
   }
@@ -388,11 +429,15 @@ export function ConfigsPage() {
     active === "app" ? APP_GROUP : active === "auth" ? AUTH_GROUP : active === "mail" ? MAIL_GROUPS[mailSection] : null
 
   return (
-    <form className="mx-auto max-w-3xl space-y-6 pb-20" onSubmit={onSubmit}>
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">{t("config.title")}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{t("config.subtitle")}</p>
-      </div>
+    <>
+    <UnsavedGuard dirty={leavingDirty} />
+    <form className="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col" onSubmit={onSubmit}>
+      <div className="min-h-0 flex-1 overflow-auto px-6 pt-6">
+        <div className="space-y-6 pb-6">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">{t("config.title")}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t("config.subtitle")}</p>
+          </div>
 
       <div
         className="flex gap-1 border-b"
@@ -463,7 +508,7 @@ export function ConfigsPage() {
               <CardTitle>{t("config.other")}</CardTitle>
               <CardDescription>{t("config.otherHint")}</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
+            <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {extraRows.map((row) => (
                 <FieldControl
                   key={row.key}
@@ -483,18 +528,19 @@ export function ConfigsPage() {
               <CardTitle>{t(group.titleKey)}</CardTitle>
               <CardDescription>{t(group.hintKey)}</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
+            <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {mailOff ? (
-                <p className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground sm:col-span-2">
+                <p className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">
                   {t("config.mailOff")}
                 </p>
               ) : null}
               {group.fields.map((field) => {
+                if (!isFieldVisible(field, values)) return null
                 if (field.kind === "heading") {
                   return (
                     <p
                       key={field.key}
-                      className="pt-2 text-xs font-medium text-muted-foreground sm:col-span-2"
+                      className="pt-2 text-xs font-medium text-muted-foreground sm:col-span-2 xl:col-span-3"
                     >
                       {t(field.titleKey ?? "")}
                     </p>
@@ -514,7 +560,7 @@ export function ConfigsPage() {
                 )
               })}
               {group.id === "smtp" ? (
-                <div className="grid gap-3 rounded-lg border bg-muted/40 p-4 sm:col-span-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                <div className="grid gap-3 rounded-lg border bg-muted/40 p-4 sm:col-span-2 sm:grid-cols-[1fr_auto] sm:items-end xl:col-span-3">
                   <div className="grid gap-1.5">
                     <Label htmlFor="test-to">{t("config.testMailTo")}</Label>
                     <Input
@@ -541,10 +587,12 @@ export function ConfigsPage() {
             </CardContent>
           </Card>
         ) : null}
+          </div>
+        </div>
       </div>
 
       {writable ? (
-        <div className="sticky bottom-0 z-10 -mx-6 flex items-center justify-between gap-3 border-t bg-background/95 px-6 py-3 backdrop-blur">
+        <div className="z-10 flex shrink-0 items-center justify-between gap-3 border-t bg-background px-6 py-3 shadow-[0_-12px_32px_-18px_hsl(var(--foreground)/0.28)]">
           <p className="text-xs text-muted-foreground">
             {dirty ? t("config.changedCount", { count: dirtyCount }) : t("config.unchanged")}
           </p>
@@ -559,6 +607,7 @@ export function ConfigsPage() {
         </div>
       ) : null}
     </form>
+    </>
   )
 }
 
@@ -586,7 +635,7 @@ function FieldControl({
 
   if (spec.kind === "switch") {
     return (
-      <div className="flex items-start justify-between gap-4 rounded-lg border px-3 py-3 sm:col-span-2">
+      <div className="flex items-start justify-between gap-4 rounded-lg border px-3 py-3 sm:col-span-2 xl:col-span-3">
         <div className="min-w-0">
           <Label htmlFor={id}>{label}</Label>
           {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}

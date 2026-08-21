@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/casbin/casbin/v2"
 	"go-react-shadcn/internal/models"
@@ -56,7 +58,14 @@ func catalog() []catalogPerm {
 		{"删除用户", "user:delete", "/api/v1/users/:id", "DELETE", KindButton, "用户页-删除按钮"},
 		{"分配用户角色", "user:roles", "/api/v1/users/:id/roles", "PUT", KindButton, "用户页-角色勾选"},
 		{"上传用户头像", "user:avatar", "/api/v1/users/:id/avatar", "POST", KindButton, "用户页-头像上传"},
+		{"导出用户", "user:export", "/api/v1/users/export", "GET", KindAPI, "导出用户 CSV"},
+		{"导入用户", "user:import", "/api/v1/users/import", "POST", KindAPI, "导入用户 CSV"},
+		{"导入任务", "user:import:read", "/api/v1/users/import-jobs/:id", "GET", KindAPI, "查看用户导入任务"},
+		{"强制下线", "user:revoke", "/api/v1/users/:id/revoke", "POST", KindButton, "用户详情-踢下线"},
+		{"会话列表", "user:sessions", "/api/v1/users/:id/sessions", "GET", KindAPI, "查看登录会话"},
+		{"踢掉会话", "user:session:revoke", "/api/v1/users/:id/sessions/:sid", "DELETE", KindButton, "踢掉单个会话"},
 		{"角色菜单", "role:list", "/api/v1/roles", "GET", KindMenu, "进入角色页"},
+		{"查看角色", "role:detail", "/api/v1/roles/:id", "GET", KindAPI, "读取单个角色"},
 		{"新建角色", "role:create", "/api/v1/roles", "POST", KindButton, "角色页-新建按钮"},
 		{"更新角色", "role:update", "/api/v1/roles/:id", "PUT", KindButton, "角色页-更新按钮"},
 		{"删除角色", "role:delete", "/api/v1/roles/:id", "DELETE", KindButton, "角色页-删除按钮"},
@@ -76,6 +85,7 @@ func catalog() []catalogPerm {
 		{"参数菜单", "config:list", "/api/v1/configs", "GET", KindMenu, "进入系统参数页"},
 		{"新建参数", "config:create", "/api/v1/configs", "POST", KindButton, ""},
 		{"更新参数", "config:update", "/api/v1/configs/:id", "PUT", KindButton, ""},
+		{"批量保存参数", "config:batch", "/api/v1/configs/batch", "PUT", KindAPI, ""},
 		{"删除参数", "config:delete", "/api/v1/configs/:id", "DELETE", KindButton, ""},
 		{"发送测试邮件", "mail:test", "/api/v1/mail/test", "POST", KindButton, "系统参数页-测试发信"},
 		{"邮件队列", "mail:jobs:list", "/api/v1/mail/jobs", "GET", KindMenu, "查看投递队列"},
@@ -88,6 +98,7 @@ func catalog() []catalogPerm {
 		{"删除模板", "mail:campaign:delete", "/api/v1/mail/campaigns/:id", "DELETE", KindButton, ""},
 		{"投放模板", "mail:campaign:schedule", "/api/v1/mail/campaigns/:id/schedule", "POST", KindButton, ""},
 		{"日志菜单", "log:list", "/api/v1/logs", "GET", KindMenu, "进入操作日志页"},
+		{"导出日志", "log:export", "/api/v1/logs/export", "GET", KindAPI, "导出操作日志 CSV"},
 		{"登录日志", "log:login:list", "/api/v1/logs/login", "GET", KindAPI, "查询登录日志"},
 		{"API日志", "log:api:list", "/api/v1/logs/api", "GET", KindAPI, "查询 API 日志"},
 		{"清空日志", "log:clear", "/api/v1/logs", "DELETE", KindButton, ""},
@@ -101,10 +112,15 @@ func catalog() []catalogPerm {
 	}
 }
 
-func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
-	if err := db.AutoMigrate(models.AllModels()...); err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
+func CasbinSub(kind string, userID uint) string {
+	return models.NormalizeUserKind(kind) + ":" + strconv.FormatUint(uint64(userID), 10)
+}
+
+func IsDefaultPassword(plain string) bool {
+	return passwd.IsBuiltinSeedPassword(plain)
+}
+
+func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string, autoMigrate bool) error {
 	if _, err := ensureCatalog(db); err != nil {
 		return err
 	}
@@ -150,8 +166,8 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	viewerPerms := pick(byCode, "me:read", "dashboard:read")
 	operatorPerms := pick(byCode,
 		"me:read", "dashboard:read",
-		"user:list", "user:create",
-		"role:list",
+		"user:list", "user:create", "user:export", "user:import", "user:import:read",
+		"role:list", "role:detail",
 		"perm:list",
 		"dict:list", "dict:item:list",
 		"config:list",
@@ -177,15 +193,22 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	if err != nil {
 		return err
 	}
-	viewerAvatar, err := writeSeedAvatar(uploadDir, "viewer", "李", "#444444")
-	if err != nil {
-		return err
+	adminPass := AdminPassword
+	if !autoMigrate {
+		if v := strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_PASSWORD")); v != "" {
+			if err := passwd.CheckProduction(v, AdminUsername); err != nil {
+				return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD: %w", err)
+			}
+			adminPass = v
+		} else {
+			var n int64
+			_ = models.Accounts(db, models.UserKindAdmin).Where("username = ?", AdminUsername).Count(&n).Error
+			if n == 0 {
+				return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD is required in production to create the admin user")
+			}
+		}
 	}
-	operatorAvatar, err := writeSeedAvatar(uploadDir, "operator", "张", "#222222")
-	if err != nil {
-		return err
-	}
-	adminUser, err := ensureUser(db, AdminUsername, AdminPassword, seedProfile{
+	adminUser, err := ensureUser(db, AdminUsername, adminPass, seedProfile{
 		Nickname: "系统管理员", Avatar: adminAvatar, Email: "admin@latch.local", Phone: "13800000001",
 		Gender: "male", Department: "tech", Title: "负责人", Remark: "种子管理员账号",
 		Kind: models.UserKindAdmin,
@@ -193,45 +216,55 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	if err != nil {
 		return err
 	}
-	viewerUser, err := ensureUser(db, ViewerUsername, ViewerPassword, seedProfile{
-		Nickname: "李访客", Avatar: viewerAvatar, Email: "viewer@latch.local", Phone: "13800000003",
-		Gender: "female", Department: "market", Title: "观察员", Remark: "只读演示账号",
-		Kind: models.UserKindAdmin,
-	})
-	if err != nil {
+	if err := models.ReplaceUserRoles(db, adminUser.Kind, adminUser.ID, []models.Role{adminRole}); err != nil {
 		return err
 	}
-	operatorUser, err := ensureUser(db, OperatorUsername, OperatorPassword, seedProfile{
-		Nickname: "张操作", Avatar: operatorAvatar, Email: "operator@latch.local", Phone: "13800000002",
-		Gender: "male", Department: "ops", Title: "运营专员", Remark: "按钮级权限演示",
-		Kind: models.UserKindAdmin,
-	})
-	if err != nil {
-		return err
-	}
-	memberAvatar, err := writeSeedAvatar(uploadDir, "webuser", "王", "#2563eb")
-	if err != nil {
-		return err
-	}
-	memberUser, err := ensureUser(db, MemberUsername, MemberPassword, seedProfile{
-		Nickname: "王会员", Avatar: memberAvatar, Email: "webuser@latch.local", Phone: "13800000004",
-		Gender: "male", Remark: "用户端演示账号",
-		Kind: models.UserKindWeb,
-	})
-	if err != nil {
-		return err
-	}
-	if err := db.Model(&adminUser).Association("Roles").Replace([]models.Role{adminRole}); err != nil {
-		return err
-	}
-	if err := db.Model(&viewerUser).Association("Roles").Replace([]models.Role{viewerRole}); err != nil {
-		return err
-	}
-	if err := db.Model(&operatorUser).Association("Roles").Replace([]models.Role{operatorRole}); err != nil {
-		return err
-	}
-	if err := db.Model(&memberUser).Association("Roles").Replace([]models.Role{memberRole}); err != nil {
-		return err
+	if autoMigrate {
+		viewerAvatar, err := writeSeedAvatar(uploadDir, "viewer", "李", "#444444")
+		if err != nil {
+			return err
+		}
+		operatorAvatar, err := writeSeedAvatar(uploadDir, "operator", "张", "#222222")
+		if err != nil {
+			return err
+		}
+		memberAvatar, err := writeSeedAvatar(uploadDir, "webuser", "王", "#2563eb")
+		if err != nil {
+			return err
+		}
+		viewerUser, err := ensureUser(db, ViewerUsername, ViewerPassword, seedProfile{
+			Nickname: "李访客", Avatar: viewerAvatar, Email: "viewer@latch.local", Phone: "13800000003",
+			Gender: "female", Department: "market", Title: "观察员", Remark: "只读演示账号",
+			Kind: models.UserKindAdmin,
+		})
+		if err != nil {
+			return err
+		}
+		operatorUser, err := ensureUser(db, OperatorUsername, OperatorPassword, seedProfile{
+			Nickname: "张操作", Avatar: operatorAvatar, Email: "operator@latch.local", Phone: "13800000002",
+			Gender: "male", Department: "ops", Title: "运营专员", Remark: "按钮级权限演示",
+			Kind: models.UserKindAdmin,
+		})
+		if err != nil {
+			return err
+		}
+		memberUser, err := ensureUser(db, MemberUsername, MemberPassword, seedProfile{
+			Nickname: "王会员", Avatar: memberAvatar, Email: "webuser@latch.local", Phone: "13800000004",
+			Gender: "male", Remark: "用户端演示账号",
+			Kind: models.UserKindWeb,
+		})
+		if err != nil {
+			return err
+		}
+		if err := models.ReplaceUserRoles(db, viewerUser.Kind, viewerUser.ID, []models.Role{viewerRole}); err != nil {
+			return err
+		}
+		if err := models.ReplaceUserRoles(db, operatorUser.Kind, operatorUser.ID, []models.Role{operatorRole}); err != nil {
+			return err
+		}
+		if err := models.ReplaceUserRoles(db, memberUser.Kind, memberUser.ID, []models.Role{memberRole}); err != nil {
+			return err
+		}
 	}
 
 	if err := syncRolePolicies(enforcer, adminRole.Code, adminPerms); err != nil {
@@ -246,19 +279,13 @@ func Run(db *gorm.DB, enforcer *casbin.Enforcer, uploadDir string) error {
 	if err := syncRolePolicies(enforcer, memberRole.Code, memberPerms); err != nil {
 		return err
 	}
-	if err := SyncUserRoles(enforcer, adminUser.Username, []models.Role{adminRole}); err != nil {
-		return err
-	}
-	if err := SyncUserRoles(enforcer, viewerUser.Username, []models.Role{viewerRole}); err != nil {
-		return err
-	}
-	if err := SyncUserRoles(enforcer, operatorUser.Username, []models.Role{operatorRole}); err != nil {
-		return err
-	}
-	if err := SyncUserRoles(enforcer, memberUser.Username, []models.Role{memberRole}); err != nil {
+	if err := syncAllUserGrouping(db, enforcer); err != nil {
 		return err
 	}
 	if err := ensureDicts(db); err != nil {
+		return err
+	}
+	if err := SyncDepartmentDict(db); err != nil {
 		return err
 	}
 	if err := ensureConfigs(db); err != nil {
@@ -279,23 +306,25 @@ func lookupDepartmentID(db *gorm.DB, code string) *uint {
 }
 
 func syncUserDepartmentIDs(db *gorm.DB) error {
-	var users []models.User
-	if err := db.Find(&users).Error; err != nil {
-		return err
-	}
-	for _, u := range users {
-		if u.Department == "" {
-			continue
-		}
-		id := lookupDepartmentID(db, u.Department)
-		if id == nil {
-			continue
-		}
-		if u.DepartmentID != nil && *u.DepartmentID == *id {
-			continue
-		}
-		if err := db.Model(&models.User{}).Where("id = ?", u.ID).Update("department_id", *id).Error; err != nil {
+	for _, kind := range []string{models.UserKindAdmin, models.UserKindWeb} {
+		var users []models.User
+		if err := models.Accounts(db, kind).Find(&users).Error; err != nil {
 			return err
+		}
+		for _, u := range users {
+			if u.Department == "" {
+				continue
+			}
+			id := lookupDepartmentID(db, u.Department)
+			if id == nil {
+				continue
+			}
+			if u.DepartmentID != nil && *u.DepartmentID == *id {
+				continue
+			}
+			if err := models.Accounts(db, kind).Where("id = ?", u.ID).Update("department_id", *id).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -313,21 +342,44 @@ func SyncRolePolicies(enforcer *casbin.Enforcer, roleCode string, perms []models
 	return syncRolePolicies(enforcer, roleCode, perms)
 }
 
-func SyncUserRoles(enforcer *casbin.Enforcer, username string, roles []models.Role) error {
-	if _, err := enforcer.RemoveFilteredGroupingPolicy(0, username); err != nil {
+func SyncUserRoles(enforcer *casbin.Enforcer, subject string, roles []models.Role) error {
+	if _, err := enforcer.RemoveFilteredGroupingPolicy(0, subject); err != nil {
 		return err
 	}
 	for _, role := range roles {
-		if _, err := enforcer.AddGroupingPolicy(username, role.Code); err != nil {
+		if _, err := enforcer.AddGroupingPolicy(subject, role.Code); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func RemoveUser(enforcer *casbin.Enforcer, username string) error {
-	_, err := enforcer.RemoveFilteredGroupingPolicy(0, username)
+func RemoveUser(enforcer *casbin.Enforcer, subject string) error {
+	_, err := enforcer.RemoveFilteredGroupingPolicy(0, subject)
 	return err
+}
+
+func syncAllUserGrouping(db *gorm.DB, enforcer *casbin.Enforcer) error {
+	for _, kind := range []string{models.UserKindAdmin, models.UserKindWeb} {
+		var users []models.User
+		if err := models.Accounts(db, kind).Find(&users).Error; err != nil {
+			return err
+		}
+		ptrs := make([]*models.User, len(users))
+		for i := range users {
+			ptrs[i] = &users[i]
+		}
+		if err := models.AttachRoles(db, kind, ptrs...); err != nil {
+			return err
+		}
+		for _, u := range users {
+			_, _ = enforcer.RemoveFilteredGroupingPolicy(0, u.Username)
+			if err := SyncUserRoles(enforcer, CasbinSub(u.Kind, u.ID), u.Roles); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func RemoveRole(enforcer *casbin.Enforcer, roleCode string) error {
@@ -389,9 +441,15 @@ func ensureRole(db *gorm.DB, name, code, desc string) (models.Role, error) {
 	if err != nil {
 		return role, err
 	}
-	role.Name = name
-	role.Description = desc
-	role.DataScope = scope
+	if role.Name == "" {
+		role.Name = name
+	}
+	if role.Description == "" {
+		role.Description = desc
+	}
+	if role.DataScope == "" {
+		role.DataScope = scope
+	}
 	return role, db.Save(&role).Error
 }
 
@@ -400,38 +458,37 @@ type seedProfile struct {
 }
 
 func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (models.User, error) {
+	kind := models.NormalizeUserKind(profile.Kind)
 	var user models.User
-	err := db.Where("username = ?", username).First(&user).Error
+	err := models.Accounts(db, kind).Where("username = ?", username).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		hash, err := passwd.Hash(password)
 		if err != nil {
 			return user, err
-		}
-		kind := profile.Kind
-		if kind == "" {
-			kind = models.UserKindAdmin
 		}
 		user = models.User{
 			Username: username, PasswordHash: hash, Status: "active",
 			Nickname: profile.Nickname, Avatar: profile.Avatar, Email: profile.Email,
 			Phone: profile.Phone, Gender: profile.Gender,
 			Department: profile.Department, Title: profile.Title, Remark: profile.Remark,
-			Timezone: mailerDefaultTZ(), MarketingOptIn: true, Kind: kind,
+			Timezone: mailerDefaultTZ(), MarketingOptIn: true, EmailVerified: true, Kind: kind,
 		}
 		if id := lookupDepartmentID(db, profile.Department); id != nil {
 			user.DepartmentID = id
 		}
-		return user, db.Create(&user).Error
+		return user, models.Accounts(db, kind).Create(&user).Error
 	}
 	if err != nil {
 		return user, err
 	}
+	user.Kind = kind
 	user.Nickname = profile.Nickname
 	user.Email = profile.Email
 	user.Phone = profile.Phone
 	user.Gender = profile.Gender
 	user.Department = profile.Department
 	user.Title = profile.Title
+	user.EmailVerified = true
 	if id := lookupDepartmentID(db, profile.Department); id != nil {
 		user.DepartmentID = id
 	}
@@ -444,19 +501,14 @@ func ensureUser(db *gorm.DB, username, password string, profile seedProfile) (mo
 	if user.Timezone == "" {
 		user.Timezone = mailerDefaultTZ()
 	}
-	if profile.Kind != "" {
-		user.Kind = profile.Kind
-	} else if user.Kind == "" {
-		user.Kind = models.UserKindAdmin
-	}
-	return user, db.Save(&user).Error
+	return user, models.Accounts(db, kind).Omit("Roles", "Dept").Save(&user).Error
 }
 
 func mailerDefaultTZ() string { return "Asia/Shanghai" }
 
 func writeSeedAvatar(uploadDir, username, letter, bg string) (string, error) {
 	dir := filepath.Join(uploadDir, "avatars")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", err
 	}
 	name := username + ".svg"
@@ -464,7 +516,7 @@ func writeSeedAvatar(uploadDir, username, letter, bg string) (string, error) {
   <rect width="64" height="64" rx="32" fill="%s"/>
   <text x="32" y="40" text-anchor="middle" fill="#ffffff" font-size="24" font-family="system-ui,sans-serif">%s</text>
 </svg>`, bg, letter)
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(svg), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(svg), 0o600); err != nil {
 		return "", err
 	}
 	return "/uploads/avatars/" + name, nil
@@ -478,7 +530,7 @@ func ensureDicts(db *gorm.DB) error {
 	}{
 		{DictUserStatus, "用户状态", []item{{"启用", "active"}, {"停用", "disabled"}}},
 		{DictGender, "性别", []item{{"男", "male"}, {"女", "female"}, {"其他", "other"}}},
-		{DictDepartment, "部门", []item{{"技术部", "tech"}, {"运营部", "ops"}, {"市场部", "market"}}},
+		{DictDepartment, "部门", nil},
 		{DictYesNo, "是否", []item{{"是", "1"}, {"否", "0"}}},
 		{DictPermKind, "权限类型", []item{{"菜单", KindMenu}, {"按钮", KindButton}, {"接口", KindAPI}}},
 	}
@@ -516,9 +568,10 @@ func ensureDicts(db *gorm.DB) error {
 
 func ensureConfigs(db *gorm.DB) error {
 	rows := []models.SysConfig{
-		{Key: "app.name", Value: "Latch Admin", Name: "系统名称", Group: "app", Remark: "浏览器标题与侧栏品牌"},
+		{Key: "app.name", Value: "gra", Name: "系统名称", Group: "app", Remark: "浏览器标题与侧栏品牌"},
 		{Key: "app.captcha_enabled", Value: "1", Name: "登录验证码", Group: "app", Remark: "兼容项；优先使用 auth.captcha_provider"},
 		{Key: "app.default_locale", Value: "zh-CN", Name: "默认语言", Group: "app", Remark: "zh-CN / en"},
+		{Key: "auth.register_enabled", Value: "1", Name: "邮箱注册", Group: "auth", Remark: "1 允许用户端用户名密码注册"},
 		{Key: "auth.google_enabled", Value: "0", Name: "Google 登录", Group: "auth", Remark: "1 开启 / 0 关闭"},
 		{Key: "auth.google_register_enabled", Value: "0", Name: "Google 注册", Group: "auth", Remark: "1 允许用 Google 创建新账号"},
 		{Key: "auth.google_client_id", Value: "", Name: "Google Client ID", Group: "auth", Remark: "OAuth / GIS 客户端 ID"},
@@ -529,15 +582,15 @@ func ensureConfigs(db *gorm.DB) error {
 		{Key: "auth.recaptcha_site_key_v2", Value: "", Name: "reCAPTCHA v2 Site Key", Group: "auth", Remark: "v3 失败时回退的勾选框密钥"},
 		{Key: "auth.recaptcha_secret_v2", Value: "", Name: "reCAPTCHA v2 Secret", Group: "auth", Remark: "服务端 v2 密钥"},
 		{Key: "auth.recaptcha_min_score", Value: "0.5", Name: "reCAPTCHA 最低分", Group: "auth", Remark: "v3 低于此分数则回退 v2"},
-		{Key: "auth.turnstile_site_key", Value: "", Name: "Turnstile Site Key", Group: "auth", Remark: "Cloudflare Turnstile 站点密钥"},
-		{Key: "auth.turnstile_secret", Value: "", Name: "Turnstile Secret", Group: "auth", Remark: "Cloudflare Turnstile 服务端密钥"},
+		{Key: "auth.turnstile_site_key", Value: "", Name: "Turnstile Site Key", Group: "auth", Remark: "前端站点密钥；本地可用 dummy 1x00000000000000000000AA"},
+		{Key: "auth.turnstile_secret", Value: "", Name: "Turnstile Secret", Group: "auth", Remark: "服务端密钥；本地可用 dummy 1x0000000000000000000000000000000AA。不是 API Token"},
 		{Key: "mail.enabled", Value: "0", Name: "启用发信", Group: "mail", Remark: "1 开启 / 0 关闭，关闭时不发送任何邮件"},
 		{Key: "mail.host", Value: "", Name: "SMTP 主机", Group: "mail", Remark: "例如 smtp.example.com"},
 		{Key: "mail.port", Value: "587", Name: "SMTP 端口", Group: "mail", Remark: "587 STARTTLS / 465 SSL"},
 		{Key: "mail.username", Value: "", Name: "SMTP 用户名", Group: "mail", Remark: ""},
 		{Key: "mail.password", Value: "", Name: "SMTP 密码", Group: "mail", Remark: "列表中不会回显明文"},
 		{Key: "mail.from", Value: "", Name: "发件人邮箱", Group: "mail", Remark: "MAIL FROM 地址"},
-		{Key: "mail.from_name", Value: "Latch", Name: "发件人名称", Group: "mail", Remark: "收件箱显示的名称"},
+		{Key: "mail.from_name", Value: "gra", Name: "发件人名称", Group: "mail", Remark: "收件箱显示的名称"},
 		{Key: "mail.tls", Value: "starttls", Name: "加密方式", Group: "mail", Remark: "starttls / ssl / none"},
 		{Key: "mail.reset_base_url", Value: "http://127.0.0.1:5173", Name: "重置链接前缀", Group: "mail", Remark: "忘记密码邮件中的站点地址，用户端可改为 :5174"},
 		{Key: "mail.default_timezone", Value: "Asia/Shanghai", Name: "默认时区", Group: "mail", Remark: "IANA，用户未填时区时使用"},
@@ -568,6 +621,12 @@ func ensureConfigs(db *gorm.DB) error {
 			return err
 		}
 	}
+	if err := db.Model(&models.SysConfig{}).Where(`"key" = ? AND value IN ?`, "app.name", []string{"Latch Admin", "Latch"}).Update("value", "gra").Error; err != nil {
+		return err
+	}
+	if err := db.Model(&models.SysConfig{}).Where(`"key" = ? AND value = ?`, "mail.from_name", "Latch").Update("value", "gra").Error; err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -585,8 +644,21 @@ func syncRolePolicies(enforcer *casbin.Enforcer, roleCode string, perms []models
 	if _, err := enforcer.RemoveFilteredPolicy(0, roleCode); err != nil {
 		return err
 	}
+	hasUpdate := false
+	hasBatch := false
 	for _, p := range perms {
+		if p.Code == "config:update" {
+			hasUpdate = true
+		}
+		if p.Path == "/api/v1/configs/batch" && p.Method == "PUT" {
+			hasBatch = true
+		}
 		if _, err := enforcer.AddPolicy(roleCode, p.Path, p.Method); err != nil {
+			return err
+		}
+	}
+	if hasUpdate && !hasBatch {
+		if _, err := enforcer.AddPolicy(roleCode, "/api/v1/configs/batch", "PUT"); err != nil {
 			return err
 		}
 	}
@@ -656,6 +728,56 @@ func syncMenuParents(db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+func SyncDepartmentDict(db *gorm.DB) error {
+	var typ models.DictType
+	err := db.Where("code = ?", DictDepartment).First(&typ).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		typ = models.DictType{Code: DictDepartment, Name: "部门", Status: "active"}
+		if err := db.Create(&typ).Error; err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	var depts []models.Department
+	if err := db.Order("sort asc, id asc").Find(&depts).Error; err != nil {
+		return err
+	}
+	codes := make([]string, 0, len(depts))
+	for i, d := range depts {
+		codes = append(codes, d.Code)
+		status := d.Status
+		if status == "" {
+			status = "active"
+		}
+		var row models.DictItem
+		err := db.Where("type_code = ? AND value = ?", DictDepartment, d.Code).First(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			row = models.DictItem{
+				TypeCode: DictDepartment, Label: d.Name, Value: d.Code, Sort: i, Status: status,
+			}
+			if err := db.Create(&row).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		row.Label = d.Name
+		row.Sort = i
+		row.Status = status
+		if err := db.Save(&row).Error; err != nil {
+			return err
+		}
+	}
+	q := db.Where("type_code = ?", DictDepartment)
+	if len(codes) == 0 {
+		return q.Delete(&models.DictItem{}).Error
+	}
+	return q.Where("value NOT IN ?", codes).Delete(&models.DictItem{}).Error
 }
 
 func ensureDepartments(db *gorm.DB) error {
