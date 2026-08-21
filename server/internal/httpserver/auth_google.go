@@ -23,6 +23,7 @@ import (
 type publicAuthSettings struct {
 	GoogleEnabled         bool   `json:"googleEnabled"`
 	GoogleRegisterEnabled bool   `json:"googleRegisterEnabled"`
+	RegisterEnabled       bool   `json:"registerEnabled"`
 	GoogleClientID        string `json:"googleClientId"`
 	CaptchaProvider       string `json:"captchaProvider"`
 	RecaptchaSiteKeyV3    string `json:"recaptchaSiteKeyV3"`
@@ -42,6 +43,7 @@ func (a *App) handleAuthSettings(c *gin.Context) {
 	ok(c, publicAuthSettings{
 		GoogleEnabled:         enabled,
 		GoogleRegisterEnabled: enabled && a.sysOn("auth.google_register_enabled", false),
+		RegisterEnabled:       a.sysOn("auth.register_enabled", true),
 		GoogleClientID:        clientID,
 		CaptchaProvider:       provider,
 		RecaptchaSiteKeyV3:    a.sysValue("auth.recaptcha_site_key_v3"),
@@ -80,9 +82,9 @@ func (a *App) handleGoogleAuth(c *gin.Context) {
 		return
 	}
 
-	kind := models.UserKindAdmin
-	if !strings.EqualFold(strings.TrimSpace(req.Client), "admin") {
-		kind = models.UserKindWeb
+	kind := models.UserKindWeb
+	if strings.EqualFold(strings.TrimSpace(req.Client), "admin") {
+		kind = models.UserKindAdmin
 	}
 
 	user, created, err := a.findOrCreateGoogleUser(ident, kind)
@@ -100,7 +102,7 @@ func (a *App) handleGoogleAuth(c *gin.Context) {
 		}
 		return
 	}
-	if err := a.DB.Preload("Roles.Permissions").First(&user, user.ID).Error; err != nil {
+	if err := a.loadAccount(kind, &user, user.ID); err != nil {
 		fail(c, http.StatusInternalServerError, CodeAssignRoles, "failed to create user")
 		return
 	}
@@ -114,11 +116,6 @@ func (a *App) handleGoogleAuth(c *gin.Context) {
 	if user.Status != "active" {
 		a.recordLoginLog(c, user.Username, "failed", "inactive")
 		fail(c, http.StatusUnauthorized, CodeBadCredentials, "invalid credentials")
-		return
-	}
-	if strings.EqualFold(strings.TrimSpace(req.Client), "admin") && normalizeUserKind(user.Kind) == models.UserKindWeb {
-		a.recordLoginLog(c, user.Username, "failed", "web user on admin")
-		fail(c, http.StatusForbidden, CodeWrongClient, "use the web app to sign in")
 		return
 	}
 
@@ -135,10 +132,12 @@ var (
 )
 
 func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (models.User, bool, error) {
+	kind = models.NormalizeUserKind(kind)
 	var byGoogle models.User
 	if ident.Subject != "" {
-		err := a.DB.Where("google_id = ? AND google_id <> ''", ident.Subject).First(&byGoogle).Error
+		err := a.accounts(kind).Where("google_id = ? AND google_id <> ''", ident.Subject).First(&byGoogle).Error
 		if err == nil {
+			byGoogle.Kind = kind
 			updates := map[string]any{}
 			if byGoogle.Email == "" {
 				updates["email"] = ident.Email
@@ -150,7 +149,7 @@ func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (mode
 				updates["avatar"] = ident.Picture
 			}
 			if len(updates) > 0 {
-				_ = a.DB.Model(&byGoogle).Updates(updates).Error
+				_ = a.updateAccount(&byGoogle, updates)
 			}
 			return byGoogle, false, nil
 		}
@@ -160,11 +159,9 @@ func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (mode
 	}
 
 	var byEmail models.User
-	err := a.DB.Where("lower(email) = ? AND email <> ''", ident.Email).First(&byEmail).Error
+	err := a.accounts(kind).Where("lower(email) = ? AND email <> ''", ident.Email).First(&byEmail).Error
 	if err == nil {
-		if normalizeUserKind(byEmail.Kind) != kind {
-			return models.User{}, false, errGoogleAccountConflict
-		}
+		byEmail.Kind = kind
 		if byEmail.GoogleID != "" && byEmail.GoogleID != ident.Subject {
 			return models.User{}, false, errGoogleAccountConflict
 		}
@@ -175,7 +172,7 @@ func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (mode
 		if byEmail.Avatar == "" && ident.Picture != "" && len(ident.Picture) <= 255 {
 			updates["avatar"] = ident.Picture
 		}
-		if err := a.DB.Model(&byEmail).Updates(updates).Error; err != nil {
+		if err := a.updateAccount(&byEmail, updates); err != nil {
 			return models.User{}, false, err
 		}
 		byEmail.GoogleID = ident.Subject
@@ -185,11 +182,11 @@ func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (mode
 		return models.User{}, false, err
 	}
 
-	if !a.googleRegisterEnabled() {
+	if kind != models.UserKindWeb || !a.googleRegisterEnabled() {
 		return models.User{}, false, errGoogleRegisterDisabled
 	}
 
-	username, err := a.uniqueUsername(googleUsername(ident.Email, ident.Subject))
+	username, err := a.uniqueUsername(kind, googleUsername(ident.Email, ident.Subject))
 	if err != nil {
 		return models.User{}, false, err
 	}
@@ -197,7 +194,7 @@ func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (mode
 	if err != nil {
 		return models.User{}, false, err
 	}
-	roles, err := a.defaultRolesForKind(kind, []models.Role{})
+	roles, err := a.defaultRolesForKind(models.UserKindWeb, []models.Role{})
 	if err != nil {
 		return models.User{}, false, err
 	}
@@ -209,19 +206,38 @@ func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (mode
 		Email:          ident.Email,
 		Status:         "active",
 		Timezone:       mailer.DefaultTimezone,
-		MarketingOptIn: true,
-		Kind:           kind,
+		MarketingOptIn: false,
+		EmailVerified:  true,
+		Kind:           models.UserKindWeb,
 		GoogleID:       ident.Subject,
 	}
-	if err := a.withTx(func(tx *gorm.DB) error {
-		if err := tx.Create(&user).Error; err != nil {
-			return err
+	var created bool
+	for attempt := 0; attempt < 3 && !created; attempt++ {
+		if attempt > 0 {
+			next, err := a.uniqueUsername(kind, googleUsername(ident.Email, ident.Subject))
+			if err != nil {
+				return models.User{}, false, err
+			}
+			user.Username = next
 		}
-		return tx.Model(&user).Association("Roles").Replace(roles)
-	}); err != nil {
-		return models.User{}, false, err
+		err := a.withTx(func(tx *gorm.DB) error {
+			if err := models.Accounts(tx, user.Kind).Create(&user).Error; err != nil {
+				return err
+			}
+			return models.ReplaceUserRoles(tx, user.Kind, user.ID, roles)
+		})
+		if err == nil {
+			created = true
+			break
+		}
+		if !isUniqueViolation(err) {
+			return models.User{}, false, err
+		}
 	}
-	if err := seed.SyncUserRoles(a.Enforcer, user.Username, roles); err != nil {
+	if !created {
+		return models.User{}, false, gorm.ErrDuplicatedKey
+	}
+	if err := seed.SyncUserRoles(a.Enforcer, seed.CasbinSub(user.Kind, user.ID), roles); err != nil {
 		return models.User{}, false, err
 	}
 	user.Roles = roles
@@ -257,11 +273,11 @@ func googleUsername(email, sub string) string {
 	return base
 }
 
-func (a *App) uniqueUsername(base string) (string, error) {
+func (a *App) uniqueUsername(kind, base string) (string, error) {
 	candidate := base
 	for i := 0; i < 30; i++ {
 		var n int64
-		if err := a.DB.Model(&models.User{}).Where("username = ?", candidate).Count(&n).Error; err != nil {
+		if err := a.accounts(kind).Where("username = ?", candidate).Count(&n).Error; err != nil {
 			return "", err
 		}
 		if n == 0 {

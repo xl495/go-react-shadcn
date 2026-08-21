@@ -10,7 +10,7 @@ export function Breadcrumbs() {
   const crumbs = crumbsFor(pathname, t)
 
   return (
-    <nav aria-label="breadcrumb" className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+    <nav aria-label={t("nav.breadcrumb")} className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1
         return (
@@ -56,6 +56,7 @@ function crumbsFor(pathname: string, t: (k: string) => string): Crumb[] {
     }
     if (head === "roles") {
       crumbs.push({ label: t("nav.roles"), to: "/roles" })
+      if (parts[1]) crumbs.push({ label: t("roles.detail") })
       return crumbs
     }
     crumbs.push({ label: t("nav.permissions"), to: "/permissions" })

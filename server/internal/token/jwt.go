@@ -1,6 +1,8 @@
 package token
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 type Claims struct {
 	UserID       uint     `json:"uid"`
 	Username     string   `json:"username"`
+	Kind         string   `json:"kind"`
 	Roles        []string `json:"roles"`
 	TokenVersion int      `json:"tv"`
 	jwt.RegisteredClaims
@@ -24,14 +27,23 @@ func New(secret string, ttl time.Duration) *Service {
 	return &Service{secret: []byte(secret), ttl: ttl}
 }
 
-func (s *Service) Issue(userID uint, username string, roles []string, tokenVersion int) (string, time.Time, error) {
+func (s *Service) Issue(userID uint, username string, roles []string, tokenVersion int, kind string) (string, time.Time, error) {
 	exp := time.Now().Add(s.ttl)
+	if kind == "" {
+		kind = "admin"
+	}
+	jti, err := newJTI()
+	if err != nil {
+		return "", time.Time{}, err
+	}
 	claims := Claims{
 		UserID:       userID,
 		Username:     username,
+		Kind:         kind,
 		Roles:        roles,
 		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
 			Subject:   username,
 			ExpiresAt: jwt.NewNumericDate(exp),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -59,5 +71,16 @@ func (s *Service) Parse(raw string) (*Claims, error) {
 	if !ok || !tok.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}
+	if claims.Kind == "" {
+		claims.Kind = "admin"
+	}
 	return claims, nil
+}
+
+func newJTI() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }

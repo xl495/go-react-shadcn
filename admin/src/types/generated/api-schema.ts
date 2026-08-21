@@ -1138,8 +1138,11 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         EnvelopeBase: {
+            /** 0 = ok, 1 = error */
             code: number;
             message: string;
+            data?: unknown;
+            errorCode?: number;
         };
         User: {
             id: number;

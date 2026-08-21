@@ -45,14 +45,28 @@ type User struct {
 	LastLoginAt      *time.Time  `json:"lastLoginAt"`
 	LastLoginIP      string      `json:"lastLoginIp" gorm:"size:64"`
 	Timezone         string      `json:"timezone" gorm:"size:64;not null;default:Asia/Shanghai"`
-	MarketingOptIn   bool        `json:"marketingOptIn" gorm:"not null;default:true"`
-	Kind             string      `json:"kind" gorm:"size:16;not null;default:admin;index"`
+	MarketingOptIn   bool        `json:"marketingOptIn" gorm:"not null;default:false"`
+	EmailVerified    bool        `json:"emailVerified" gorm:"not null;default:false"`
+	Kind             string      `json:"kind" gorm:"-"`
 	GoogleID         string      `json:"-" gorm:"size:64;index"`
 	CreatedAt        time.Time   `json:"createdAt"`
 	UpdatedAt        time.Time   `json:"updatedAt"`
 	Roles            []Role      `json:"roles,omitempty" gorm:"many2many:user_roles;"`
 	Dept             *Department `json:"dept,omitempty" gorm:"foreignKey:DepartmentID"`
 }
+
+func (User) TableName() string { return AdminUserTable }
+
+type webUserModel User
+
+func (webUserModel) TableName() string { return WebUserTable }
+
+type WebUserRole struct {
+	UserID uint `gorm:"primaryKey;column:user_id"`
+	RoleID uint `gorm:"primaryKey;column:role_id"`
+}
+
+func (WebUserRole) TableName() string { return WebUserRolesTable }
 
 type Role struct {
 	ID          uint         `json:"id" gorm:"primaryKey"`
@@ -89,8 +103,9 @@ type Permission struct {
 type NavMenu struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	ParentID  *uint     `json:"parentId" gorm:"index"`
+	Audience  string    `json:"audience" gorm:"size:16;not null;uniqueIndex:idx_nav_audience_code"`
 	Name      string    `json:"name" gorm:"size:64;not null"`
-	Code      string    `json:"code" gorm:"uniqueIndex;size:64;not null"`
+	Code      string    `json:"code" gorm:"size:64;not null;uniqueIndex:idx_nav_audience_code"`
 	RoutePath string    `json:"routePath" gorm:"size:128"`
 	Component string    `json:"component" gorm:"size:128"`
 	Icon      string    `json:"icon" gorm:"size:64"`
@@ -102,17 +117,14 @@ type NavMenu struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-type AdminMenu struct {
-	NavMenu
-}
+func (NavMenu) TableName() string { return "nav_menu" }
 
-func (AdminMenu) TableName() string { return "admin_menus" }
-
-type WebMenu struct {
-	NavMenu
-}
-
-func (WebMenu) TableName() string { return "web_menus" }
+const (
+	NavAudienceAdmin   = "admin"
+	NavAudienceWeb     = "web"
+	TokenPurposeReset  = "reset"
+	TokenPurposeVerify = "verify"
+)
 
 type DictType struct {
 	ID        uint       `json:"id" gorm:"primaryKey"`
@@ -194,6 +206,8 @@ type APILog struct {
 type PasswordResetToken struct {
 	ID        uint       `json:"id" gorm:"primaryKey"`
 	UserID    uint       `json:"userId" gorm:"index;not null"`
+	UserKind  string     `json:"userKind" gorm:"size:16;not null;default:admin"`
+	Purpose   string     `json:"purpose" gorm:"size:16;not null;default:reset"`
 	TokenHash string     `json:"-" gorm:"uniqueIndex;size:64;not null"`
 	ExpiresAt time.Time  `json:"expiresAt" gorm:"index;not null"`
 	UsedAt    *time.Time `json:"usedAt"`
@@ -232,6 +246,7 @@ type MailJob struct {
 	Class      string     `json:"class" gorm:"size:16;index;not null"`
 	Priority   int        `json:"priority" gorm:"not null;default:5;index"`
 	UserID     *uint      `json:"userId" gorm:"index"`
+	UserKind   string     `json:"userKind" gorm:"size:16"`
 	ToEmail    string     `json:"toEmail" gorm:"size:128;not null"`
 	Timezone   string     `json:"timezone" gorm:"size:64"`
 	Subject    string     `json:"subject" gorm:"size:255;not null"`
@@ -261,12 +276,43 @@ type MailCampaign struct {
 	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
+type AuthSession struct {
+	ID        uint       `json:"id" gorm:"primaryKey"`
+	UserID    uint       `json:"userId" gorm:"index;not null"`
+	UserKind  string     `json:"userKind" gorm:"size:16;not null;default:admin"`
+	JTI       string     `json:"-" gorm:"uniqueIndex;size:64;not null"`
+	IP        string     `json:"ip" gorm:"size:64"`
+	UserAgent string     `json:"userAgent" gorm:"size:512"`
+	ExpiresAt time.Time  `json:"expiresAt" gorm:"index;not null"`
+	RevokedAt *time.Time `json:"revokedAt"`
+	CreatedAt time.Time  `json:"createdAt"`
+}
+
+func (AuthSession) TableName() string { return "auth_sessions" }
+
+type UserImportJob struct {
+	ID           uint      `json:"id" gorm:"primaryKey"`
+	ActorID      uint      `json:"actorId" gorm:"not null;index"`
+	Kind         string    `json:"kind" gorm:"size:16;not null"`
+	FileName     string    `json:"fileName" gorm:"size:255"`
+	Status       string    `json:"status" gorm:"size:16;not null;index"`
+	Total        int       `json:"total"`
+	CreatedCount int       `json:"created"`
+	FailedCount  int       `json:"failed"`
+	Errors       string    `json:"errors" gorm:"type:text"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+func (UserImportJob) TableName() string { return "user_import_jobs" }
+
 func AllModels() []any {
 	return []any{
-		&User{}, &Role{}, &Permission{}, &Department{},
-		&AdminMenu{}, &WebMenu{},
+		&User{}, &webUserModel{}, &WebUserRole{},
+		&Role{}, &Permission{}, &Department{},
+		&NavMenu{},
 		&DictType{}, &DictItem{}, &SysConfig{},
 		&LoginLog{}, &OpLog{}, &APILog{}, &PasswordResetToken{},
-		&MailJob{}, &MailCampaign{},
+		&MailJob{}, &MailCampaign{}, &AuthSession{}, &UserImportJob{},
 	}
 }

@@ -23,7 +23,7 @@ func Up(dbPath string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if err := ensureVersionTable(db); err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func Up(dbPath string) error {
 		return err
 	}
 	for _, step := range steps {
-		if current >= int(step.version) {
+		if current >= step.version {
 			continue
 		}
 		body, err := files.ReadFile(step.path)
@@ -50,18 +50,18 @@ func Up(dbPath string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(string(body)); err != nil {
+		if err := execMigration(tx, string(body)); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("migrate up %d: %w", step.version, err)
 		}
-		if err := writeVersion(tx, int(step.version), false); err != nil {
+		if err := writeVersion(tx, step.version, false); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
 		if err := tx.Commit(); err != nil {
 			return err
 		}
-		current = int(step.version)
+		current = step.version
 	}
 	return nil
 }
@@ -71,7 +71,7 @@ func Version(dbPath string) (uint, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if err := ensureVersionTable(db); err != nil {
 		return 0, false, err
 	}
@@ -130,8 +130,120 @@ func writeVersion(tx *sql.Tx, version int, dirty bool) error {
 }
 
 type migrationFile struct {
-	version uint
+	version int
 	path    string
+}
+
+func execMigration(tx *sql.Tx, body string) error {
+	for _, stmt := range splitSQL(body) {
+		if _, err := tx.Exec(stmt); err != nil {
+			if ignorableMigrationErr(err) {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func ignorableMigrationErr(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column name") || strings.Contains(msg, "already exists")
+}
+
+func splitSQL(script string) []string {
+	runes := []rune(strings.TrimSpace(script))
+	if len(runes) == 0 {
+		return nil
+	}
+	var out []string
+	var b strings.Builder
+	depth := 0
+	flush := func() {
+		stmt := strings.TrimSpace(b.String())
+		b.Reset()
+		if stmt != "" {
+			out = append(out, stmt)
+		}
+	}
+	for i := 0; i < len(runes); {
+		if runes[i] == '-' && i+1 < len(runes) && runes[i+1] == '-' {
+			for i < len(runes) && runes[i] != '\n' {
+				i++
+			}
+			continue
+		}
+		if runes[i] == '/' && i+1 < len(runes) && runes[i+1] == '*' {
+			i += 2
+			for i+1 < len(runes) && !(runes[i] == '*' && runes[i+1] == '/') {
+				i++
+			}
+			if i+1 < len(runes) {
+				i += 2
+			}
+			continue
+		}
+		if runes[i] == '\'' {
+			b.WriteRune(runes[i])
+			i++
+			for i < len(runes) {
+				b.WriteRune(runes[i])
+				if runes[i] == '\'' {
+					if i+1 < len(runes) && runes[i+1] == '\'' {
+						b.WriteRune(runes[i+1])
+						i += 2
+						continue
+					}
+					i++
+					break
+				}
+				i++
+			}
+			continue
+		}
+		if ident, ok := readIdent(runes, i); ok {
+			switch strings.ToUpper(ident) {
+			case "BEGIN":
+				depth++
+			case "END":
+				if depth > 0 {
+					depth--
+				}
+			}
+			b.WriteString(ident)
+			i += len([]rune(ident))
+			continue
+		}
+		if runes[i] == ';' && depth == 0 {
+			flush()
+			i++
+			continue
+		}
+		b.WriteRune(runes[i])
+		i++
+	}
+	flush()
+	return out
+}
+
+func readIdent(runes []rune, i int) (string, bool) {
+	if i >= len(runes) {
+		return "", false
+	}
+	r := runes[i]
+	if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && r != '_' {
+		return "", false
+	}
+	j := i + 1
+	for j < len(runes) {
+		r = runes[j]
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			j++
+			continue
+		}
+		break
+	}
+	return string(runes[i:j]), true
 }
 
 func listUpMigrations() ([]migrationFile, error) {
@@ -145,11 +257,14 @@ func listUpMigrations() ([]migrationFile, error) {
 		if !strings.HasSuffix(name, ".up.sql") {
 			continue
 		}
-		n, err := strconv.ParseUint(strings.SplitN(name, "_", 2)[0], 10, 64)
+		n, err := strconv.Atoi(strings.SplitN(name, "_", 2)[0])
 		if err != nil {
 			return nil, fmt.Errorf("migration name %s: %w", name, err)
 		}
-		out = append(out, migrationFile{version: uint(n), path: path.Join("sql", name)})
+		if n < 0 {
+			return nil, fmt.Errorf("migration name %s: negative version", name)
+		}
+		out = append(out, migrationFile{version: n, path: path.Join("sql", name)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].version < out[j].version })
 	return out, nil

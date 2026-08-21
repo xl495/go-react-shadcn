@@ -1,24 +1,10 @@
-import { useState, type FormEvent, type ReactNode } from "react"
+import { useState, type FormEvent } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
+import { GuestChrome } from "@/components/layout/GuestChrome"
 import { ApiError } from "@/api/client"
 import { api } from "@/api/client"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { Button } from "@/components/ui/button"
-
-function GuestShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full flex-col overflow-y-auto bg-background">
-      <header className="flex h-14 items-center justify-between border-b px-6">
-        <span className="text-sm font-semibold">Latch</span>
-        <LanguageSwitcher />
-      </header>
-      <div className="flex flex-1 items-center justify-center px-4">
-        <div className="w-full max-w-sm space-y-5">{children}</div>
-      </div>
-    </div>
-  )
-}
 
 export function UnsubscribePage() {
   const { t } = useI18n()
@@ -43,7 +29,7 @@ export function UnsubscribePage() {
   }
 
   return (
-    <GuestShell>
+    <GuestChrome>
       {done ? (
         <div className="space-y-4">
           <h1 className="text-2xl font-semibold tracking-tight">{t("mail.unsubTitle")}</h1>
@@ -65,6 +51,6 @@ export function UnsubscribePage() {
           </Button>
         </form>
       )}
-    </GuestShell>
+    </GuestChrome>
   )
 }

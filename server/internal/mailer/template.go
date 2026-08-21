@@ -40,6 +40,7 @@ func LooksHTML(s string) bool {
 }
 
 func wrapHTML(body string) string {
+	body = sanitizeHTML(body)
 	if strings.Contains(strings.ToLower(body), "<html") {
 		return body
 	}

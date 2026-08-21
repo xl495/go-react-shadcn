@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Navigate, useLocation } from "react-router-dom"
-import { ApiError, getToken, setToken, setUnauthorizedHandler } from "@/api/client"
+import { api, getToken, setToken, setUnauthorizedHandler, isSessionExpired } from "@/api/client"
 import { useMe } from "@/hooks/queries"
 import { queryClient } from "@/providers/query-client"
 import { PageFallback } from "@/components/PageFallback"
@@ -12,7 +12,7 @@ type AuthState = {
   user: User | null
   loading: boolean
   login: (token: string, user: User) => void
-  logout: () => void
+  logout: () => Promise<void>
   updateUser: (next: User) => void
   isAdmin: boolean
   can: (code: string) => boolean
@@ -31,15 +31,15 @@ function readUser(): User | null {
 }
 
 function isAuthError(err: unknown) {
-  return err instanceof ApiError && (err.status === 401 || err.code === 40101 || err.code === 40102)
+  return isSessionExpired(err)
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [cachedUser, setCachedUser] = useState<User | null>(readUser)
   const hasToken = !!getToken()
   const meQuery = useMe(hasToken)
-  const loading = hasToken && meQuery.isPending
-  const user = isAuthError(meQuery.error) ? null : (meQuery.data ?? null)
+  const user = isAuthError(meQuery.error) ? null : (meQuery.data ?? (hasToken ? cachedUser : null))
+  const loading = hasToken && meQuery.isPending && !user
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -57,7 +57,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (meQuery.data) {
       localStorage.setItem(USER_KEY, JSON.stringify(meQuery.data))
-      setCachedUser(meQuery.data)
     }
   }, [meQuery.data])
 
@@ -65,7 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isAuthError(meQuery.error)) return
     setToken(null)
     localStorage.removeItem(USER_KEY)
-    setCachedUser(null)
   }, [meQuery.error])
 
   const value = useMemo<AuthState>(() => {
@@ -86,7 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCachedUser(next)
         queryClient.setQueryData(["auth", "me"], next)
       },
-      logout: () => {
+      logout: async () => {
+        try {
+          if (getToken()) await api.logout()
+        } catch {
+          /* still clear local session */
+        }
         setToken(null)
         localStorage.removeItem(USER_KEY)
         setCachedUser(null)

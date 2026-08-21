@@ -38,8 +38,10 @@ func (a *App) handleListPermissions(c *gin.Context) {
 	q := a.DB.Model(&models.Permission{})
 	q = applyEqual(q, "kind", c.Query("kind"))
 	q = applyContains(q, c.Query("q"), "name", "code", "path", "method", "description")
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, CodeListPerms, "failed to list permissions")
+	if !okCount {
+		return
+	}
 	var perms []models.Permission
 	if err := q.Order("id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&perms).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeListPerms, "failed to list permissions")
@@ -120,6 +122,11 @@ func (a *App) handleDeletePermission(c *gin.Context) {
 		fail(c, http.StatusNotFound, 40430, "permission not found")
 		return
 	}
+	var roleIDs []uint
+	if err := a.DB.Table("role_permissions").Where("permission_id = ?", perm.ID).Pluck("role_id", &roleIDs).Error; err != nil {
+		fail(c, http.StatusInternalServerError, 50022, "failed to sync rbac")
+		return
+	}
 	if err := a.withTx(func(tx *gorm.DB) error {
 		if err := tx.Model(&perm).Association("Roles").Clear(); err != nil {
 			return err
@@ -129,8 +136,12 @@ func (a *App) handleDeletePermission(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeDeletePerm, "failed to delete permission")
 		return
 	}
+	if len(roleIDs) == 0 {
+		ok(c, gin.H{"deleted": perm.ID})
+		return
+	}
 	var remaining []models.Role
-	if err := a.DB.Preload("Permissions").Find(&remaining).Error; err != nil {
+	if err := a.DB.Preload("Permissions").Where("id IN ?", roleIDs).Find(&remaining).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50022, "failed to sync rbac")
 		return
 	}

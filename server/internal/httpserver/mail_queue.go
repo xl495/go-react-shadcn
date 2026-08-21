@@ -50,12 +50,16 @@ func (a *App) handleUnsubscribe(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeInvalidBody, "invalid request body")
 		return
 	}
-	id, okTok := mailer.ParseUnsubToken(a.Cfg.JWTSecret, req.Token)
+	if a.UnsubGuard != nil && !a.UnsubGuard.AllowIP(c.ClientIP()) {
+		fail(c, http.StatusTooManyRequests, CodeUnsubRateLimited, "too many unsubscribe requests from this ip")
+		return
+	}
+	kind, id, okTok := mailer.ParseUnsubToken(a.Cfg.UnsubSecret(), req.Token)
 	if !okTok {
 		fail(c, http.StatusBadRequest, CodeInvalidUnsubToken, "invalid unsubscribe token")
 		return
 	}
-	res := a.DB.Model(&models.User{}).Where("id = ?", id).Update("marketing_opt_in", false)
+	res := a.accounts(kind).Where("id = ?", id).Update("marketing_opt_in", false)
 	if res.Error != nil {
 		fail(c, http.StatusInternalServerError, CodeUpdateUser, "failed to update user")
 		return
@@ -72,10 +76,13 @@ func (a *App) handleListMailJobs(c *gin.Context) {
 	q := a.DB.Model(&models.MailJob{})
 	q = applyEqual(q, "status", c.Query("status"))
 	q = applyEqual(q, "class", c.Query("class"))
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, CodeSendMail, "failed to list mail jobs")
+	if !okCount {
+		return
+	}
 	var rows []models.MailJob
-	if err := q.Order("priority asc, id desc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
+	if err := q.Select("id", "campaign_id", "class", "priority", "user_id", "user_kind", "to_email", "timezone", "subject", "status", "send_after", "attempts", "last_error", "dedupe_key", "sent_at", "created_at", "updated_at").
+		Order("priority asc, id desc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSendMail, "failed to list mail jobs")
 		return
 	}
@@ -127,8 +134,10 @@ func (a *App) handleListMailCampaigns(c *gin.Context) {
 	p := parsePage(c, 20, 200)
 	q := a.DB.Model(&models.MailCampaign{})
 	q = applyEqual(q, "status", c.Query("status"))
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, CodeSendMail, "failed to list campaigns")
+	if !okCount {
+		return
+	}
 	var rows []models.MailCampaign
 	if err := q.Order("id desc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSendMail, "failed to list campaigns")

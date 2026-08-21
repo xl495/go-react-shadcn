@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
-import { translateApiError, useI18n } from "@/providers/i18n"
+import { useI18n } from "@/providers/i18n"
 import { useChangePassword } from "@/hooks/queries"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,8 +27,8 @@ export function ChangePasswordPage() {
       setNewPassword("")
       setConfirmPassword("")
       toast.success(t("settings.passwordChanged"))
-    } catch (err) {
-      toast.error(translateApiError(err, t))
+    } catch {
+      // API message is toasted by the HTTP client.
     }
   }
 

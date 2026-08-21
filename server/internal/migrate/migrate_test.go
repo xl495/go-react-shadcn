@@ -3,6 +3,7 @@ package migrate
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "github.com/glebarez/go-sqlite"
@@ -24,8 +25,8 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	if dirty {
 		t.Fatal("expected clean migration state")
 	}
-	if version != 8 {
-		t.Fatalf("version=%d, want 8", version)
+	if version != 17 {
+		t.Fatalf("version=%d, want 17", version)
 	}
 
 	db, err := sql.Open("sqlite", path)
@@ -34,7 +35,7 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	required := []string{"users", "roles", "permissions", "op_logs", "login_logs", "api_logs", "departments", "casbin_rule", "schema_migrations", "password_reset_tokens", "mail_jobs", "mail_campaigns", "admin_menus", "web_menus"}
+	required := []string{"users", "admin_user", "web_user", "web_user_roles", "roles", "permissions", "op_logs", "login_logs", "api_logs", "departments", "casbin_rule", "schema_migrations", "password_reset_tokens", "mail_jobs", "mail_campaigns", "admin_menus", "web_menus", "nav_menu", "auth_sessions", "user_import_jobs", "captcha_challenges"}
 	for _, name := range required {
 		var got string
 		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&got)
@@ -56,5 +57,52 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("op_logs count=%d want 1", count)
+	}
+}
+
+func TestSplitSQLKeepsTriggerBodies(t *testing.T) {
+	body, err := files.ReadFile("sql/000013_user_fts.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmts := splitSQL(string(body))
+	if len(stmts) != 10 {
+		t.Fatalf("stmts=%d want 10: %#v", len(stmts), stmts)
+	}
+	if !strings.Contains(stmts[2], "END") {
+		t.Fatalf("trigger split lost END: %s", stmts[2])
+	}
+}
+
+func TestExecMigrationSkipsDuplicateColumn(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:dupcol?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE users (id INTEGER, timezone TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback() })
+	sqlBody := `
+ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai';
+ALTER TABLE users ADD COLUMN marketing_opt_in INTEGER NOT NULL DEFAULT 1;
+`
+	if err := execMigration(tx, sqlBody); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='marketing_opt_in'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("marketing_opt_in missing")
 	}
 }

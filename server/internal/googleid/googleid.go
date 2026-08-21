@@ -64,7 +64,7 @@ func (v HTTPVerifier) Verify(ctx context.Context, rawToken, audience string) (Id
 	if err != nil {
 		return Identity{}, err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if err != nil {
 		return Identity{}, err

@@ -27,8 +27,10 @@ func (a *App) handleListDicts(c *gin.Context) {
 	p := parsePage(c, 50, 500)
 	q := a.DB.Model(&models.DictType{})
 	q = applyContains(q, c.Query("q"), "code", "name", "remark")
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, CodeListDicts, "failed to list dicts")
+	if !okCount {
+		return
+	}
 	var rows []models.DictType
 	if err := q.Order("id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeListDicts, "failed to list dicts")
@@ -106,8 +108,10 @@ func (a *App) handleListDictItems(c *gin.Context) {
 	var items []models.DictItem
 	p := parsePage(c, 100, 500)
 	q := a.DB.Model(&models.DictItem{}).Where("type_code = ?", typ.Code)
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, CodeListDictItems, "failed to list dict items")
+	if !okCount {
+		return
+	}
 	if err := q.Order("sort asc, id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&items).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeListDictItems, "failed to list dict items")
 		return

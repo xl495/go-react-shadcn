@@ -3,7 +3,7 @@ import type { components } from "./generated/api-schema"
 type Schema = components["schemas"]
 
 export type User = Schema["User"]
-export type Role = Schema["Role"]
+export type Role = Schema["Role"] & { permissionIds?: number[] }
 export type Permission = Schema["Permission"]
 export type MenuNode = Schema["MenuNode"]
 export type OpLog = Schema["OpLog"]

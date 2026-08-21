@@ -13,6 +13,18 @@ import (
 const (
 	Recaptcha = "https://www.google.com/recaptcha/api/siteverify"
 	Turnstile = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+	// Official Cloudflare dummy keys for localhost / CI. Not API tokens.
+	// https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+	TurnstileDummyPassSiteKey          = "1x00000000000000000000AA"
+	TurnstileDummyFailSiteKey          = "2x00000000000000000000AB"
+	TurnstileDummyInvisiblePassSiteKey = "1x00000000000000000000BB"
+	TurnstileDummyInvisibleFailSiteKey = "2x00000000000000000000BB"
+	TurnstileDummyInteractiveSiteKey   = "3x00000000000000000000FF"
+	TurnstileDummyPassSecret           = "1x0000000000000000000000000000000AA"
+	TurnstileDummyFailSecret           = "2x0000000000000000000000000000000AA"
+	TurnstileDummySpentSecret          = "3x0000000000000000000000000000000AA"
+	TurnstileDummyToken                = "XXXX.DUMMY.TOKEN.XXXX"
 )
 
 type Result struct {
@@ -55,7 +67,7 @@ func (c *Client) Check(ctx context.Context, endpoint, secret, response, remoteIP
 	if err != nil {
 		return Result{}, err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if err != nil {
 		return Result{}, err

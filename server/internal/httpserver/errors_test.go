@@ -53,6 +53,9 @@ func TestFailLocalizesMessage(t *testing.T) {
 	if err := json.NewDecoder(zh.Body).Decode(&envZH); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
+	if envZH.Code != CodeFail || envZH.ErrorCode != CodeBadCredentials {
+		t.Fatalf("zh envelope code=%d errorCode=%d", envZH.Code, envZH.ErrorCode)
+	}
 	if envZH.Message != "用户名或密码错误" {
 		t.Fatalf("zh message=%q", envZH.Message)
 	}

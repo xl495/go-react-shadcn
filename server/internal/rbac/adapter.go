@@ -26,9 +26,6 @@ type gormAdapter struct {
 }
 
 func newAdapter(db *gorm.DB) (*gormAdapter, error) {
-	if err := db.AutoMigrate(&Rule{}); err != nil {
-		return nil, err
-	}
 	return &gormAdapter{db: db}, nil
 }
 

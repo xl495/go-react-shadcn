@@ -1,7 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../../shared/fonts/gra.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   --background: 0 0% 100%;
@@ -30,8 +31,35 @@
   --sidebar-border: 0 0% 90%;
 }
 
+.dark {
+  --background: 0 0% 7%;
+  --foreground: 0 0% 96%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 10%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 0 0% 96%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 14%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 14%;
+  --muted-foreground: 0 0% 64%;
+  --accent: 0 0% 16%;
+  --accent-foreground: 0 0% 96%;
+  --destructive: 0 62% 45%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 20%;
+  --input: 0 0% 20%;
+  --ring: 0 0% 80%;
+  --sidebar: 0 0% 9%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-accent: 0 0% 14%;
+  --sidebar-border: 0 0% 18%;
+}
+
 @theme inline {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Schibsted Grotesk", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", ui-sans-serif, sans-serif;
+  --font-display: "Fraunces", "Songti SC", "STSong", "Noto Serif SC", ui-serif, Georgia, serif;
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -64,6 +92,14 @@
   border-color: hsl(var(--border));
 }
 
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
 html,
 body,
 #root {
@@ -76,4 +112,25 @@ body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: var(--font-sans);
+}
+
+@keyframes auth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.auth-rise {
+  animation: auth-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-rise {
+    animation: none;
+  }
 }

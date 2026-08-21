@@ -22,21 +22,20 @@ var avatarTypes = map[string]string{
 
 func (a *App) handleUploadOwnAvatar(c *gin.Context) {
 	claims := currentUser(c)
-	a.saveUserAvatar(c, claims.UserID)
+	a.saveUserAvatar(c, claimsKind(claims), claims.UserID)
 }
 
 func (a *App) handleUploadUserAvatar(c *gin.Context) {
-	var user models.User
-	if err := a.DB.First(&user, c.Param("id")).Error; err != nil {
-		fail(c, http.StatusNotFound, 40410, "user not found")
+	user, found := a.loadUserInScope(c, c.Param("id"))
+	if !found {
 		return
 	}
-	a.saveUserAvatar(c, user.ID)
+	a.saveUserAvatar(c, user.Kind, user.ID)
 }
 
-func (a *App) saveUserAvatar(c *gin.Context, userID uint) {
+func (a *App) saveUserAvatar(c *gin.Context, kind string, userID uint) {
 	var existing models.User
-	if err := a.DB.Select("avatar").First(&existing, userID).Error; err != nil {
+	if err := a.accounts(kind).Select("avatar").First(&existing, userID).Error; err != nil {
 		fail(c, http.StatusNotFound, 40410, "user not found")
 		return
 	}
@@ -55,7 +54,7 @@ func (a *App) saveUserAvatar(c *gin.Context, userID uint) {
 		fail(c, http.StatusBadRequest, 40050, "avatar file required")
 		return
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 	head := make([]byte, 512)
 	n, _ := src.Read(head)
 	ctype := http.DetectContentType(head[:n])
@@ -69,26 +68,34 @@ func (a *App) saveUserAvatar(c *gin.Context, userID uint) {
 		return
 	}
 	dir := filepath.Join(a.Cfg.UploadDir, "avatars")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		fail(c, http.StatusInternalServerError, 50050, "failed to store avatar")
 		return
 	}
 	filename := fmt.Sprintf("%d_%s%s", userID, uuid.NewString(), ext)
 	dstPath := filepath.Join(dir, filename)
-	dst, err := os.Create(dstPath)
+	if filepath.Dir(dstPath) != dir {
+		fail(c, http.StatusInternalServerError, 50050, "failed to store avatar")
+		return
+	}
+	// filename is generated (user id + uuid + detected ext), not caller-supplied.
+	dst, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec
 	if err != nil {
 		fail(c, http.StatusInternalServerError, 50050, "failed to store avatar")
 		return
 	}
 	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
+		_ = dst.Close()
 		fail(c, http.StatusInternalServerError, 50050, "failed to store avatar")
 		return
 	}
-	dst.Close()
+	if err := dst.Close(); err != nil {
+		fail(c, http.StatusInternalServerError, 50050, "failed to store avatar")
+		return
+	}
 
 	url := "/uploads/avatars/" + filename
-	if err := a.DB.Model(&models.User{}).Where("id = ?", userID).Update("avatar", url).Error; err != nil {
+	if err := a.accounts(kind).Where("id = ?", userID).Update("avatar", url).Error; err != nil {
 		_ = os.Remove(dstPath)
 		fail(c, http.StatusInternalServerError, 50050, "failed to store avatar")
 		return
@@ -97,18 +104,41 @@ func (a *App) saveUserAvatar(c *gin.Context, userID uint) {
 		removeUploadedFile(a.Cfg.UploadDir, oldAvatar)
 	}
 	var user models.User
-	if err := a.DB.Preload("Roles.Permissions").First(&user, userID).Error; err != nil {
+	if err := a.loadAccount(kind, &user, userID); err != nil {
 		fail(c, http.StatusInternalServerError, 50050, "failed to store avatar")
 		return
 	}
-	ok(c, toUserDTO(user))
+	ok(c, a.toUserDTO(user))
+}
+
+func validAvatarURL(url string) bool {
+	if url == "" || strings.Contains(url, "..") || strings.Contains(url, "\\") {
+		return false
+	}
+	const prefix = "/uploads/avatars/"
+	if !strings.HasPrefix(url, prefix) {
+		return false
+	}
+	name := strings.TrimPrefix(url, prefix)
+	return name != "" && !strings.Contains(name, "/")
 }
 
 func removeUploadedFile(uploadDir, url string) {
-	if url == "" || !strings.HasPrefix(url, "/uploads/") {
+	if !validAvatarURL(url) {
+		return
+	}
+	root, err := filepath.Abs(uploadDir)
+	if err != nil {
 		return
 	}
 	rel := strings.TrimPrefix(url, "/uploads/")
-	path := filepath.Join(uploadDir, filepath.FromSlash(rel))
+	path, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return
+	}
+	sep := string(filepath.Separator)
+	if path != root && !strings.HasPrefix(path, root+sep) {
+		return
+	}
 	_ = os.Remove(path)
 }

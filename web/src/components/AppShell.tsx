@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useState } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
-import { House, KeyRound, LogOut, PanelLeftClose, PanelLeftOpen, User } from "lucide-react"
-import { api, ApiError } from "@/lib/api"
+import { CircleHelp, House, KeyRound, LogOut, PanelLeftClose, PanelLeftOpen, User } from "lucide-react"
+import { api, ApiError, isSessionExpired } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { menuLabel, useI18n } from "@/lib/i18n"
 import { useResizableSidebar } from "@/lib/use-resizable-sidebar"
+import { LanguageSwitcher } from "@/components/LanguageSwitcher"
+import { ThemeToggle } from "@/components/ThemeToggle"
 import type { MenuNode } from "@/lib/types"
 
 const ICONS: Record<string, typeof House> = {
   House,
   User,
   KeyRound,
+}
+
+function menuIcon(name: string): typeof House {
+  const Icon = ICONS[name]
+  if (Icon) return Icon
+  if (name) console.warn(`unknown menu icon: ${name}`)
+  return CircleHelp
 }
 
 type NavItem = {
@@ -19,64 +29,69 @@ type NavItem = {
   icon: typeof House
 }
 
-function navFromMenus(nodes: MenuNode[]): NavItem[] {
+function navFromMenus(nodes: MenuNode[], t: (key: string) => string): NavItem[] {
   const out: NavItem[] = []
   for (const n of nodes) {
     if (n.kind !== "menu" || n.hidden) continue
     if (n.routePath) {
       out.push({
         key: n.code,
-        label: n.name,
+        label: menuLabel(n.code, n.name, t),
         to: n.routePath,
-        icon: ICONS[n.icon] ?? House,
+        icon: menuIcon(n.icon),
       })
     }
     if (n.children?.length) {
-      out.push(...navFromMenus(n.children))
+      out.push(...navFromMenus(n.children, t))
     }
   }
   return out
 }
 
 export function AppShell() {
-  const { user, setUser, logout } = useAuth()
+  const { t } = useI18n()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [menus, setMenus] = useState<MenuNode[]>([])
   const [error, setError] = useState("")
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([api.me(), api.webMenus()])
-      .then(([me, tree]) => {
+    api
+      .webMenus()
+      .then((tree) => {
         if (cancelled) return
-        setUser(me)
         setMenus(tree)
         setError("")
       })
       .catch((err) => {
         if (cancelled) return
-        if (err instanceof ApiError && (err.status === 401 || err.code === 40101 || err.code === 40102)) {
-          logout()
-          navigate("/login", { replace: true })
+        if (err instanceof ApiError && isSessionExpired(err)) {
+          void logout().then(() => navigate("/login", { replace: true }))
           return
         }
-        setError(err instanceof ApiError ? err.message : "加载失败")
+        setError(err instanceof ApiError ? err.message : t("app.loadFailed"))
       })
     return () => {
       cancelled = true
     }
-  }, [logout, navigate, setUser])
+  }, [logout, navigate, t])
 
-  const items = useMemo(() => navFromMenus(menus), [menus])
+  const items = useMemo(() => navFromMenus(menus, t), [menus, t])
   const sidebar = useResizableSidebar("latch.web.sidebar.width")
 
   function onSignOut() {
-    logout()
-    navigate("/login", { replace: true })
+    void logout().then(() => navigate("/login", { replace: true }))
   }
 
   return (
     <div className="flex h-full overflow-hidden bg-background text-foreground">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:m-3 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow"
+      >
+        {t("nav.skipToContent")}
+      </a>
       <aside
         style={{ width: sidebar.width }}
         className={`relative flex h-full shrink-0 flex-col overflow-x-hidden border-r ${
@@ -85,10 +100,11 @@ export function AppShell() {
             : "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
         }`}
       >
-        <div className="flex h-14 shrink-0 items-center border-b px-4">
-          <span className="truncate text-sm font-semibold tracking-tight">Latch</span>
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
+          <img src="/gra-mark.png" alt="" width={28} height={28} className="size-7 rounded-md" />
+          <span className="font-display text-xl leading-none tracking-tight">gra</span>
         </div>
-        <nav aria-label="主导航" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
+        <nav aria-label={t("nav.main")} className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
           {items.map((item) => {
             const Icon = item.icon
             return (
@@ -115,7 +131,7 @@ export function AppShell() {
           aria-valuemin={64}
           aria-valuemax={420}
           aria-valuenow={sidebar.width}
-          aria-label="拖动调整侧栏宽度"
+          aria-label={t("nav.resize")}
           tabIndex={0}
           className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none bg-transparent after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-transparent hover:after:bg-foreground/30 focus-visible:bg-foreground/10 focus-visible:outline-none"
           onPointerDown={sidebar.onResizePointerDown}
@@ -127,24 +143,28 @@ export function AppShell() {
         <header className="flex h-14 shrink-0 items-center justify-between border-b pr-6 pl-2">
           <button
             type="button"
-            aria-label={sidebar.compact ? "展开侧栏" : "收起侧栏"}
+            aria-label={sidebar.compact ? t("nav.expand") : t("nav.collapse")}
             onClick={sidebar.toggleCollapsed}
             className="inline-flex size-9 shrink-0 items-center justify-center rounded-md hover:bg-muted"
           >
             {sidebar.compact ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
           </button>
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm hover:bg-muted"
-          >
-            <LogOut className="size-4" />
-            退出登录
-          </button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <LanguageSwitcher />
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm hover:bg-muted"
+            >
+              <LogOut className="size-4" />
+              {t("nav.signOut")}
+            </button>
+          </div>
         </header>
-        <main className="mx-auto flex min-h-0 w-full max-w-lg flex-1 flex-col overflow-auto overscroll-contain px-4 py-10">
+        <main id="main" className="mx-auto flex min-h-0 w-full max-w-lg flex-1 flex-col overflow-auto overscroll-contain px-4 py-10">
           {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
-          {user ? <Outlet /> : <p className="text-sm text-muted-foreground">加载中…</p>}
+          {user ? <Outlet /> : <p className="text-sm text-muted-foreground">{t("app.loading")}</p>}
         </main>
       </div>
     </div>

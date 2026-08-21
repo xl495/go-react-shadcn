@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
   BookMarked,
@@ -9,6 +9,7 @@ import {
   FolderTree,
   Globe,
   KeyRound,
+  CircleHelp,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -21,7 +22,9 @@ import {
   Users,
 } from "lucide-react"
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs"
+import { GraMark, GraWord } from "@/components/layout/Brand"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
+import { ThemeToggle } from "@/components/layout/ThemeToggle"
 import { Avatar } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -55,6 +58,13 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   Monitor,
 }
 
+function menuIcon(name: string): typeof LayoutDashboard {
+  const Icon = ICONS[name]
+  if (Icon) return Icon
+  if (name) console.warn(`unknown menu icon: ${name}`)
+  return CircleHelp
+}
+
 type SidebarItem = {
   key: string
   label: string
@@ -74,7 +84,7 @@ function sidebarFromMenus(nodes: MenuNode[], t: (key: string) => string): Sideba
       out.push({
         key: n.code,
         label,
-        icon: ICONS[n.icon] ?? LayoutDashboard,
+        icon: menuIcon(n.icon),
         to: n.routePath,
         perm: n.permCode || n.code,
       })
@@ -84,7 +94,7 @@ function sidebarFromMenus(nodes: MenuNode[], t: (key: string) => string): Sideba
       out.push({
         key: n.code,
         label,
-        icon: ICONS[n.icon] ?? FolderTree,
+        icon: menuIcon(n.icon),
         children,
       })
     }
@@ -173,7 +183,9 @@ export function AppShell() {
       ? t("mail.createCampaign")
       : /^\/mail\/campaigns\/\d+/.test(location.pathname)
         ? t("mail.editCampaign")
-        : findCurrentLabel(visible, location.pathname) ??
+        : /^\/roles\/\d+/.test(location.pathname)
+          ? t("roles.detail")
+          : findCurrentLabel(visible, location.pathname) ??
           (location.pathname.startsWith("/settings/password")
             ? t("nav.password")
             : location.pathname.startsWith("/settings")
@@ -183,6 +195,12 @@ export function AppShell() {
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:m-3 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow"
+      >
+        {t("nav.skipToContent")}
+      </a>
       <aside
         style={{ width: sidebar.width }}
         className={cn(
@@ -192,15 +210,16 @@ export function AppShell() {
             : "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         )}
       >
-        <div className="flex h-14 shrink-0 items-center border-b px-4">
-          <span className="truncate text-sm font-semibold tracking-tight">Latch</span>
+        <div className={cn("flex h-14 shrink-0 items-center border-b", sidebar.compact ? "justify-center px-2" : "gap-2 px-3")}>
+          <GraMark className="size-7 shrink-0" />
+          <GraWord className={cn("text-xl leading-none", sidebar.compact && "sr-only")} />
         </div>
-        <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+        <nav aria-label={t("nav.main")} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {visible.map((item) =>
             item.children?.length ? (
-              <NavGroup key={item.key} item={item} pathname={location.pathname} />
+              <NavGroup key={item.key} item={item} pathname={location.pathname} compact={sidebar.compact} />
             ) : (
-              <NavItem key={item.key} to={item.to!} label={item.label} icon={item.icon} />
+              <NavItem key={item.key} to={item.to!} label={item.label} icon={item.icon} compact={sidebar.compact} />
             ),
           )}
         </nav>
@@ -235,19 +254,19 @@ export function AppShell() {
             <h1 className="truncate text-sm font-medium">{current}</h1>
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            <ThemeToggle />
             <LanguageSwitcher />
             <UserMenu
               name={displayName}
               avatar={user?.avatar}
               subtitle={(user?.roles ?? []).map((r) => roleLabel(r.code, r.name, t)).join(" · ")}
               onLogout={() => {
-                logout()
-                navigate("/login")
+                void logout().then(() => navigate("/login"))
               }}
             />
           </div>
         </header>
-        <main className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain bg-muted/40 p-6">
+        <main id="main" className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain bg-muted/40 p-6">
           <Outlet />
         </main>
       </div>
@@ -255,13 +274,15 @@ export function AppShell() {
   )
 }
 
-function NavGroup({ item, pathname }: { item: SidebarItem; pathname: string }) {
+function NavGroup({ item, pathname, compact }: { item: SidebarItem; pathname: string; compact?: boolean }) {
   const Icon = item.icon
   const containsActive = isPathInGroup(item, pathname)
   const [open, setOpen] = useState(containsActive)
-  useEffect(() => {
+  const [wasActive, setWasActive] = useState(containsActive)
+  if (containsActive !== wasActive) {
+    setWasActive(containsActive)
     if (containsActive) setOpen(true)
-  }, [containsActive])
+  }
 
   return (
     <div>
@@ -277,16 +298,16 @@ function NavGroup({ item, pathname }: { item: SidebarItem; pathname: string }) {
         )}
       >
         <Icon className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
-        <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")} />
+        {compact ? null : <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>}
+        {compact ? null : <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")} />}
       </Button>
       {open ? (
         <div className="ml-3 border-l border-border/70 pl-1">
           {item.children!.map((child) =>
             child.children?.length ? (
-              <NavGroup key={child.key} item={child} pathname={pathname} />
+              <NavGroup key={child.key} item={child} pathname={pathname} compact={compact} />
             ) : (
-              <NavItem key={child.key} to={child.to!} label={child.label} icon={child.icon} />
+              <NavItem key={child.key} to={child.to!} label={child.label} icon={child.icon} compact={compact} />
             ),
           )}
         </div>
@@ -299,10 +320,12 @@ function NavItem({
   to,
   label,
   icon: Icon,
+  compact,
 }: {
   to: string
   label: string
   icon: typeof Users
+  compact?: boolean
 }) {
   return (
     <NavLink
@@ -319,7 +342,7 @@ function NavItem({
       }
     >
       <Icon className="size-4 shrink-0" />
-      <span className="min-w-0 truncate">{label}</span>
+      {compact ? <span className="sr-only">{label}</span> : <span className="min-w-0 truncate">{label}</span>}
     </NavLink>
   )
 }

@@ -26,8 +26,8 @@ func TestLoginLockoutAfterFailures(t *testing.T) {
 		t.Fatalf("locked login want 403 got %d %s", w.Code, w.Body.String())
 	}
 	env := decodeEnv(t, w)
-	if env.Code != CodeAccountLocked {
-		t.Fatalf("code=%d want %d", env.Code, CodeAccountLocked)
+	if env.ErrorCode != CodeAccountLocked {
+		t.Fatalf("code=%d want %d", env.ErrorCode, CodeAccountLocked)
 	}
 }
 

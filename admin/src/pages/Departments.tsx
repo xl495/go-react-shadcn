@@ -12,7 +12,7 @@ import {
   useDepartments,
   useUpdateDepartment,
 } from "@/hooks/queries"
-import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { ConfirmAlert, EmptyTableRow, ResourceTable } from "@/components/feedback"
 import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label"
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -100,8 +101,8 @@ export function DepartmentsPage() {
       }
       toast.success(t("app.saved"))
       setOpen(false)
-    } catch (e) {
-      toast.error(translateApiError(e, t))
+    } catch {
+      // API message is toasted by the HTTP client.
     }
   }
 
@@ -140,11 +141,15 @@ export function DepartmentsPage() {
         ) : null}
       </FilterForm>
       {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
-      <div className="rounded-lg border bg-card">
-        {isLoading ? (
-          <TableSkeleton />
-        ) : (
-          <Table>
+      <ResourceTable
+        loading={isLoading}
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={data?.total ?? 0}
+        onPageChange={(next) => void setParams({ page: next })}
+      >
+        <Table>
+            <TableCaption className="sr-only">{t("dept.title")}</TableCaption>
             <TableHeader>
               <TableRow>
                 <TableHead>{t("app.name")}</TableHead>
@@ -193,9 +198,7 @@ export function DepartmentsPage() {
               )}
             </TableBody>
           </Table>
-        )}
-      </div>
-      <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={(next) => void setParams({ page: next })} />
+      </ResourceTable>
 
       <ConfirmAlert
         open={!!pending}
@@ -208,7 +211,6 @@ export function DepartmentsPage() {
           if (!pending) return
           deleteDept.mutate(pending.id, {
             onSuccess: () => toast.success(t("app.saved")),
-            onError: (e) => toast.error(translateApiError(e, t)),
           })
           setPending(null)
         }}

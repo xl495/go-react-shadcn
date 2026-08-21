@@ -98,7 +98,9 @@ func TestListenAndServeHealthAndGracefulShutdown(t *testing.T) {
 		t.Fatal("server did not shut down")
 	}
 
-	if _, err := client.Get(url); err == nil {
+	res, err := client.Get(url)
+	if err == nil {
+		_ = res.Body.Close()
 		t.Fatal("expected connection error after shutdown")
 	}
 }

@@ -1,18 +1,20 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
+import { api } from "@/api/client"
 import { translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
 import { useLogListParams } from "@/hooks/list-params"
 import { PAGE_SIZE, useAPILogs, useClearLogs, useLoginLogs, useOpLogs, usePurgeLogs } from "@/hooks/queries"
 import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
-import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { ConfirmAlert, DesktopOnly, EmptyState, EmptyTableRow, ResourceTable, StackedCards } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DictSelect } from "@/components/ui/dict-select"
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -72,22 +74,31 @@ export function LogsPage() {
   const draftFiltered = Boolean(draftUsername || draftModule || draftAction || draftTraceId || draftStatus || draftPath)
 
   const params = { page, pageSize: PAGE_SIZE }
-  const opQuery = useOpLogs({
-    ...params,
-    username: username || undefined,
-    module: module || undefined,
-    action: action || undefined,
-  })
-  const loginQuery = useLoginLogs({
-    ...params,
-    username: username || undefined,
-    status: status || undefined,
-  })
-  const apiQuery = useAPILogs({
-    ...params,
-    traceId: traceId || undefined,
-    path: path || undefined,
-  })
+  const opQuery = useOpLogs(
+    {
+      ...params,
+      username: username || undefined,
+      module: module || undefined,
+      action: action || undefined,
+    },
+    tab === "op",
+  )
+  const loginQuery = useLoginLogs(
+    {
+      ...params,
+      username: username || undefined,
+      status: status || undefined,
+    },
+    tab === "login",
+  )
+  const apiQuery = useAPILogs(
+    {
+      ...params,
+      traceId: traceId || undefined,
+      path: path || undefined,
+    },
+    tab === "api",
+  )
   const clearLogs = useClearLogs()
   const purgeLogs = usePurgeLogs()
 
@@ -101,20 +112,53 @@ export function LogsPage() {
           <h2 className="text-xl font-semibold tracking-tight">{t("log.title")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("log.subtitle")}</p>
         </div>
-        <Can perm={P.logClear}>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Can perm={P.logExport}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void api
+                  .exportLogs({
+                    username: username || undefined,
+                    module: module || undefined,
+                    action: action || undefined,
+                  })
+                  .catch((err) => {
+                    toast.error(translateApiError(err, t))
+                  })
+              }}
+            >
+              {t("app.export")}
+            </Button>
+          </Can>
+          <Can perm={P.logClear}>
             <Button type="button" variant="destructive" onClick={() => setConfirm("clear")}>
               {t("log.clear")}
             </Button>
             <Button type="button" variant="outline" onClick={() => setConfirm("purge")}>
               {t("log.purge")}
             </Button>
-          </div>
-        </Can>
+          </Can>
+        </div>
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-2" role="tablist" aria-label={t("nav.logs")}>
         {(["op", "login", "api"] as Tab[]).map((k) => (
-          <Button key={k} size="sm" variant={tab === k ? "default" : "outline"} onClick={() => void setParams({ tab: k, page: 1 })}>
+          <Button
+            key={k}
+            size="sm"
+            role="tab"
+            aria-selected={tab === k}
+            variant={tab === k ? "default" : "outline"}
+            onClick={() => void setParams({ tab: k, page: 1 })}
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return
+              const tabs: Tab[] = ["op", "login", "api"]
+              const i = tabs.indexOf(tab)
+              const next = e.key === "ArrowRight" ? (i + 1) % tabs.length : (i + tabs.length - 1) % tabs.length
+              void setParams({ tab: tabs[next], page: 1 })
+            }}
+          >
             {t(`log.tab.${k}`)}
           </Button>
         ))}
@@ -175,12 +219,17 @@ export function LogsPage() {
       </FilterForm>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {active.isLoading ? <TableSkeleton rows={8} cols={6} /> : null}
-
-      {!active.isLoading && tab === "op" ? <OpLogTable rows={opQuery.data?.items ?? []} t={t} /> : null}
-      {!active.isLoading && tab === "login" ? <LoginLogTable rows={loginQuery.data?.items ?? []} t={t} /> : null}
-      {!active.isLoading && tab === "api" ? <APILogTable rows={apiQuery.data?.items ?? []} t={t} /> : null}
-      <PaginationBar page={page} pageSize={PAGE_SIZE} total={active.data?.total ?? 0} onPageChange={(next) => void setParams({ page: next })} />
+      <ResourceTable
+        loading={active.isLoading}
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={active.data?.total ?? 0}
+        onPageChange={(next) => void setParams({ page: next })}
+      >
+        {tab === "op" ? <OpLogTable rows={opQuery.data?.items ?? []} t={t} /> : null}
+        {tab === "login" ? <LoginLogTable rows={loginQuery.data?.items ?? []} t={t} /> : null}
+        {tab === "api" ? <APILogTable rows={apiQuery.data?.items ?? []} t={t} /> : null}
+      </ResourceTable>
 
       <ConfirmAlert
         open={confirm === "clear"}
@@ -192,7 +241,6 @@ export function LogsPage() {
         onConfirm={() => {
           clearLogs.mutate(tab === "login" ? "login" : tab === "api" ? "api" : "op", {
             onSuccess: () => toast.success(t("app.saved")),
-            onError: (e) => toast.error(translateApiError(e, t)),
           })
           setConfirm(null)
         }}
@@ -207,7 +255,6 @@ export function LogsPage() {
         onConfirm={() => {
           purgeLogs.mutate(30, {
             onSuccess: () => toast.success(t("app.saved")),
-            onError: (e) => toast.error(translateApiError(e, t)),
           })
           setConfirm(null)
         }}
@@ -218,8 +265,29 @@ export function LogsPage() {
 
 function OpLogTable({ rows, t }: { rows: OpLog[]; t: (k: string) => string }) {
   return (
-    <div className="rounded-lg border bg-card">
+    <>
+      <StackedCards>
+        {rows.length === 0 ? (
+          <EmptyState />
+        ) : (
+          rows.map((row) => (
+            <div key={row.id} className="rounded-lg border p-3 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate font-medium">{row.username || "—"}</p>
+                <Badge variant={(row.status ?? 0) >= 400 ? "muted" : "default"}>{row.status || "—"}</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {row.module} · {row.action}
+              </p>
+              <p className="truncate font-mono text-xs">{row.path}</p>
+              <p className="text-xs text-muted-foreground">{formatDateTime(row.createdAt)}</p>
+            </div>
+          ))
+        )}
+      </StackedCards>
+      <DesktopOnly>
       <Table>
+        <TableCaption className="sr-only">{t("log.tab.op")}</TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead>ID</TableHead>
@@ -257,7 +325,8 @@ function OpLogTable({ rows, t }: { rows: OpLog[]; t: (k: string) => string }) {
           )}
         </TableBody>
       </Table>
-    </div>
+      </DesktopOnly>
+    </>
   )
 }
 
@@ -268,8 +337,27 @@ function LoginLogTable({ rows, t }: { rows: LoginLog[]; t: (k: string) => string
     return got === key ? value : got
   }
   return (
-    <div className="rounded-lg border bg-card">
+    <>
+      <StackedCards>
+        {rows.length === 0 ? (
+          <EmptyState />
+        ) : (
+          rows.map((row) => (
+            <div key={row.id} className="rounded-lg border p-3 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate font-medium">{row.username}</p>
+                <Badge variant={row.status === "success" ? "default" : "muted"}>{statusLabel(row.status)}</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">{row.ip || "—"}</p>
+              {row.failReason ? <p className="text-xs text-destructive">{row.failReason}</p> : null}
+              <p className="text-xs text-muted-foreground">{formatDateTime(row.createdAt)}</p>
+            </div>
+          ))
+        )}
+      </StackedCards>
+      <DesktopOnly>
       <Table>
+        <TableCaption className="sr-only">{t("log.tab.login")}</TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead>ID</TableHead>
@@ -305,14 +393,37 @@ function LoginLogTable({ rows, t }: { rows: LoginLog[]; t: (k: string) => string
           )}
         </TableBody>
       </Table>
-    </div>
+      </DesktopOnly>
+    </>
   )
 }
 
 function APILogTable({ rows, t }: { rows: APILog[]; t: (k: string) => string }) {
   return (
-    <div className="rounded-lg border bg-card">
+    <>
+      <StackedCards>
+        {rows.length === 0 ? (
+          <EmptyState />
+        ) : (
+          rows.map((row) => (
+            <div key={row.id} className="rounded-lg border p-3 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate font-medium">
+                  {row.method} {row.path}
+                </p>
+                <Badge variant={row.status >= 400 ? "muted" : "default"}>{row.status}</Badge>
+              </div>
+              <p className="truncate font-mono text-xs text-muted-foreground">{row.traceId}</p>
+              <p className="text-xs text-muted-foreground">
+                {row.username || "—"} · {row.latencyMs ? `${row.latencyMs}ms` : "—"} · {formatDateTime(row.createdAt)}
+              </p>
+            </div>
+          ))
+        )}
+      </StackedCards>
+      <DesktopOnly>
       <Table>
+        <TableCaption className="sr-only">{t("log.tab.api")}</TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead>ID</TableHead>
@@ -344,6 +455,7 @@ function APILogTable({ rows, t }: { rows: APILog[]; t: (k: string) => string }) 
           )}
         </TableBody>
       </Table>
-    </div>
+      </DesktopOnly>
+    </>
   )
 }

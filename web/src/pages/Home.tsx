@@ -1,6 +1,8 @@
+import { useI18n } from "@/lib/i18n"
 import { useAuth } from "@/lib/auth"
 
 export function HomePage() {
+  const { t } = useI18n()
   const { user } = useAuth()
   const displayName = user?.nickname || user?.username || "—"
   const initial = displayName.slice(0, 1).toUpperCase()
@@ -24,12 +26,12 @@ export function HomePage() {
       </div>
       <dl className="mt-6 grid gap-3 text-sm">
         <div className="flex justify-between gap-4 border-t pt-3">
-          <dt className="text-muted-foreground">用户名</dt>
+          <dt className="text-muted-foreground">{t("home.username")}</dt>
           <dd>{user?.username || "—"}</dd>
         </div>
         <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">手机号</dt>
-          <dd>{user?.phone || "未绑定"}</dd>
+          <dt className="text-muted-foreground">{t("home.phone")}</dt>
+          <dd>{user?.phone || t("home.unbound")}</dd>
         </div>
       </dl>
     </section>

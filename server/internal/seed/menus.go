@@ -39,16 +39,17 @@ func webNavSeeds() []navSeed {
 }
 
 func ensureNavMenus(db *gorm.DB) error {
-	if err := upsertNavTable(db, "admin_menus", adminNavSeeds()); err != nil {
+	if err := upsertNavAudience(db, models.NavAudienceAdmin, adminNavSeeds()); err != nil {
 		return err
 	}
-	return upsertNavTable(db, "web_menus", webNavSeeds())
+	return upsertNavAudience(db, models.NavAudienceWeb, webNavSeeds())
 }
 
-func upsertNavTable(db *gorm.DB, table string, seeds []navSeed) error {
+func upsertNavAudience(db *gorm.DB, audience string, seeds []navSeed) error {
 	ids := map[string]uint{}
 	for _, s := range seeds {
-		id, err := upsertNavRow(db, table, models.NavMenu{
+		id, err := upsertNavRow(db, models.NavMenu{
+			Audience:  audience,
 			Name:      s.Name,
 			Code:      s.Code,
 			PermCode:  s.PermCode,
@@ -72,18 +73,18 @@ func upsertNavTable(db *gorm.DB, table string, seeds []navSeed) error {
 			}
 			parentID = &pid
 		}
-		if err := db.Table(table).Where("id = ?", ids[s.Code]).Update("parent_id", parentID).Error; err != nil {
+		if err := db.Model(&models.NavMenu{}).Where("id = ?", ids[s.Code]).Update("parent_id", parentID).Error; err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func upsertNavRow(db *gorm.DB, table string, row models.NavMenu) (uint, error) {
+func upsertNavRow(db *gorm.DB, row models.NavMenu) (uint, error) {
 	var existing models.NavMenu
-	err := db.Table(table).Where("code = ?", row.Code).First(&existing).Error
+	err := db.Where("audience = ? AND code = ?", row.Audience, row.Code).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		if err := db.Table(table).Create(&row).Error; err != nil {
+		if err := db.Create(&row).Error; err != nil {
 			return 0, err
 		}
 		return row.ID, nil
@@ -91,7 +92,7 @@ func upsertNavRow(db *gorm.DB, table string, row models.NavMenu) (uint, error) {
 	if err != nil {
 		return 0, err
 	}
-	err = db.Table(table).Where("id = ?", existing.ID).Updates(map[string]any{
+	err = db.Model(&existing).Updates(map[string]any{
 		"name":       row.Name,
 		"perm_code":  row.PermCode,
 		"route_path": row.RoutePath,

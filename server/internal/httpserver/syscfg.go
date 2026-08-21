@@ -1,12 +1,14 @@
 package httpserver
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"go-react-shadcn/internal/models"
+	"go-react-shadcn/internal/secretbox"
 )
 
 func (a *App) httpClient() *http.Client {
@@ -17,11 +19,23 @@ func (a *App) httpClient() *http.Client {
 }
 
 func (a *App) sysValue(key string) string {
+	if v, ok := a.syscfg.get(key); ok {
+		return v
+	}
 	var cfg models.SysConfig
 	if err := a.DB.Where(`"key" = ?`, key).First(&cfg).Error; err != nil {
+		a.syscfg.put(key, "")
 		return ""
 	}
-	return strings.TrimSpace(cfg.Value)
+	value, err := secretbox.Open(a.Cfg.JWTSecret, cfg.Value)
+	if err != nil {
+		slog.Error("sys config decrypt failed", "key", cfg.Key, "error", err)
+		a.syscfg.put(key, "")
+		return ""
+	}
+	value = strings.TrimSpace(value)
+	a.syscfg.put(key, value)
+	return value
 }
 
 func configOn(value string) bool {
@@ -37,13 +51,37 @@ func (a *App) sysOn(key string, fallback bool) bool {
 	return configOn(raw)
 }
 
+func (a *App) warnSealedConfigs() {
+	if a == nil || a.DB == nil {
+		return
+	}
+	for _, key := range []string{"auth.google_client_secret", "mail.password"} {
+		var cfg models.SysConfig
+		if err := a.DB.Where(`"key" = ?`, key).First(&cfg).Error; err != nil {
+			continue
+		}
+		if !secretbox.IsSealed(cfg.Value) {
+			continue
+		}
+		if _, err := secretbox.Open(a.Cfg.JWTSecret, cfg.Value); err != nil {
+			slog.Error("sealed sys config cannot be decrypted", "key", key, "error", err)
+		}
+	}
+}
+
 func (a *App) captchaProvider() string {
 	p := strings.ToLower(a.sysValue("auth.captcha_provider"))
 	switch p {
 	case "none", "image", "recaptcha", "turnstile":
+		if p == "none" && !a.Cfg.DevMode {
+			return "image"
+		}
 		return p
 	}
 	if a.sysOn("app.captcha_enabled", true) {
+		return "image"
+	}
+	if !a.Cfg.DevMode {
 		return "image"
 	}
 	return "none"

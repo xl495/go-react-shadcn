@@ -1,4 +1,4 @@
-export { ApiError, getToken, setToken, setUnauthorizedHandler } from "./http"
+export { ApiError, getToken, setToken, setUnauthorizedHandler, isSessionExpired } from "./http"
 import { authApi } from "./auth"
 import { usersApi } from "./users"
 import { rolesApi } from "./roles"

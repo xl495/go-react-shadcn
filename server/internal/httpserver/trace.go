@@ -27,8 +27,8 @@ func traceID(c *gin.Context) string {
 
 func (a *App) traceMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id := c.GetHeader("X-Trace-Id")
-		if id == "" {
+		id := strings.TrimSpace(c.GetHeader("X-Trace-Id"))
+		if _, err := uuid.Parse(id); err != nil {
 			id = uuid.NewString()
 		}
 		c.Set(ctxTraceKey, id)
@@ -56,6 +56,73 @@ func peekBody(r io.ReadCloser, max int) (string, io.ReadCloser) {
 	return truncateText(string(raw), max), rest
 }
 
+func sensitiveAuthPath(path string) bool {
+	switch path {
+	case "/api/v1/auth/login", "/api/v1/auth/google", "/api/v1/auth/password",
+		"/api/v1/auth/reset-password", "/api/v1/auth/forgot-password":
+		return true
+	default:
+		return false
+	}
+}
+
+var secretJSONKeys = map[string]struct{}{
+	"password": {}, "oldpassword": {}, "newpassword": {}, "idtoken": {},
+	"captchatoken": {}, "captchacode": {}, "token": {}, "secret": {},
+	"clientsecret": {}, "authorization": {},
+}
+
+func redactRequestBody(path, raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	if redacted, ok := redactJSONSecrets(raw); ok {
+		return redacted
+	}
+	if sensitiveAuthPath(path) {
+		return "[redacted]"
+	}
+	return raw
+}
+
+func redactJSONSecrets(raw string) (string, bool) {
+	var v any
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		return raw, false
+	}
+	redactJSONValue(v)
+	out, err := json.Marshal(v)
+	if err != nil {
+		return "[redacted]", true
+	}
+	return string(out), true
+}
+
+func redactJSONValue(v any) {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, child := range t {
+			if isSecretJSONKey(k) {
+				if child != nil && child != "" {
+					t[k] = "********"
+				}
+				continue
+			}
+			redactJSONValue(child)
+		}
+	case []any:
+		for _, child := range t {
+			redactJSONValue(child)
+		}
+	}
+}
+
+func isSecretJSONKey(k string) bool {
+	n := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(k, "_", ""), "-", ""))
+	_, ok := secretJSONKeys[n]
+	return ok
+}
+
 func (a *App) logAPIRequests() gin.HandlerFunc {
 	const maxBody = 4096
 	return func(c *gin.Context) {
@@ -71,7 +138,9 @@ func (a *App) logAPIRequests() gin.HandlerFunc {
 
 		var reqBody string
 		if c.Request.Body != nil && c.Request.Method != http.MethodGet {
-			reqBody, c.Request.Body = peekBody(c.Request.Body, maxBody)
+			raw, rest := peekBody(c.Request.Body, maxBody)
+			c.Request.Body = rest
+			reqBody = redactRequestBody(path, raw)
 		}
 		c.Next()
 
@@ -106,21 +175,26 @@ func truncateText(s string, n int) string {
 }
 
 func (a *App) recordLoginLog(c *gin.Context, username, status, failReason string) {
-	_ = a.DB.Create(&models.LoginLog{
+	row := models.LoginLog{
 		Username:   username,
 		IP:         c.ClientIP(),
 		UserAgent:  truncateText(c.GetHeader("User-Agent"), 512),
 		Location:   a.lookupLocation(c.ClientIP()),
 		Status:     status,
 		FailReason: failReason,
-	}).Error
+	}
+	if a.apiLogs != nil {
+		a.apiLogs.enqueueLogin(row)
+		return
+	}
+	_ = a.DB.Create(&row).Error
 }
 
 func (a *App) lookupLocation(ip string) string {
 	if ip == "" || ip == "127.0.0.1" || ip == "::1" {
 		return "local"
 	}
-	return "unknown"
+	return ""
 }
 
 func (a *App) purgeOldLogs(retentionDays int) error {

@@ -12,32 +12,41 @@ import (
 	"time"
 
 	"go-react-shadcn/internal/config"
+	"go-react-shadcn/internal/migrate"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/seed"
 	"go-react-shadcn/internal/store"
 )
 
 type envelope struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data"`
+	Code      int             `json:"code"`
+	Message   string          `json:"message"`
+	Data      json.RawMessage `json:"data"`
+	ErrorCode int             `json:"errorCode"`
 }
 
 func testApp(t *testing.T) *App {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := store.Open(filepath.Join(dir, "test.db"))
+	path := filepath.Join(dir, "test.db")
+	if err := migrate.Up(path); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	db, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	cfg := config.Config{
-		Port:         "0",
-		DatabasePath: filepath.Join(dir, "test.db"),
-		JWTSecret:    "test-secret",
-		JWTTTL:       time.Hour,
-		CaptchaDebug: false,
-		CORSOrigin:   "http://localhost:5173",
-		UploadDir:    filepath.Join(dir, "uploads"),
+		DevMode:       true,
+		Port:          "0",
+		DatabasePath:  path,
+		JWTSecret:     "test-secret",
+		JWTTTL:        time.Hour,
+		CaptchaDebug:  false,
+		CORSOrigin:    "http://localhost:5173",
+		UploadDir:     filepath.Join(dir, "uploads"),
+		APILogEnabled: true,
+		APILogSample:  1,
 	}
 	app, err := New(cfg, db)
 	if err != nil {
@@ -376,7 +385,12 @@ func TestAssigningPermissionChangesCasbinEnforce(t *testing.T) {
 	app := testApp(t)
 	adminTok := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
 
-	before, err := app.Enforcer.Enforce(seed.ViewerUsername, "/api/v1/users", "GET")
+	var viewerUser models.User
+	if err := app.DB.Where("username = ?", seed.ViewerUsername).First(&viewerUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	sub := seed.CasbinSub(models.UserKindAdmin, viewerUser.ID)
+	before, err := app.Enforcer.Enforce(sub, "/api/v1/users", "GET")
 	if err != nil {
 		t.Fatalf("enforce before: %v", err)
 	}
@@ -413,32 +427,24 @@ func TestAssigningPermissionChangesCasbinEnforce(t *testing.T) {
 	}
 	roles := decodeRolePage(t, rolesResp)
 	var viewer roleDTO
-	var meID, dashID uint
 	for _, r := range roles {
 		if r.Code == seed.RoleViewer {
 			viewer = r
-			for _, p := range r.Permissions {
-				switch p.Code {
-				case "me:read":
-					meID = p.ID
-				case "dashboard:read":
-					dashID = p.ID
-				}
-			}
+			break
 		}
 	}
-	if viewer.ID == 0 || meID == 0 || dashID == 0 {
+	if viewer.ID == 0 || len(viewer.PermissionIDs) == 0 {
 		t.Fatalf("missing viewer seed perms: %+v", viewer)
 	}
 
 	assign := doJSON(t, app, http.MethodPut, "/api/v1/roles/"+itoa(viewer.ID)+"/permissions", adminTok, map[string]any{
-		"permissionIds": []uint{meID, dashID, perm.ID},
+		"permissionIds": append(append([]uint{}, viewer.PermissionIDs...), perm.ID),
 	})
 	if assign.Code != http.StatusOK {
 		t.Fatalf("assign status=%d body=%s", assign.Code, assign.Body.String())
 	}
 
-	after, err := app.Enforcer.Enforce(seed.ViewerUsername, "/api/v1/users", "GET")
+	after, err := app.Enforcer.Enforce(sub, "/api/v1/users", "GET")
 	if err != nil {
 		t.Fatalf("enforce after: %v", err)
 	}
@@ -481,7 +487,7 @@ func TestOperatorButtonPermissions(t *testing.T) {
 	}
 	created := doJSON(t, app, http.MethodPost, "/api/v1/users", token, map[string]any{
 		"username": "tmp-op",
-		"password": "tmp-op-pass",
+		"password": "tmp-op-pass1",
 		"roleIds":  []uint{},
 	})
 	if created.Code != http.StatusOK {
@@ -648,7 +654,7 @@ func TestUserFieldsBoundToDict(t *testing.T) {
 	gender := lookupDictValues(t, app, admin, seed.DictGender)
 	status := lookupDictValues(t, app, admin, seed.DictUserStatus)
 	dept := lookupDictValues(t, app, admin, seed.DictDepartment)
-	if len(gender) < 2 || len(status) < 2 || len(dept) < 3 {
+	if len(gender) < 2 || len(status) < 2 || !dept["hq"] || !dept["tech"] || !dept["ops"] || !dept["market"] {
 		t.Fatalf("seeded user dicts incomplete gender=%v status=%v dept=%v", gender, status, dept)
 	}
 
@@ -692,6 +698,13 @@ func TestUserFieldsBoundToDict(t *testing.T) {
 	})
 	if bad.Code != http.StatusBadRequest {
 		t.Fatalf("invalid gender should 400, got %d %s", bad.Code, bad.Body.String())
+	}
+
+	badDept := doJSON(t, app, http.MethodPut, "/api/v1/auth/profile", admin, map[string]string{
+		"nickname": "x", "gender": "male", "department": "no-such-dept",
+	})
+	if badDept.Code != http.StatusBadRequest || decodeEnv(t, badDept).ErrorCode != CodeInvalidDept {
+		t.Fatalf("invalid department: %d %s", badDept.Code, badDept.Body.String())
 	}
 
 	okUpd := doJSON(t, app, http.MethodPut, "/api/v1/auth/profile", admin, map[string]string{

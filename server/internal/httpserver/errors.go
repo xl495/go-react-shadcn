@@ -1,8 +1,10 @@
 package httpserver
 
-// Application error codes. HTTP status is separate; these go in JSON "code".
+// Application error codes. HTTP status is separate.
+// JSON "code" is 0 (ok) or 1 (error). These values go in JSON "errorCode".
 const (
-	CodeOK = 0
+	CodeOK   = 0
+	CodeFail = 1
 
 	CodeInvalidBody        = 40001
 	CodeCaptchaRequired    = 40002
@@ -16,11 +18,15 @@ const (
 	CodeInvalidAssignBody  = 40014
 	CodeInvalidDictValue   = 40015
 	CodePasswordTooShort   = 40016
+	CodePasswordWeak       = 40017
+	CodePasswordSameAsUser = 40018
+	CodePasswordSeed       = 40019
 	CodeRoleNameRequired   = 40020
 	CodeInvalidPermIDs     = 40021
 	CodeInvalidRoleBody    = 40022
 	CodeCannotDeleteRole   = 40023
 	CodeInvalidRolePerms   = 40024
+	CodeInvalidDataScope   = 40025
 	CodePermRequired       = 40030
 	CodeInvalidPermBody    = 40031
 	CodeProfileBody        = 40040
@@ -47,6 +53,9 @@ const (
 	CodeDeptRequired       = 40090
 	CodeInvalidDeptBody    = 40091
 	CodeDeptHasChildren    = 40092
+	CodeDeptHasUsers       = 40093
+	CodeDeptCycle          = 40094
+	CodeInvalidDept        = 40095
 
 	CodeMissingToken          = 40101
 	CodeInvalidToken          = 40102
@@ -59,7 +68,12 @@ const (
 	CodeWrongClient            = 40312
 	CodeGoogleRegisterDisabled = 40313
 	CodeGoogleAccountConflict  = 40314
+	CodeSeedPassword           = 40316
+	CodeRegisterDisabled       = 40317
+	CodeEmailUnverified        = 40318
+	CodePrivilegedRole         = 40319
 
+	CodeRouteNotFound        = 40400
 	CodeUserMissingMe        = 40401
 	CodeUserNotFound         = 40410
 	CodeRoleNotFound         = 40420
@@ -72,6 +86,7 @@ const (
 	CodeDeptNotFound         = 40490
 
 	CodeUserExists   = 40910
+	CodeEmailExists  = 40911
 	CodeRoleExists   = 40920
 	CodePermExists   = 40930
 	CodeDictExists   = 40960
@@ -79,9 +94,14 @@ const (
 	CodeConfigExists = 40970
 	CodeDeptExists   = 40990
 
+	CodeMethodNotAllowed = 40500
+
 	CodeLoginRateLimited  = 42901
 	CodeForgotRateLimited = 42902
+	CodeUnsubRateLimited  = 42903
+	CodeVerifyRateLimited = 42904
 
+	CodeInternal        = 50000
 	CodeCasbinCheck     = 50001
 	CodeCaptchaIssue    = 50002
 	CodeTokenIssue      = 50003

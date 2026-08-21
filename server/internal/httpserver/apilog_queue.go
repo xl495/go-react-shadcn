@@ -11,32 +11,36 @@ import (
 
 type apiLogQueue struct {
 	db      *gorm.DB
-	ch      chan models.APILog
+	api     chan models.APILog
+	op      chan models.OpLog
+	login   chan models.LoginLog
+	flushCh chan chan struct{}
 	enabled bool
-	sampleN uint64
+	sampleN uint64 // set from a clamped positive int sample rate
 	counter atomic.Uint64
+	dropped atomic.Uint64
 	stop    chan struct{}
 	done    chan struct{}
 	flushMu sync.Mutex
 }
 
 func newAPILogQueue(db *gorm.DB, enabled bool, sampleN int) *apiLogQueue {
-	if sampleN < 1 {
-		sampleN = 1
+	n := uint64(1)
+	if sampleN > 1 {
+		n = uint64(sampleN) //nolint:gosec // sample rate comes from config, always a small positive int
 	}
 	q := &apiLogQueue{
 		db:      db,
-		ch:      make(chan models.APILog, 256),
+		api:     make(chan models.APILog, 256),
+		op:      make(chan models.OpLog, 256),
+		login:   make(chan models.LoginLog, 256),
+		flushCh: make(chan chan struct{}, 8),
 		enabled: enabled,
-		sampleN: uint64(sampleN),
+		sampleN: n,
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
 	}
-	if enabled {
-		go q.loop()
-	} else {
-		close(q.done)
-	}
+	go q.loop()
 	return q
 }
 
@@ -49,9 +53,34 @@ func (q *apiLogQueue) enqueue(row models.APILog) {
 		return
 	}
 	select {
-	case q.ch <- row:
+	case q.api <- row:
 	default:
-		// drop under backpressure
+		q.dropped.Add(1)
+		_ = q.db.Create(&row).Error
+	}
+}
+
+func (q *apiLogQueue) enqueueOp(row models.OpLog) {
+	if q == nil {
+		return
+	}
+	select {
+	case q.op <- row:
+	default:
+		q.dropped.Add(1)
+		_ = q.db.Create(&row).Error
+	}
+}
+
+func (q *apiLogQueue) enqueueLogin(row models.LoginLog) {
+	if q == nil {
+		return
+	}
+	select {
+	case q.login <- row:
+	default:
+		q.dropped.Add(1)
+		_ = q.db.Create(&row).Error
 	}
 }
 
@@ -59,55 +88,95 @@ func (q *apiLogQueue) loop() {
 	defer close(q.done)
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
-	buf := make([]models.APILog, 0, 32)
+	apis := make([]models.APILog, 0, 32)
+	ops := make([]models.OpLog, 0, 32)
+	logins := make([]models.LoginLog, 0, 32)
 	flush := func() {
-		if len(buf) == 0 {
-			return
-		}
 		q.flushMu.Lock()
-		_ = q.db.Create(&buf).Error
-		q.flushMu.Unlock()
-		buf = buf[:0]
+		defer q.flushMu.Unlock()
+		if len(apis) > 0 {
+			_ = q.db.Create(&apis).Error
+			apis = apis[:0]
+		}
+		if len(ops) > 0 {
+			_ = q.db.Create(&ops).Error
+			ops = ops[:0]
+		}
+		if len(logins) > 0 {
+			_ = q.db.Create(&logins).Error
+			logins = logins[:0]
+		}
+	}
+	drain := func() {
+		for {
+			select {
+			case row := <-q.api:
+				apis = append(apis, row)
+			case row := <-q.op:
+				ops = append(ops, row)
+			case row := <-q.login:
+				logins = append(logins, row)
+			default:
+				flush()
+				return
+			}
+		}
 	}
 	for {
 		select {
-		case row := <-q.ch:
-			buf = append(buf, row)
-			if len(buf) >= 32 {
+		case row := <-q.api:
+			apis = append(apis, row)
+			if len(apis) >= 32 {
+				flush()
+			}
+		case row := <-q.op:
+			ops = append(ops, row)
+			if len(ops) >= 32 {
+				flush()
+			}
+		case row := <-q.login:
+			logins = append(logins, row)
+			if len(logins) >= 32 {
 				flush()
 			}
 		case <-ticker.C:
 			flush()
+		case done := <-q.flushCh:
+			drain()
+			close(done)
 		case <-q.stop:
-			for {
-				select {
-				case row := <-q.ch:
-					buf = append(buf, row)
-				default:
-					flush()
-					return
-				}
-			}
+			drain()
+			return
 		}
 	}
 }
 
+func (q *apiLogQueue) droppedCount() uint64 {
+	if q == nil {
+		return 0
+	}
+	return q.dropped.Load()
+}
+
 func (q *apiLogQueue) Flush() {
-	if q == nil || !q.enabled {
+	if q == nil {
 		return
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(q.ch) == 0 {
-			time.Sleep(250 * time.Millisecond)
-			return
+	done := make(chan struct{})
+	select {
+	case <-q.stop:
+		return
+	case q.flushCh <- done:
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
 		}
-		time.Sleep(50 * time.Millisecond)
+	case <-time.After(2 * time.Second):
 	}
 }
 
 func (q *apiLogQueue) Stop() {
-	if q == nil || !q.enabled {
+	if q == nil {
 		return
 	}
 	select {

@@ -8,6 +8,8 @@ export const configsApi = {
     request<SysConfig>("/api/v1/configs", { method: "POST", body: JSON.stringify(body) }),
   updateConfig: (id: number, body: { value?: string; name?: string; group?: string; remark?: string }) =>
     request<SysConfig>(`/api/v1/configs/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  batchConfigs: (items: Array<{ id?: number; key?: string; value?: string; name?: string; group?: string; remark?: string }>) =>
+    request<{ saved: number }>("/api/v1/configs/batch", { method: "PUT", body: JSON.stringify({ items }) }),
   deleteConfig: (id: number) =>
     request<{ deleted: number }>(`/api/v1/configs/${id}`, { method: "DELETE" }),
   testMail: (to: string) =>

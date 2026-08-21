@@ -4,7 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>Latch</title>
+    <title>gra</title>
+    <script>
+      (function () {
+        try {
+          var loc = localStorage.getItem("latch.web.locale")
+          if (loc === "en" || loc === "zh-CN") document.documentElement.lang = loc
+          var t = localStorage.getItem("latch.theme") || "system"
+          var dark =
+            t === "dark" || (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+          if (dark) {
+            document.documentElement.classList.add("dark")
+            document.documentElement.style.colorScheme = "dark"
+          } else {
+            document.documentElement.style.colorScheme = "light"
+          }
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

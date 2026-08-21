@@ -13,7 +13,22 @@ export class ApiError extends Error {
   }
 }
 
-type Envelope<T> = { code: number; message: string; data?: T }
+export function isSessionExpired(err: unknown) {
+  return err instanceof ApiError && (err.code === 40101 || err.code === 40102)
+}
+
+type Envelope<T> = { code: number; message: string; data?: T; errorCode?: number }
+
+type UnauthorizedHandler = () => void
+let onUnauthorized: UnauthorizedHandler | null = null
+
+export function setUnauthorizedHandler(fn: UnauthorizedHandler | null) {
+  onUnauthorized = fn
+}
+
+function localeHeaders() {
+  return localStorage.getItem("latch.web.locale") || navigator.language || "zh-CN"
+}
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -39,32 +54,90 @@ export function writeStoredUser(user: User | null) {
   else localStorage.removeItem(USER_KEY)
 }
 
+const REQUEST_TIMEOUT_MS = 12_000
+
+function abortAfter(ms: number, parent?: AbortSignal) {
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), ms)
+  const onParent = () => ctrl.abort()
+  parent?.addEventListener("abort", onParent)
+  return {
+    signal: ctrl.signal,
+    cancel() {
+      window.clearTimeout(timer)
+      parent?.removeEventListener("abort", onParent)
+    },
+  }
+}
+
+function timeoutError() {
+  const zh = (localeHeaders() || "").toLowerCase().startsWith("zh")
+  return new ApiError(408, 40801, zh ? "请求超时，请稍后重试" : "Request timed out. Try again.")
+}
+
+function isAbort(err: unknown) {
+  return err instanceof DOMException && err.name === "AbortError"
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
+  const locale = localeHeaders()
   headers.set("Accept", "application/json")
-  headers.set("Accept-Language", "zh-CN")
-  headers.set("X-Locale", "zh-CN")
+  headers.set("Accept-Language", locale)
+  headers.set("X-Locale", locale)
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json")
   }
   const token = getToken()
   if (token) headers.set("Authorization", `Bearer ${token}`)
-  const res = await fetch(path, { ...init, headers })
-  let json: Envelope<T>
+  const timeout = abortAfter(REQUEST_TIMEOUT_MS, init.signal ?? undefined)
   try {
-    json = (await res.json()) as Envelope<T>
-  } catch {
-    throw new ApiError(res.status, -1, "invalid response")
+    const res = await fetch(path, { ...init, headers, signal: timeout.signal })
+    const text = await res.text()
+    let json: Envelope<T>
+    try {
+      json = text ? (JSON.parse(text) as Envelope<T>) : { code: res.ok ? 0 : 1, message: res.statusText }
+    } catch {
+      throw new ApiError(res.status, 1, text.trim() || res.statusText || "request failed")
+    }
+    if (!res.ok || json.code !== 0) {
+      const err = new ApiError(res.status, json.errorCode ?? json.code ?? 1, json.message || "request failed")
+      if (token && getToken() === token && isSessionExpired(err)) {
+        onUnauthorized?.()
+      }
+      throw err
+    }
+    return json.data as T
+  } catch (err) {
+    if (isAbort(err)) throw timeoutError()
+    throw err
+  } finally {
+    timeout.cancel()
   }
-  if (!res.ok || json.code !== 0) {
-    throw new ApiError(res.status, json.code, json.message || "request failed")
-  }
-  return json.data as T
 }
 
 export const api = {
   captcha: () => request<CaptchaChallenge>("/api/v1/auth/captcha"),
   settings: () => request<AuthSettings>("/api/v1/auth/settings"),
+  register: (body: {
+    username: string
+    email: string
+    password: string
+    captchaId?: string
+    captchaCode?: string
+    captchaToken?: string
+    captchaVersion?: string
+    client?: string
+  }) =>
+    request<LoginResult | { pending: boolean; email: string }>("/api/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ ...body, client: body.client ?? "web" }),
+    }),
+  verifyEmail: (body: { token: string }) =>
+    request<LoginResult>("/api/v1/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   login: (body: {
     username: string
     password: string
@@ -90,8 +163,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  logout: () => request<{ loggedOut: boolean }>("/api/v1/auth/logout", { method: "POST" }),
   forgotPassword: (body: {
     email: string
+    client?: string
     captchaId?: string
     captchaCode?: string
     captchaToken?: string
@@ -99,7 +174,7 @@ export const api = {
   }) =>
     request<{ sent: boolean }>("/api/v1/auth/forgot-password", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, client: body.client ?? "web" }),
     }),
   resetPassword: (body: { token: string; newPassword: string }) =>
     request<{ reset: boolean }>("/api/v1/auth/reset-password", {

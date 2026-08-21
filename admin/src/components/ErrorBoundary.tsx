@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/providers/i18n"
 
 type Props = {
   children: ReactNode
@@ -9,6 +10,19 @@ type Props = {
 
 type State = {
   error: Error | null
+}
+
+function ErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  const { t } = useI18n()
+  return (
+    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 p-8 text-center">
+      <p className="text-sm font-medium">{t("errors.crashTitle")}</p>
+      <p className="max-w-md text-xs text-muted-foreground">{error.message}</p>
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+        {t("errors.crashRetry")}
+      </Button>
+    </div>
+  )
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -26,9 +40,11 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidMount() {
     const hot = import.meta.hot
     if (!hot) return
-    this.disposeHot = hot.on("vite:beforeUpdate", () => {
+    const reset = () => {
       if (this.state.error) this.setState({ error: null })
-    })
+    }
+    hot.on("vite:beforeUpdate", reset)
+    this.disposeHot = undefined
   }
 
   componentWillUnmount() {
@@ -49,13 +65,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return this.props.fallback
     }
     return (
-      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-sm font-medium">Something went wrong.</p>
-        <p className="max-w-md text-xs text-muted-foreground">{this.state.error.message}</p>
-        <Button type="button" variant="outline" size="sm" onClick={() => this.setState({ error: null })}>
-          Retry
-        </Button>
-      </div>
+      <ErrorFallback error={this.state.error} onRetry={() => this.setState({ error: null })} />
     )
   }
 }

@@ -24,17 +24,16 @@ type menuNode struct {
 }
 
 func (a *App) handleMenus(c *gin.Context) {
-	a.respondNavMenus(c, "admin_menus")
+	a.respondNavMenus(c, models.NavAudienceAdmin)
 }
 
 func (a *App) handleWebMenus(c *gin.Context) {
-	a.respondNavMenus(c, "web_menus")
+	a.respondNavMenus(c, models.NavAudienceWeb)
 }
 
-func (a *App) respondNavMenus(c *gin.Context, table string) {
-	claims := currentUser(c)
-	var user models.User
-	if err := a.DB.Preload("Roles.Permissions").First(&user, claims.UserID).Error; err != nil {
+func (a *App) respondNavMenus(c *gin.Context, audience string) {
+	user, _, err := a.currentAccount(c)
+	if err != nil {
 		fail(c, http.StatusNotFound, 40401, "user not found")
 		return
 	}
@@ -42,7 +41,7 @@ func (a *App) respondNavMenus(c *gin.Context, table string) {
 	isAdmin := hasRole(user.Roles, "admin") || containsCode(codes, "admin:all") || containsCode(codes, "*")
 
 	var rows []models.NavMenu
-	if err := a.DB.Table(table).Where("status = ?", "active").Order("sort asc, id asc").Find(&rows).Error; err != nil {
+	if err := a.DB.Where("audience = ? AND status = ?", audience, "active").Order("sort asc, id asc").Find(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeListMenus, "failed to list menus")
 		return
 	}
@@ -136,35 +135,77 @@ func (a *App) userDataScope(user models.User) string {
 	return scope
 }
 
-func (a *App) applyUserDataScope(q *gorm.DB, user models.User) *gorm.DB {
+func (a *App) applyUserDataScope(q *gorm.DB, user models.User, kind string) *gorm.DB {
 	scope := a.userDataScope(user)
+	kind = models.NormalizeUserKind(kind)
+	tbl := models.AccountTable(kind)
 	switch scope {
 	case models.DataScopeAll:
 		return q
 	case models.DataScopeSelf:
-		return q.Where("id = ?", user.ID)
+		if models.NormalizeUserKind(user.Kind) != kind {
+			return q.Where("1 = 0")
+		}
+		return q.Where(tbl+".id = ?", user.ID)
 	case models.DataScopeDept:
 		if user.DepartmentID == nil {
-			return q.Where("id = ?", user.ID)
+			return q.Where(tbl+".id = ?", user.ID)
 		}
-		return q.Where("department_id = ?", *user.DepartmentID)
+		return q.Where(tbl+".department_id = ?", *user.DepartmentID)
 	case models.DataScopeDeptAndSub:
 		if user.DepartmentID == nil {
-			return q.Where("id = ?", user.ID)
+			return q.Where(tbl+".id = ?", user.ID)
 		}
 		ids := a.deptSubtreeIDs(*user.DepartmentID)
 		if len(ids) == 0 {
-			return q.Where("department_id = ?", *user.DepartmentID)
+			return q.Where(tbl+".department_id = ?", *user.DepartmentID)
 		}
-		return q.Where("department_id IN ?", ids)
+		return q.Where(tbl+".department_id IN ?", ids)
 	default:
-		return q.Where("id = ?", user.ID)
+		return q.Where(tbl+".id = ?", user.ID)
 	}
 }
 
+func (a *App) loadActor(c *gin.Context) (models.User, bool) {
+	user, _, err := a.currentAccount(c)
+	if err != nil {
+		fail(c, http.StatusUnauthorized, 40101, "missing bearer token")
+		return models.User{}, false
+	}
+	return user, true
+}
+
+func (a *App) loadUserInScope(c *gin.Context, id string, _ ...string) (models.User, bool) {
+	kind := strings.TrimSpace(c.Query("kind"))
+	if kind != "" && kind != models.UserKindAdmin && kind != models.UserKindWeb {
+		fail(c, http.StatusBadRequest, CodeInvalidUserBody, "invalid user kind")
+		return models.User{}, false
+	}
+	if kind == "" {
+		kind = models.UserKindAdmin
+	}
+	actor, ok := a.loadActor(c)
+	if !ok {
+		return models.User{}, false
+	}
+	q := a.applyUserDataScope(a.accounts(kind), actor, kind)
+	var user models.User
+	if err := q.First(&user, id).Error; err != nil {
+		fail(c, http.StatusNotFound, 40410, "user not found")
+		return models.User{}, false
+	}
+	if err := models.AttachRoles(a.DB, kind, &user); err != nil {
+		fail(c, http.StatusNotFound, 40410, "user not found")
+		return models.User{}, false
+	}
+	return user, true
+}
+
 func (a *App) deptSubtreeIDs(root uint) []uint {
-	var rows []models.Department
-	_ = a.DB.Find(&rows).Error
+	rows, err := a.loadDepartments()
+	if err != nil {
+		return []uint{root}
+	}
 	out := []uint{root}
 	var walk func(id uint)
 	walk = func(id uint) {

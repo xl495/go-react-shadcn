@@ -50,7 +50,7 @@ export function detectLocale(): Locale {
 
 export function applyLocale(locale: Locale, catalog?: Record<string, unknown>) {
   document.documentElement.lang = LOCALE_META[locale].html
-  document.title = (catalog ? lookup(catalog, "app.title") : undefined) ?? "Latch"
+  document.title = (catalog ? lookup(catalog, "app.title") : undefined) ?? "gra"
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
@@ -111,9 +111,10 @@ export function useT() {
 
 export function translateApiError(err: unknown, t: I18nState["t"]) {
   if (err instanceof ApiError) {
+    if (err.message) return err.message
     const mapped = t(`errors.${err.code}`)
     if (mapped !== `errors.${err.code}`) return mapped
-    return err.message || t("errors.fallback")
+    return t("errors.fallback")
   }
   if (err instanceof Error && err.message) return err.message
   return t("errors.fallback")

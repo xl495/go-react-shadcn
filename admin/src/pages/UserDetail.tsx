@@ -1,8 +1,11 @@
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { DICT, useDict } from "@/hooks/dict"
 import { formatDateTime } from "@/utils/format"
 import { roleLabel, translateApiError, useI18n } from "@/providers/i18n"
-import { useUser } from "@/hooks/queries"
+import { useRevokeUser, useRevokeUserSession, useUser, useUserSessions } from "@/hooks/queries"
+import { toast } from "sonner"
+import { Can } from "@/components/auth/Can"
+import { P } from "@/constants/perms"
 import { Avatar } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,12 +14,17 @@ import { PageFallback } from "@/components/PageFallback"
 
 export function UserDetailPage() {
   const { id } = useParams()
+  const [params] = useSearchParams()
   const { t } = useI18n()
   const genderDict = useDict(DICT.gender)
   const statusDict = useDict(DICT.userStatus)
   const deptDict = useDict(DICT.department)
   const userId = Number(id)
-  const { data: user, error, isLoading } = useUser(userId)
+  const kind = params.get("kind") === "web" ? "web" : "admin"
+  const { data: user, error, isLoading } = useUser(userId, kind)
+  const { data: sessions } = useUserSessions(userId, kind)
+  const revokeUser = useRevokeUser()
+  const revokeSession = useRevokeUserSession()
 
   if (!userId) {
     return <p className="text-sm text-destructive">{t("errors.40410")}</p>
@@ -29,9 +37,27 @@ export function UserDetailPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold tracking-tight">{t("users.detail")}</h2>
-        <Button asChild variant="outline" size="sm">
-          <Link to={user.kind === "web" ? "/web-users" : "/users"}>{t("users.backToList")}</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Can perm={P.userRevoke}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                revokeUser.mutate(
+                  { id: user.id, kind },
+                  {
+                    onSuccess: () => toast.success(t("app.saved")),
+                  },
+                )
+              }
+            >
+              {t("users.forceLogout")}
+            </Button>
+          </Can>
+          <Button asChild variant="outline" size="sm">
+            <Link to={user.kind === "web" ? "/web-users" : "/users"}>{t("users.backToList")}</Link>
+          </Button>
+        </div>
       </div>
       <Card>
         <CardHeader className="flex flex-row items-center gap-4">
@@ -90,6 +116,46 @@ export function UserDetailPage() {
           </CardContent>
         </Card>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t("users.sessions")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {(sessions ?? []).length === 0 ? (
+            <p className="text-muted-foreground">—</p>
+          ) : (
+            (sessions ?? []).map((row) => (
+              <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 last:border-0">
+                <div className="min-w-0">
+                  <p className="font-medium">{row.ip || "—"}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {row.userAgent || "—"} · {formatDateTime(row.createdAt)}
+                    {row.revokedAt ? ` · ${t("users.sessionRevoked")}` : ""}
+                  </p>
+                </div>
+                {!row.revokedAt ? (
+                  <Can perm={P.userSessionRevoke}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        revokeSession.mutate(
+                          { id: user.id, sid: row.id, kind },
+                          {
+                            onSuccess: () => toast.success(t("app.saved")),
+                          },
+                        )
+                      }
+                    >
+                      {t("users.kickSession")}
+                    </Button>
+                  </Can>
+                ) : null}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -15,14 +15,15 @@ import (
 var ErrCannotRetry = errors.New("job cannot be retried")
 
 type Queue struct {
-	DB      *gorm.DB
-	sender  Sender
-	Secret  string
-	poke    chan struct{}
-	stop    chan struct{}
-	done    chan struct{}
-	running atomic.Bool
-	mu      sync.Mutex
+	DB        *gorm.DB
+	sender    Sender
+	Secret    string
+	ConfigKey string
+	poke      chan struct{}
+	stop      chan struct{}
+	done      chan struct{}
+	running   atomic.Bool
+	mu        sync.Mutex
 }
 
 func NewQueue(db *gorm.DB, sender Sender, secret string) *Queue {
@@ -48,7 +49,7 @@ func (q *Queue) senderOrSMTP() Sender {
 	if q.sender != nil {
 		return q.sender
 	}
-	return &SMTP{DB: q.DB}
+	return &SMTP{DB: q.DB, Key: q.ConfigKey}
 }
 
 func (q *Queue) Poke() {
@@ -85,7 +86,7 @@ func (q *Queue) Run() {
 	ticker := time.NewTicker(defaultTick)
 	defer ticker.Stop()
 	for {
-		cfg, _ := Load(q.DB)
+		cfg, _ := Load(q.DB, q.ConfigKey)
 		d := cfg.WorkerTick
 		if d < 200*time.Millisecond {
 			d = defaultTick
@@ -95,13 +96,36 @@ func (q *Queue) Run() {
 		case <-q.stop:
 			return
 		case <-q.poke:
-			q.ProcessCampaigns(time.Now())
-			q.ProcessAvailable(time.Now(), 32)
+			now := time.Now()
+			q.ReclaimStuck(now)
+			q.ProcessCampaigns(now)
+			q.ProcessAvailable(now, 32)
 		case <-ticker.C:
-			q.ProcessCampaigns(time.Now())
-			q.ProcessAvailable(time.Now(), 32)
+			now := time.Now()
+			q.ReclaimStuck(now)
+			q.ProcessCampaigns(now)
+			q.ProcessAvailable(now, 32)
 		}
 	}
+}
+
+const stuckSendingAfter = 5 * time.Minute
+
+func (q *Queue) ReclaimStuck(now time.Time) int {
+	if q == nil || q.DB == nil {
+		return 0
+	}
+	res := q.DB.Model(&models.MailJob{}).
+		Where("status = ? AND updated_at < ?", models.MailStatusSending, now.Add(-stuckSendingAfter)).
+		Updates(map[string]any{
+			"status":     models.MailStatusQueued,
+			"last_error": "reclaimed stuck sending",
+			"send_after": now,
+		})
+	if res.Error != nil || res.RowsAffected == 0 {
+		return 0
+	}
+	return int(res.RowsAffected)
 }
 
 type EnqueueInput struct {
@@ -133,7 +157,7 @@ func (q *Queue) Enqueue(in EnqueueInput) (*models.MailJob, error) {
 	if class == "" {
 		class = models.MailClassOperational
 	}
-	cfg, err := Load(q.DB)
+	cfg, err := Load(q.DB, q.ConfigKey)
 	if err != nil {
 		return nil, err
 	}
@@ -156,11 +180,19 @@ func (q *Queue) Enqueue(in EnqueueInput) (*models.MailJob, error) {
 			return nil, err
 		}
 	}
+	userKind := ""
+	if in.User != nil {
+		userKind = models.NormalizeUserKind(in.User.Kind)
+		if userKind == "" {
+			userKind = models.UserKindWeb
+		}
+	}
 	job := models.MailJob{
 		CampaignID: in.CampaignID,
 		Class:      class,
 		Priority:   PriorityFor(class),
 		UserID:     uid,
+		UserKind:   userKind,
 		ToEmail:    to,
 		Timezone:   tz,
 		Subject:    in.Subject,
@@ -182,7 +214,7 @@ func (q *Queue) ProcessAvailable(now time.Time, max int) int {
 	if q == nil || max <= 0 {
 		return 0
 	}
-	cfg, err := Load(q.DB)
+	cfg, err := Load(q.DB, q.ConfigKey)
 	if err != nil || !cfg.Enabled {
 		return 0
 	}
@@ -235,7 +267,11 @@ func (q *Queue) processOne(now time.Time, cfg Settings) bool {
 	}
 	body := job.Body
 	if job.Class == models.MailClassMarketing && job.UserID != nil && q.Secret != "" {
-		body = appendUnsubFooter(body, UnsubLink(cfg.ResetBaseURL, q.Secret, *job.UserID))
+		kind := job.UserKind
+		if kind == "" {
+			kind = models.UserKindWeb
+		}
+		body = appendUnsubFooter(body, UnsubLink(cfg.ResetBaseURL, q.Secret, kind, *job.UserID))
 	}
 	sendErr := q.senderOrSMTP().Send(job.ToEmail, job.Subject, body)
 	if sendErr != nil {

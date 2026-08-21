@@ -1,19 +1,23 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { api, ApiError } from "@/lib/api"
+import { useI18n } from "@/lib/i18n"
 import type { AuthSettings } from "@/lib/types"
 import { AuthChallenge, CAPTCHA_FALLBACK_CODE, type AuthChallengeHandle } from "@/components/AuthChallenge"
+import { GuestChrome } from "@/components/GuestChrome"
 
 export function ForgotPasswordPage() {
+  const { t } = useI18n()
   const [email, setEmail] = useState("")
   const [error, setError] = useState("")
   const [done, setDone] = useState(false)
   const [loading, setLoading] = useState(false)
   const [settings, setSettings] = useState<AuthSettings | undefined>()
+  const [settingsReady, setSettingsReady] = useState(false)
   const challengeRef = useRef<AuthChallengeHandle>(null)
 
   useEffect(() => {
-    api.settings().then(setSettings).catch(() => undefined)
+    api.settings().then(setSettings).catch(() => undefined).finally(() => setSettingsReady(true))
   }, [])
 
   async function onSubmit(e: FormEvent) {
@@ -28,26 +32,26 @@ export function ForgotPasswordPage() {
       if (err instanceof ApiError && err.code === CAPTCHA_FALLBACK_CODE) {
         challengeRef.current?.showV2()
       }
-      setError(err instanceof ApiError ? err.message || "发送失败" : "发送失败")
+      setError(err instanceof ApiError ? err.message || t("forgot.failed") : t("forgot.failed"))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <GuestFrame>
+    <GuestChrome>
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">找回密码</h1>
-          <p className="mt-1 text-sm text-muted-foreground">输入账号绑定的邮箱，我们会发送重置链接</p>
+          <h1 className="font-display text-[2rem] leading-none tracking-tight">{t("forgot.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("forgot.subtitle")}</p>
         </div>
         {done ? (
-          <p className="text-sm text-muted-foreground">如果该邮箱已注册，你将收到重置邮件。</p>
+          <p className="text-sm text-muted-foreground">{t("forgot.sent")}</p>
         ) : (
           <>
             <div className="grid gap-2">
               <label htmlFor="email" className="text-sm font-medium">
-                邮箱
+                {t("forgot.email")}
               </label>
               <input
                 id="email"
@@ -58,26 +62,27 @@ export function ForgotPasswordPage() {
                 className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
-            <AuthChallenge ref={challengeRef} settings={settings} action="forgot" />
+            <AuthChallenge ref={challengeRef} settings={settingsReady ? (settings ?? { captchaProvider: "image" }) : undefined} action="forgot" />
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !settingsReady}
               className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
             >
-              {loading ? "发送中…" : "发送重置邮件"}
+              {loading ? t("forgot.submitting") : t("forgot.submit")}
             </button>
           </>
         )}
         <Link to="/login" className="text-sm text-primary underline-offset-4 hover:underline">
-          返回登录
+          {t("forgot.back")}
         </Link>
       </form>
-    </GuestFrame>
+    </GuestChrome>
   )
 }
 
 export function ResetPasswordPage() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const token = params.get("token") ?? ""
@@ -89,7 +94,7 @@ export function ResetPasswordPage() {
     e.preventDefault()
     setError("")
     if (!token) {
-      setError("重置链接无效或已过期")
+      setError(t("reset.invalid"))
       return
     }
     setLoading(true)
@@ -97,23 +102,23 @@ export function ResetPasswordPage() {
       await api.resetPassword({ token, newPassword: password })
       navigate("/login", { replace: true })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message || "重置失败" : "重置失败")
+      setError(err instanceof ApiError ? err.message || t("reset.failed") : t("reset.failed"))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <GuestFrame>
+    <GuestChrome>
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">设置新密码</h1>
-          <p className="mt-1 text-sm text-muted-foreground">请设置至少 8 位的新密码</p>
+          <h1 className="font-display text-[2rem] leading-none tracking-tight">{t("reset.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("reset.subtitle")}</p>
         </div>
-        {!token ? <p className="text-sm text-destructive">重置链接无效或已过期</p> : null}
+        {!token ? <p className="text-sm text-destructive">{t("reset.invalid")}</p> : null}
         <div className="grid gap-2">
           <label htmlFor="np" className="text-sm font-medium">
-            新密码
+            {t("reset.password")}
           </label>
           <input
             id="np"
@@ -130,23 +135,12 @@ export function ResetPasswordPage() {
           disabled={loading || !token}
           className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
         >
-          {loading ? "提交中…" : "重置密码"}
+          {loading ? t("reset.submitting") : t("reset.submit")}
         </button>
         <Link to="/login" className="text-sm text-primary underline-offset-4 hover:underline">
-          返回登录
+          {t("reset.back")}
         </Link>
       </form>
-    </GuestFrame>
-  )
-}
-
-function GuestFrame({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full flex-col overflow-y-auto bg-background text-foreground">
-      <header className="flex h-14 items-center border-b px-6">
-        <span className="text-sm font-semibold tracking-tight">Latch</span>
-      </header>
-      <div className="flex flex-1 items-center justify-center px-4">{children}</div>
-    </div>
+    </GuestChrome>
   )
 }

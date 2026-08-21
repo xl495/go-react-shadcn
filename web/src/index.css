@@ -1,7 +1,11 @@
 @import "tailwindcss";
+@import "../../shared/fonts/gra.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Schibsted Grotesk", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", ui-sans-serif, sans-serif;
+  --font-display: "Fraunces", "Songti SC", "STSong", "Noto Serif SC", ui-serif, Georgia, serif;
   --color-background: #ffffff;
   --color-foreground: #0a0a0a;
   --color-muted: #f5f5f5;
@@ -11,6 +15,26 @@
   --color-primary-foreground: #fafafa;
   --color-destructive: #dc2626;
   --color-ring: #0a0a0a;
+}
+
+.dark {
+  --color-background: #0a0a0a;
+  --color-foreground: #f5f5f5;
+  --color-muted: #171717;
+  --color-muted-foreground: #a3a3a3;
+  --color-border: #262626;
+  --color-primary: #f5f5f5;
+  --color-primary-foreground: #0a0a0a;
+  --color-destructive: #f87171;
+  --color-ring: #d4d4d4;
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 html,
@@ -25,6 +49,27 @@ body {
   background: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
+}
+
+@keyframes auth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.auth-rise {
+  animation: auth-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-rise {
+    animation: none;
+  }
 }
 
 * {

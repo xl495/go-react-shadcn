@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, ApiError, getToken } from "@/api/client"
+import { api, isSessionExpired, getToken } from "@/api/client"
 import type { MenuNode } from "@/types"
 
 export const PAGE_SIZE = 10
@@ -33,7 +33,7 @@ function invalidate(qc: ReturnType<typeof useQueryClient>, ...keys: string[][]) 
 }
 
 function isAuthError(err: unknown) {
-  return err instanceof ApiError && (err.status === 401 || err.code === 40101 || err.code === 40102)
+  return isSessionExpired(err)
 }
 
 export function useMenus() {
@@ -118,16 +118,16 @@ export function useUsers(params?: {
   kind?: string
 }) {
   return useQuery({
-    queryKey: ["users", params],
+    queryKey: ["users", "list", params],
     queryFn: () => api.users(params),
     placeholderData: keepPreviousData,
   })
 }
 
-export function useUser(id: number) {
+export function useUser(id: number, kind?: string) {
   return useQuery({
-    queryKey: ["users", id],
-    queryFn: () => api.getUser(id),
+    queryKey: ["users", "detail", id, kind],
+    queryFn: () => api.getUser(id, kind),
     enabled: id > 0,
   })
 }
@@ -136,7 +136,10 @@ export function useCreateUser() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: api.createUser,
-    onSuccess: () => void invalidate(qc, ["users"]),
+    onSuccess: (user) => {
+      qc.setQueryData(["users", "detail", user.id, user.kind], user)
+      void qc.invalidateQueries({ queryKey: ["users", "list"] })
+    },
   })
 }
 
@@ -145,23 +148,73 @@ export function useUpdateUser() {
   return useMutation({
     mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateUser>[1] }) =>
       api.updateUser(id, body),
-    onSuccess: () => void invalidate(qc, ["users"]),
+    onSuccess: (user) => {
+      qc.setQueryData(["users", "detail", user.id, user.kind], user)
+      void qc.invalidateQueries({ queryKey: ["users", "list"] })
+    },
   })
 }
 
 export function useDeleteUser() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: api.deleteUser,
-    onSuccess: () => void invalidate(qc, ["users"]),
+    mutationFn: ({ id, kind }: { id: number; kind?: string }) => api.deleteUser(id, kind),
+    onSuccess: (_d, vars) => {
+      qc.removeQueries({ queryKey: ["users", "detail", vars.id, vars.kind] })
+      void qc.invalidateQueries({ queryKey: ["users", "list"] })
+    },
   })
 }
 
 export function useAssignUserRoles() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, roleIds }: { id: number; roleIds: number[] }) => api.assignUserRoles(id, roleIds),
-    onSuccess: () => void invalidate(qc, ["users"]),
+    mutationFn: ({ id, roleIds, kind }: { id: number; roleIds: number[]; kind?: string }) =>
+      api.assignUserRoles(id, roleIds, kind),
+    onSuccess: (user) => {
+      qc.setQueryData(["users", "detail", user.id, user.kind], user)
+      void qc.invalidateQueries({ queryKey: ["users", "list"] })
+    },
+  })
+}
+
+export function useRevokeUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, kind }: { id: number; kind?: string }) => api.revokeUser(id, kind),
+    onSuccess: (_d, vars) => {
+      void qc.invalidateQueries({ queryKey: ["users", "detail", vars.id] })
+      void qc.invalidateQueries({ queryKey: ["users", "sessions", vars.id] })
+    },
+  })
+}
+
+export function useUserSessions(id: number, kind?: string) {
+  return useQuery({
+    queryKey: ["users", "sessions", id, kind],
+    queryFn: () => api.userSessions(id, kind),
+    enabled: id > 0,
+  })
+}
+
+export function useRevokeUserSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, sid, kind }: { id: number; sid: number; kind?: string }) =>
+      api.revokeUserSession(id, sid, kind),
+    onSuccess: (_d, vars) => {
+      void qc.invalidateQueries({ queryKey: ["users", "sessions", vars.id] })
+    },
+  })
+}
+
+export function useImportUsers() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ file, kind }: { file: File; kind?: string }) => api.importUsers(file, kind),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["users", "list"] })
+    },
   })
 }
 
@@ -174,11 +227,22 @@ export function useRoles(params?: { page?: number; pageSize?: number; q?: string
   })
 }
 
+export function useRole(id: number) {
+  return useQuery({
+    queryKey: ["roles", "detail", id],
+    queryFn: () => api.getRole(id),
+    enabled: id > 0,
+  })
+}
+
 export function useCreateRole() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: api.createRole,
-    onSuccess: () => void invalidate(qc, ["roles"]),
+    onSuccess: (role) => {
+      qc.setQueryData(["roles", "detail", role.id], role)
+      void invalidate(qc, ["roles"])
+    },
   })
 }
 
@@ -187,7 +251,10 @@ export function useUpdateRole() {
   return useMutation({
     mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateRole>[1] }) =>
       api.updateRole(id, body),
-    onSuccess: () => void invalidate(qc, ["roles"]),
+    onSuccess: (role) => {
+      qc.setQueryData(["roles", "detail", role.id], role)
+      void invalidate(qc, ["roles"])
+    },
   })
 }
 
@@ -204,7 +271,10 @@ export function useAssignRolePermissions() {
   return useMutation({
     mutationFn: ({ id, permissionIds }: { id: number; permissionIds: number[] }) =>
       api.assignRolePermissions(id, permissionIds),
-    onSuccess: () => void invalidate(qc, ["roles", "menus"]),
+    onSuccess: (role) => {
+      qc.setQueryData(["roles", "detail", role.id], role)
+      void invalidate(qc, ["roles", "menus"])
+    },
   })
 }
 
@@ -213,6 +283,25 @@ export function usePermissions(params?: { page?: number; pageSize?: number; q?: 
     queryKey: ["permissions", params],
     queryFn: () => api.permissions(params),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useAllPermissions() {
+  return useQuery({
+    queryKey: ["permissions", "all"],
+    queryFn: async () => {
+      const pageSize = 200
+      const first = await api.permissions({ page: 1, pageSize })
+      const items = [...(first.items ?? [])]
+      const total = first.total ?? items.length
+      for (let page = 2; items.length < total; page++) {
+        const next = await api.permissions({ page, pageSize })
+        const batch = next.items ?? []
+        if (batch.length === 0) break
+        items.push(...batch)
+      }
+      return items
+    },
   })
 }
 
@@ -315,15 +404,13 @@ export function useSaveConfigs() {
         | { create: Parameters<typeof api.createConfig>[0] }
       >,
     ) => {
-      const out: Awaited<ReturnType<typeof api.updateConfig>>[] = []
-      for (const item of items) {
-        if ("create" in item) {
-          out.push(await api.createConfig(item.create))
-        } else {
-          out.push(await api.updateConfig(item.id, item.body))
-        }
-      }
-      return out
+      return api.batchConfigs(
+        items.map((item) =>
+          "create" in item
+            ? item.create
+            : { id: item.id, ...item.body },
+        ),
+      )
     },
     onSuccess: () => void invalidate(qc, ["configs"]),
   })
@@ -348,6 +435,10 @@ export function useMailJobs(params?: { page?: number; pageSize?: number; status?
     queryKey: ["mail-jobs", params],
     queryFn: () => api.jobs(params),
     placeholderData: keepPreviousData,
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? []
+      return items.some((job) => job.status === "queued" || job.status === "sending") ? 4000 : false
+    },
   })
 }
 
@@ -429,7 +520,7 @@ export function useCreateDepartment() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: api.createDepartment,
-    onSuccess: () => void invalidate(qc, ["departments"]),
+    onSuccess: () => void invalidate(qc, ["departments"], ["dicts"]),
   })
 }
 
@@ -438,7 +529,7 @@ export function useUpdateDepartment() {
   return useMutation({
     mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.updateDepartment>[1] }) =>
       api.updateDepartment(id, body),
-    onSuccess: () => void invalidate(qc, ["departments"]),
+    onSuccess: () => void invalidate(qc, ["departments"], ["dicts"]),
   })
 }
 
@@ -446,39 +537,54 @@ export function useDeleteDepartment() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: api.deleteDepartment,
-    onSuccess: () => void invalidate(qc, ["departments"]),
+    onSuccess: () => void invalidate(qc, ["departments"], ["dicts"]),
   })
 }
 
-export function useOpLogs(params?: {
-  username?: string
-  module?: string
-  action?: string
-  page?: number
-  pageSize?: number
-}) {
+export function useOpLogs(
+  params?: {
+    username?: string
+    module?: string
+    action?: string
+    page?: number
+    pageSize?: number
+  },
+  enabled = true,
+) {
   return useQuery({
     queryKey: ["logs", "op", params],
     queryFn: () => api.logs(params),
+    enabled,
+    placeholderData: keepPreviousData,
   })
 }
 
-export function useLoginLogs(params?: {
-  username?: string
-  status?: string
-  page?: number
-  pageSize?: number
-}) {
+export function useLoginLogs(
+  params?: {
+    username?: string
+    status?: string
+    page?: number
+    pageSize?: number
+  },
+  enabled = true,
+) {
   return useQuery({
     queryKey: ["logs", "login", params],
     queryFn: () => api.loginLogs(params),
+    enabled,
+    placeholderData: keepPreviousData,
   })
 }
 
-export function useAPILogs(params?: { traceId?: string; path?: string; page?: number; pageSize?: number }) {
+export function useAPILogs(
+  params?: { traceId?: string; path?: string; page?: number; pageSize?: number },
+  enabled = true,
+) {
   return useQuery({
     queryKey: ["logs", "api", params],
     queryFn: () => api.apiLogs(params),
+    enabled,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -486,7 +592,9 @@ export function useClearLogs() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: api.clearLogs,
-    onSuccess: () => void invalidate(qc, ["logs"]),
+    onSuccess: (_d, kind) => {
+      void qc.invalidateQueries({ queryKey: ["logs", kind === "login" ? "login" : kind === "api" ? "api" : "op"] })
+    },
   })
 }
 
@@ -494,6 +602,10 @@ export function usePurgeLogs() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: api.purgeLogs,
-    onSuccess: () => void invalidate(qc, ["logs"]),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["logs", "op"] })
+      void qc.invalidateQueries({ queryKey: ["logs", "login"] })
+      void qc.invalidateQueries({ queryKey: ["logs", "api"] })
+    },
   })
 }

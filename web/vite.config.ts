@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
+      "@latch/auth": path.resolve(__dirname, "../shared/auth"),
     },
   },
   server: {
@@ -15,6 +16,16 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:8080",
       "/uploads": "http://127.0.0.1:8080",
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return
+          if (id.includes("react-dom") || id.includes("/react/") || id.includes("scheduler")) return "react-vendor"
+        },
+      },
     },
   },
 })

@@ -29,7 +29,7 @@ func (a *App) googleVerifier() googleid.Verifier {
 	if a.GoogleVerify != nil {
 		return a.GoogleVerify
 	}
-	return googleid.HTTPVerifier{Client: a.httpClient()}
+	return googleid.NewVerifier(a.httpClient())
 }
 
 type siteverifyClient interface {
@@ -39,6 +39,10 @@ type siteverifyClient interface {
 func (a *App) requireCaptcha(c *gin.Context, in challengeInput, action string) bool {
 	switch a.captchaProvider() {
 	case "none":
+		if !a.Cfg.DevMode {
+			fail(c, http.StatusBadRequest, CodeCaptchaRequired, "captcha required")
+			return false
+		}
 		return true
 	case "image":
 		if in.CaptchaID == "" || in.CaptchaCode == "" {

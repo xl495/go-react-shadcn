@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime"
 	"net"
 	"net/smtp"
@@ -16,16 +17,17 @@ import (
 	"time"
 
 	"go-react-shadcn/internal/models"
+	"go-react-shadcn/internal/secretbox"
 	"gorm.io/gorm"
 )
 
 const (
-	ResetTTL         = 30 * time.Minute
-	SecretMask       = "********"
-	defaultPort      = 587
-	dialTimeout      = 10 * time.Second
-	defaultFromNm    = "Latch"
-	DefaultTimezone  = "Asia/Shanghai"
+	ResetTTL          = 30 * time.Minute
+	SecretMask        = "********"
+	defaultPort       = 587
+	dialTimeout       = 10 * time.Second
+	defaultFromNm     = "gra"
+	DefaultTimezone   = "Asia/Shanghai"
 	defaultQuietStart = "22:00"
 	defaultQuietEnd   = "08:00"
 	defaultMktStart   = "09:00"
@@ -42,23 +44,23 @@ var (
 )
 
 type Settings struct {
-	Enabled          bool
-	Host             string
-	Port             int
-	Username         string
-	Password         string
-	From             string
-	FromName         string
-	TLS              string
-	ResetBaseURL     string
-	DefaultTimezone  string
-	QuietStart       string
-	QuietEnd         string
-	MarketingStart   string
-	MarketingEnd     string
-	RatePerMinute    int
-	MaxAttempts      int
-	WorkerTick       time.Duration
+	Enabled         bool
+	Host            string
+	Port            int
+	Username        string
+	Password        string
+	From            string
+	FromName        string
+	TLS             string
+	ResetBaseURL    string
+	DefaultTimezone string
+	QuietStart      string
+	QuietEnd        string
+	MarketingStart  string
+	MarketingEnd    string
+	RatePerMinute   int
+	MaxAttempts     int
+	WorkerTick      time.Duration
 }
 
 type Sender interface {
@@ -66,11 +68,12 @@ type Sender interface {
 }
 
 type SMTP struct {
-	DB *gorm.DB
+	DB  *gorm.DB
+	Key string
 }
 
 func (s *SMTP) Send(to, subject, body string) error {
-	cfg, err := Load(s.DB)
+	cfg, err := Load(s.DB, s.Key)
 	if err != nil {
 		return err
 	}
@@ -116,14 +119,30 @@ func (m *Memory) Last() (Message, bool) {
 	return m.Mails[len(m.Mails)-1], true
 }
 
-func Load(db *gorm.DB) (Settings, error) {
+func (m *Memory) Count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.Mails)
+}
+
+func Load(db *gorm.DB, masterKey string) (Settings, error) {
 	var rows []models.SysConfig
 	if err := db.Where("`group` = ?", "mail").Find(&rows).Error; err != nil {
 		return Settings{}, err
 	}
 	vals := map[string]string{}
 	for _, row := range rows {
-		vals[row.Key] = row.Value
+		val := row.Value
+		if LooksSecret(row.Key) {
+			opened, err := secretbox.Open(masterKey, row.Value)
+			if err != nil {
+				slog.Error("mail config decrypt failed", "key", row.Key, "error", err)
+				val = ""
+			} else {
+				val = opened
+			}
+		}
+		vals[row.Key] = val
 	}
 	port, _ := strconv.Atoi(strings.TrimSpace(vals["mail.port"]))
 	if port <= 0 {
@@ -302,13 +321,45 @@ func HashToken(raw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func ResetLink(baseURL, origin, token string) string {
-	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if base == "" {
-		base = strings.TrimRight(strings.TrimSpace(origin), "/")
+func NormalizeOrigin(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
+}
+
+func OriginAllowed(origin string, allowed []string) bool {
+	want := NormalizeOrigin(origin)
+	if want == "" {
+		return false
 	}
+	for _, item := range allowed {
+		if NormalizeOrigin(item) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func LinkBase(configured, origin string, allowed []string, fallback string) string {
+	if base := NormalizeOrigin(configured); base != "" {
+		return base
+	}
+	if OriginAllowed(origin, allowed) {
+		return NormalizeOrigin(origin)
+	}
+	return NormalizeOrigin(fallback)
+}
+
+func ResetLink(baseURL, origin, token string, allowed []string) string {
+	base := LinkBase(baseURL, origin, allowed, "http://127.0.0.1:5173")
 	if base == "" {
 		base = "http://127.0.0.1:5173"
 	}
 	return base + "/reset-password?token=" + token
+}
+
+func VerifyLink(baseURL, origin, token string, allowed []string) string {
+	base := LinkBase(baseURL, origin, allowed, "http://127.0.0.1:5174")
+	if base == "" {
+		base = "http://127.0.0.1:5174"
+	}
+	return base + "/verify-email?token=" + token
 }

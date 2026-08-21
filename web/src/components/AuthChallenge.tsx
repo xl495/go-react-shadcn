@@ -1,190 +1,29 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react"
-import { RefreshCw } from "lucide-react"
+import { forwardRef } from "react"
+import {
+  AuthChallenge as SharedAuthChallenge,
+  CAPTCHA_FALLBACK_CODE,
+  type AuthChallengeHandle,
+  type AuthChallengeSettings,
+  type ChallengePayload,
+} from "@latch/auth/AuthChallenge"
 import { api } from "@/lib/api"
-import { loadScript } from "@/lib/load-script"
-import type { AuthSettings } from "@/lib/types"
+import { useI18n } from "@/lib/i18n"
 
-export const CAPTCHA_FALLBACK_CODE = 40004
-
-export type ChallengePayload = {
-  captchaId?: string
-  captchaCode?: string
-  captchaToken?: string
-  captchaVersion?: string
-}
-
-export type AuthChallengeHandle = {
-  collect: () => Promise<ChallengePayload>
-  showV2: () => void
-}
-
-const fieldClass =
-  "h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+export { CAPTCHA_FALLBACK_CODE, type AuthChallengeHandle, type ChallengePayload }
 
 export const AuthChallenge = forwardRef<
   AuthChallengeHandle,
-  { settings?: AuthSettings; action: string }
+  { settings?: AuthChallengeSettings; action: string }
 >(function AuthChallenge({ settings, action }, ref) {
-  const provider = settings?.captchaProvider ?? "image"
-  const v3Key = settings?.recaptchaSiteKeyV3 ?? ""
-  const v2Key = settings?.recaptchaSiteKeyV2 ?? ""
-  const [forceV2, setForceV2] = useState(false)
-  const useV2 = provider === "recaptcha" && (forceV2 || !v3Key) && !!v2Key
-
-  const [captchaId, setCaptchaId] = useState("")
-  const [captchaCode, setCaptchaCode] = useState("")
-  const [image, setImage] = useState("")
-  const [imageError, setImageError] = useState(false)
-  const widgetToken = useRef("")
-  const widgetHost = useRef<HTMLDivElement>(null)
-  const widgetId = useRef<string | number>("")
-
-  async function loadImage() {
-    setCaptchaCode("")
-    setImageError(false)
-    const ch = await api.captcha()
-    setCaptchaId(ch.captchaId)
-    setImage(ch.image)
-  }
-
-  useEffect(() => {
-    if (provider !== "image") return
-    loadImage().catch(() => setImageError(true))
-  }, [provider])
-
-  useEffect(() => {
-    widgetToken.current = ""
-    let cancelled = false
-
-    async function mount() {
-      if (provider === "recaptcha" && v3Key && !useV2) {
-        await loadScript(`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(v3Key)}`)
-        return
-      }
-      if (!widgetHost.current) return
-      if (provider === "turnstile" && settings?.turnstileSiteKey) {
-        await loadScript("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit")
-        if (cancelled || !widgetHost.current || !window.turnstile) return
-        widgetHost.current.innerHTML = ""
-        widgetId.current = window.turnstile.render(widgetHost.current, {
-          sitekey: settings.turnstileSiteKey,
-          callback: (token) => {
-            widgetToken.current = token
-          },
-          "expired-callback": () => {
-            widgetToken.current = ""
-          },
-        })
-        return
-      }
-      if (provider === "recaptcha" && useV2 && v2Key) {
-        await loadScript("https://www.google.com/recaptcha/api.js?render=explicit")
-        if (cancelled || !widgetHost.current || !window.grecaptcha) return
-        await new Promise<void>((resolve) => window.grecaptcha?.ready(() => resolve()))
-        if (cancelled || !widgetHost.current || !window.grecaptcha) return
-        widgetHost.current.innerHTML = ""
-        widgetId.current = window.grecaptcha.render(widgetHost.current, {
-          sitekey: v2Key,
-          callback: (token) => {
-            widgetToken.current = token
-          },
-          "expired-callback": () => {
-            widgetToken.current = ""
-          },
-        })
-      }
-    }
-
-    mount().catch(() => undefined)
-    return () => {
-      cancelled = true
-      if (provider === "turnstile" && widgetId.current && window.turnstile) {
-        window.turnstile.remove(String(widgetId.current))
-      }
-    }
-  }, [provider, useV2, v2Key, v3Key, settings?.turnstileSiteKey])
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      showV2: () => setForceV2(true),
-      collect: async () => {
-        if (provider === "none") return {}
-        if (provider === "image") return { captchaId, captchaCode }
-        if (provider === "turnstile") return { captchaToken: widgetToken.current }
-        if (useV2) return { captchaToken: widgetToken.current, captchaVersion: "v2" }
-        if (!v3Key || !window.grecaptcha) return { captchaToken: "", captchaVersion: "v3" }
-        const token = await new Promise<string>((resolve, reject) => {
-          window.grecaptcha?.ready(() => {
-            window.grecaptcha
-              ?.execute(v3Key, { action })
-              .then(resolve)
-              .catch(() => reject(new Error("recaptcha")))
-          })
-        })
-        return { captchaToken: token, captchaVersion: "v3" }
-      },
-    }),
-    [action, captchaCode, captchaId, provider, useV2, v3Key],
+  const { t } = useI18n()
+  return (
+    <SharedAuthChallenge
+      ref={ref}
+      settings={settings}
+      action={action}
+      t={t}
+      variant="web"
+      loadCaptcha={api.captcha}
+    />
   )
-
-  if (provider === "none") return null
-
-  if (provider === "image") {
-    return (
-      <div className="grid gap-2">
-        <label htmlFor="captcha" className="text-sm font-medium">
-          验证码
-        </label>
-        <div className="flex items-center gap-3">
-          <input
-            id="captcha"
-            inputMode="numeric"
-            autoComplete="off"
-            value={captchaCode}
-            onChange={(e) => setCaptchaCode(e.target.value)}
-            className={fieldClass}
-          />
-          <button
-            type="button"
-            onClick={() => loadImage().catch(() => setImageError(true))}
-            className="relative h-10 w-[120px] overflow-hidden rounded-md border bg-muted"
-            aria-label="刷新验证码"
-          >
-            {image ? (
-              <img src={image} alt="图形验证码" className="h-full w-full object-cover" />
-            ) : (
-              <span className="text-xs text-muted-foreground">加载中</span>
-            )}
-            <RefreshCw className="absolute right-1 bottom-1 size-3 text-foreground/40" />
-          </button>
-        </div>
-        {imageError ? <p className="text-sm text-destructive">验证码加载失败</p> : null}
-      </div>
-    )
-  }
-
-  if (provider === "turnstile") {
-    return (
-      <div className="grid gap-2">
-        <p className="text-sm font-medium">验证</p>
-        <div ref={widgetHost} className="min-h-[65px]" />
-      </div>
-    )
-  }
-
-  if (provider === "recaptcha" && useV2) {
-    return (
-      <div className="grid gap-2">
-        <p className="text-sm font-medium">请完成验证</p>
-        <div ref={widgetHost} className="min-h-[78px]" />
-      </div>
-    )
-  }
-
-  if (provider === "recaptcha") {
-    return <p className="text-xs text-muted-foreground">提交时会进行 Google reCAPTCHA 验证，分数过低将改用勾选验证</p>
-  }
-
-  return null
 })

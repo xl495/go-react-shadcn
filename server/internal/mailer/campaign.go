@@ -12,7 +12,10 @@ func (q *Queue) ProcessCampaigns(now time.Time) {
 		return
 	}
 	var due []models.MailCampaign
-	if err := q.DB.Where("status = ? AND scheduled_at <= ?", models.CampaignScheduled, now).Find(&due).Error; err != nil {
+	if err := q.DB.Where(
+		"(status = ? AND scheduled_at <= ?) OR status = ?",
+		models.CampaignScheduled, now, models.CampaignRunning,
+	).Find(&due).Error; err != nil {
 		return
 	}
 	for i := range due {
@@ -21,48 +24,74 @@ func (q *Queue) ProcessCampaigns(now time.Time) {
 	q.finishCampaigns()
 }
 
+const campaignFanoutBatch = 300
+
 func (q *Queue) fanOut(c *models.MailCampaign, now time.Time) {
-	query := q.DB.Where("status = ? AND email <> ''", "active")
-	if c.Audience != models.AudienceAllActive {
-		query = query.Where("marketing_opt_in = ?", true)
+	if c.Status != models.CampaignRunning {
+		started := now
+		_ = q.DB.Model(c).Updates(map[string]any{
+			"status":     models.CampaignRunning,
+			"started_at": started,
+		}).Error
+		c.Status = models.CampaignRunning
 	}
-	var users []models.User
-	if err := query.Find(&users).Error; err != nil {
-		return
-	}
-	started := now
-	_ = q.DB.Model(c).Updates(map[string]any{
-		"status":     models.CampaignRunning,
-		"started_at": started,
-	}).Error
-	cfg, _ := Load(q.DB)
-	n := 0
-	for i := range users {
-		u := users[i]
-		unsub := ""
-		if q.Secret != "" {
-			unsub = UnsubLink(cfg.ResetBaseURL, q.Secret, u.ID)
+	cfg, _ := Load(q.DB, q.ConfigKey)
+	lastID := q.campaignLastUserID(c.ID)
+	for {
+		query := models.Accounts(q.DB, models.UserKindWeb).
+			Select("id", "username", "nickname", "email", "timezone").
+			Where("status = ? AND email <> '' AND id > ?", "active", lastID)
+		if c.Audience != models.AudienceAllActive {
+			query = query.Where("marketing_opt_in = ?", true)
 		}
-		subject, body := RenderMailTemplate(c.Subject, c.Body, &u, unsub)
-		key := "campaign:" + strconv.FormatUint(uint64(c.ID), 10) + ":user:" + strconv.FormatUint(uint64(u.ID), 10)
-		if _, err := q.Enqueue(EnqueueInput{
-			Class:      models.MailClassMarketing,
-			User:       &u,
-			Subject:    subject,
-			Body:       body,
-			CampaignID: &c.ID,
-			DedupeKey:  key,
-			Now:        now,
-		}); err == nil {
-			n++
+		var batch []models.User
+		if err := query.Order("id asc").Limit(campaignFanoutBatch).Find(&batch).Error; err != nil {
+			return
 		}
+		if len(batch) == 0 {
+			break
+		}
+		for i := range batch {
+			u := batch[i]
+			u.Kind = models.UserKindWeb
+			unsub := ""
+			if q.Secret != "" {
+				unsub = UnsubLink(cfg.ResetBaseURL, q.Secret, u.Kind, u.ID)
+			}
+			subject, body := RenderMailTemplate(c.Subject, c.Body, &u, unsub)
+			key := "campaign:" + strconv.FormatUint(uint64(c.ID), 10) + ":user:" + strconv.FormatUint(uint64(u.ID), 10)
+			_, _ = q.Enqueue(EnqueueInput{
+				Class:      models.MailClassMarketing,
+				User:       &u,
+				Subject:    subject,
+				Body:       body,
+				CampaignID: &c.ID,
+				DedupeKey:  key,
+				Now:        now,
+			})
+		}
+		lastID = batch[len(batch)-1].ID
 	}
-	updates := map[string]any{"job_count": n}
-	if n == 0 {
+	var total int64
+	_ = q.DB.Model(&models.MailJob{}).Where("campaign_id = ?", c.ID).Count(&total).Error
+	updates := map[string]any{"job_count": int(total)}
+	if total == 0 {
 		updates["status"] = models.CampaignDone
 		updates["finished_at"] = now
 	}
 	_ = q.DB.Model(c).Updates(updates).Error
+}
+
+func (q *Queue) campaignLastUserID(campaignID uint) uint {
+	var last *uint
+	_ = q.DB.Model(&models.MailJob{}).
+		Where("campaign_id = ? AND user_id IS NOT NULL", campaignID).
+		Select("MAX(user_id)").
+		Scan(&last).Error
+	if last == nil {
+		return 0
+	}
+	return *last
 }
 
 func (q *Queue) finishCampaigns() {
@@ -72,6 +101,9 @@ func (q *Queue) finishCampaigns() {
 	}
 	for i := range running {
 		c := running[i]
+		if q.campaignHasPendingAudience(c) {
+			continue
+		}
 		var open int64
 		_ = q.DB.Model(&models.MailJob{}).
 			Where("campaign_id = ? AND status IN ?", c.ID, []string{models.MailStatusQueued, models.MailStatusSending}).
@@ -85,4 +117,19 @@ func (q *Queue) finishCampaigns() {
 			"finished_at": now,
 		}).Error
 	}
+}
+
+func (q *Queue) campaignHasPendingAudience(c models.MailCampaign) bool {
+	lastID := q.campaignLastUserID(c.ID)
+	query := models.Accounts(q.DB, models.UserKindWeb).
+		Select("id").
+		Where("status = ? AND email <> '' AND id > ?", "active", lastID)
+	if c.Audience != models.AudienceAllActive {
+		query = query.Where("marketing_opt_in = ?", true)
+	}
+	var id uint
+	if err := query.Order("id asc").Limit(1).Scan(&id).Error; err != nil {
+		return false
+	}
+	return id > 0
 }

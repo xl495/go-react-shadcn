@@ -12,6 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mojocn/base64Captcha v1.3.8
 	golang.org/x/crypto v0.41.0
+	golang.org/x/net v0.42.0
 	gorm.io/gorm v1.30.1
 	modernc.org/sqlite v1.34.5
 )
@@ -49,7 +50,6 @@ require (
 	go.uber.org/atomic v1.7.0 // indirect
 	golang.org/x/arch v0.18.0 // indirect
 	golang.org/x/image v0.23.0 // indirect
-	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect

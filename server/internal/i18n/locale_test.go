@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -29,7 +30,18 @@ func TestFromRequestPrefersXLocale(t *testing.T) {
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("X-Locale", "zh-CN")
 	if got := FromRequest(req); got != ZhCN {
-		t.Fatalf("got %q", got)
+		t.Fatalf("FromRequest=%q want %q", got, ZhCN)
+	}
+}
+
+func TestResetPasswordMailLocale(t *testing.T) {
+	zhSubj, zhBody := ResetPasswordMail(ZhCN, "李", "https://example/reset?token=abc")
+	if zhSubj != "重置 gra 密码" || !strings.Contains(zhBody, "https://example/reset?token=abc") {
+		t.Fatalf("zh mail: %q %q", zhSubj, zhBody)
+	}
+	enSubj, enBody := ResetPasswordMail(En, "Lee", "https://example/reset?token=abc")
+	if enSubj != "Reset your gra password" || !strings.Contains(enBody, "token=abc") {
+		t.Fatalf("en mail: %q %q", enSubj, enBody)
 	}
 }
 

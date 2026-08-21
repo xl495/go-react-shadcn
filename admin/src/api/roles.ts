@@ -4,6 +4,7 @@ import type { PageResult, Role } from "@/types"
 export const rolesApi = {
   roles: (params?: { page?: number; pageSize?: number; q?: string }) =>
     request<PageResult<Role>>(`/api/v1/roles${qs(params ?? {})}`),
+  getRole: (id: number) => request<Role>(`/api/v1/roles/${id}`),
   createRole: (body: {
     name: string
     code: string

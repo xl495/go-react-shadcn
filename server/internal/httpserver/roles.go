@@ -31,18 +31,47 @@ func (a *App) handleListRoles(c *gin.Context) {
 	p := parsePage(c, 50, 500)
 	q := a.DB.Model(&models.Role{})
 	q = applyContains(q, c.Query("q"), "name", "code", "description")
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, CodeListRoles, "failed to list roles")
+	if !okCount {
+		return
+	}
 	var roles []models.Role
-	if err := q.Preload("Permissions").Order("id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&roles).Error; err != nil {
+	if err := q.Order("id asc").Offset(p.Offset()).Limit(p.PageSize).Find(&roles).Error; err != nil {
+		fail(c, http.StatusInternalServerError, 50020, "failed to list roles")
+		return
+	}
+	ids := make([]uint, 0, len(roles))
+	for _, r := range roles {
+		ids = append(ids, r.ID)
+	}
+	permIDs, err := a.rolePermissionIDs(ids)
+	if err != nil {
 		fail(c, http.StatusInternalServerError, 50020, "failed to list roles")
 		return
 	}
 	out := make([]roleDTO, 0, len(roles))
 	for _, r := range roles {
-		out = append(out, toRoleDTO(r, true))
+		dto := toRoleDTO(r, false)
+		dto.PermissionIDs = permIDs[r.ID]
+		out = append(out, dto)
 	}
 	ok(c, pageResult[roleDTO]{Items: out, Total: total, Page: p.Page, PageSize: p.PageSize})
+}
+
+func (a *App) handleGetRole(c *gin.Context) {
+	var role models.Role
+	if err := a.DB.First(&role, c.Param("id")).Error; err != nil {
+		fail(c, http.StatusNotFound, 40420, "role not found")
+		return
+	}
+	ids, err := a.rolePermissionIDs([]uint{role.ID})
+	if err != nil {
+		fail(c, http.StatusInternalServerError, 50020, "failed to get role")
+		return
+	}
+	dto := toRoleDTO(role, false)
+	dto.PermissionIDs = ids[role.ID]
+	ok(c, dto)
 }
 
 func (a *App) handleCreateRole(c *gin.Context) {
@@ -54,6 +83,10 @@ func (a *App) handleCreateRole(c *gin.Context) {
 	dataScope := req.DataScope
 	if dataScope == "" {
 		dataScope = models.DataScopeSelf
+	}
+	if !validDataScope(dataScope) {
+		fail(c, http.StatusBadRequest, CodeInvalidDataScope, "invalid data scope")
+		return
 	}
 	role := models.Role{Name: req.Name, Code: req.Code, Description: req.Description, DataScope: dataScope}
 	perms, err := a.loadPermissions(req.PermissionIDs)
@@ -100,6 +133,10 @@ func (a *App) handleUpdateRole(c *gin.Context) {
 		role.Description = *req.Description
 	}
 	if req.DataScope != nil && *req.DataScope != "" {
+		if !validDataScope(*req.DataScope) {
+			fail(c, http.StatusBadRequest, CodeInvalidDataScope, "invalid data scope")
+			return
+		}
 		role.DataScope = *req.DataScope
 	}
 	if err := a.DB.Save(&role).Error; err != nil {
@@ -107,6 +144,14 @@ func (a *App) handleUpdateRole(c *gin.Context) {
 		return
 	}
 	ok(c, toRoleDTO(role, true))
+}
+
+func validDataScope(v string) bool {
+	switch v {
+	case models.DataScopeAll, models.DataScopeDept, models.DataScopeDeptAndSub, models.DataScopeSelf:
+		return true
+	}
+	return false
 }
 
 func (a *App) handleDeleteRole(c *gin.Context) {
@@ -175,4 +220,22 @@ func (a *App) loadPermissions(ids []uint) ([]models.Permission, error) {
 		return nil, errString("permission not found")
 	}
 	return perms, nil
+}
+
+func (a *App) rolePermissionIDs(roleIDs []uint) (map[uint][]uint, error) {
+	out := map[uint][]uint{}
+	if len(roleIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		RoleID       uint `gorm:"column:role_id"`
+		PermissionID uint `gorm:"column:permission_id"`
+	}
+	if err := a.DB.Table("role_permissions").Select("role_id, permission_id").Where("role_id IN ?", roleIDs).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.RoleID] = append(out[row.RoleID], row.PermissionID)
+	}
+	return out, nil
 }

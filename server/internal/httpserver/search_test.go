@@ -82,14 +82,19 @@ func TestUserListSearchAndFilters(t *testing.T) {
 		"captchaCode": answer,
 		"client":      "admin",
 	})
-	if blocked.Code != http.StatusForbidden {
-		t.Fatalf("web user on admin login want 403 got %d %s", blocked.Code, blocked.Body.String())
+	if blocked.Code != http.StatusUnauthorized {
+		t.Fatalf("web user on admin login want 401 got %d %s", blocked.Code, blocked.Body.String())
 	}
-	if decodeEnv(t, blocked).Code != CodeWrongClient {
-		t.Fatalf("web user on admin login code=%d want %d", decodeEnv(t, blocked).Code, CodeWrongClient)
-	}
-	if loginOK(t, app, seed.MemberUsername, seed.MemberPassword) == "" {
-		t.Fatal("web user should still login without client")
+	id, answer, _ = issueCaptcha(t, app)
+	webLogin := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username":    seed.MemberUsername,
+		"password":    seed.MemberPassword,
+		"captchaId":   id,
+		"captchaCode": answer,
+		"client":      "web",
+	})
+	if webLogin.Code != http.StatusOK {
+		t.Fatalf("web user login want 200 got %d %s", webLogin.Code, webLogin.Body.String())
 	}
 }
 
@@ -136,6 +141,34 @@ func TestListSearchOnRolesConfigsDicts(t *testing.T) {
 	depts := decodePage[models.Department](t, doJSON(t, app, http.MethodGet, "/api/v1/departments?q="+url.QueryEscape("运营"), admin, nil)).Items
 	if len(depts) == 0 {
 		t.Fatal("departments q=运营 expected a match")
+	}
+}
+
+func TestSameUsernameAllowedOnSplitTables(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	created := doJSON(t, app, http.MethodPost, "/api/v1/users", admin, map[string]any{
+		"username": seed.AdminUsername,
+		"password": "web-admin-99",
+		"status":   "active",
+		"kind":     models.UserKindWeb,
+	})
+	if created.Code != http.StatusOK {
+		t.Fatalf("create web user with staff username: %d %s", created.Code, created.Body.String())
+	}
+	id, answer, _ := issueCaptcha(t, app)
+	webLogin := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username":    seed.AdminUsername,
+		"password":    "web-admin-99",
+		"captchaId":   id,
+		"captchaCode": answer,
+		"client":      "web",
+	})
+	if webLogin.Code != http.StatusOK {
+		t.Fatalf("web login same username: %d %s", webLogin.Code, webLogin.Body.String())
+	}
+	if loginOK(t, app, seed.AdminUsername, seed.AdminPassword) == "" {
+		t.Fatal("admin login should still use admin_user")
 	}
 }
 

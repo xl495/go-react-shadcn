@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
@@ -19,14 +19,17 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { UnsavedGuard } from "@/hooks/unsaved"
 
 const VARS = ["{{nickname}}", "{{username}}", "{{email}}", "{{unsubscribe}}"] as const
 
-const emptyForm = {
-  name: "",
-  subject: "你好 {{nickname}}",
-  body: "您好 {{nickname}}，\n\n在这里写邮件内容。\n\n不想再收到此类邮件：{{unsubscribe}}\n",
-  audience: "opted_in",
+function emptyForm(t: (key: string) => string) {
+  return {
+    name: "",
+    subject: t("mail.defaultSubject"),
+    body: t("mail.defaultBody"),
+    audience: "opted_in",
+  }
 }
 
 function looksHTML(s: string) {
@@ -46,34 +49,54 @@ export function MailTemplateEditorPage() {
   const { id } = useParams()
   const isNew = !id || id === "new"
   const campaignId = isNew ? 0 : Number(id)
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const { user } = useAuth()
   const navigate = useNavigate()
   const { data, isLoading, error } = useMailCampaign(campaignId)
   const createCampaign = useCreateMailCampaign()
   const updateCampaign = useUpdateMailCampaign()
   const scheduleCampaign = useScheduleMailCampaign()
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState(() => emptyForm(t))
+  const [loadedKey, setLoadedKey] = useState("")
   const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const formKey = isNew ? `new:${locale}` : data ? `id:${data.id}:${data.updatedAt ?? ""}` : ""
 
-  useEffect(() => {
-    if (!data) return
-    setForm({
-      name: data.name,
-      subject: data.subject,
-      body: data.body ?? "",
-      audience: data.audience || "opted_in",
-    })
-  }, [data])
+  if (formKey && formKey !== loadedKey) {
+    setLoadedKey(formKey)
+    if (isNew) {
+      setForm(emptyForm(t))
+    } else if (data) {
+      setForm({
+        name: data.name,
+        subject: data.subject,
+        body: data.body ?? "",
+        audience: data.audience || "opted_in",
+      })
+    }
+  }
 
   const status = data?.status ?? "draft"
   const locked = !isNew && status !== "draft" && status !== "paused"
   const saving = createCampaign.isPending || updateCampaign.isPending
+  const baseline = isNew
+    ? emptyForm(t)
+    : {
+        name: data?.name ?? "",
+        subject: data?.subject ?? "",
+        body: data?.body ?? "",
+        audience: data?.audience || "opted_in",
+      }
+  const dirty =
+    !locked &&
+    (form.name !== baseline.name ||
+      form.subject !== baseline.subject ||
+      form.body !== baseline.body ||
+      form.audience !== baseline.audience)
 
   const sample = {
-    nickname: user?.nickname || user?.username || "张三",
-    username: user?.username || "zhangsan",
-    email: user?.email || "user@latch.local",
+    nickname: user?.nickname || user?.username || t("mail.previewName"),
+    username: user?.username || t("mail.previewUsername"),
+    email: user?.email || "user@gra.local",
     unsubscribe: "https://example.com/unsubscribe?token=preview",
   }
   const subjectPreview = previewText(form.subject, sample)
@@ -107,8 +130,8 @@ export function MailTemplateEditorPage() {
       }
       await updateCampaign.mutateAsync({ id: campaignId, body: form })
       toast.success(t("app.saved"))
-    } catch (err) {
-      toast.error(translateApiError(err, t))
+    } catch {
+      // API message is toasted by the HTTP client.
     }
   }
 
@@ -122,6 +145,7 @@ export function MailTemplateEditorPage() {
 
   return (
     <div className="space-y-4">
+      <UnsavedGuard dirty={dirty} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">
@@ -227,7 +251,6 @@ export function MailTemplateEditorPage() {
                           { id: campaignId },
                           {
                             onSuccess: () => toast.success(t("mail.scheduled")),
-                            onError: (e) => toast.error(translateApiError(e, t)),
                           },
                         )
                       }

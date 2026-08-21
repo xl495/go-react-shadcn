@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"go-react-shadcn/internal/googleid"
 	"go-react-shadcn/internal/models"
@@ -38,6 +39,7 @@ func setCfg(t *testing.T, app *App, key, value string) {
 	if err := app.DB.Model(&models.SysConfig{}).Where(`"key" = ?`, key).Update("value", value).Error; err != nil {
 		t.Fatalf("set %s: %v", key, err)
 	}
+	app.syscfg.invalidate()
 }
 
 func TestAuthSettingsDefaults(t *testing.T) {
@@ -91,8 +93,8 @@ func TestRecaptchaV3LowScoreFallsBackToV2(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d %s", w.Code, w.Body.String())
 	}
-	if decodeEnv(t, w).Code != CodeCaptchaFallback {
-		t.Fatalf("code=%d body=%s", decodeEnv(t, w).Code, w.Body.String())
+	if decodeEnv(t, w).ErrorCode != CodeCaptchaFallback {
+		t.Fatalf("code=%d body=%s", decodeEnv(t, w).ErrorCode, w.Body.String())
 	}
 }
 
@@ -127,6 +129,89 @@ func TestTurnstileLoginOK(t *testing.T) {
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d %s", w.Code, w.Body.String())
+	}
+}
+
+func probeTurnstile(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_, err := (&siteverify.Client{HTTP: &http.Client{Timeout: 8 * time.Second}}).Check(ctx, siteverify.Turnstile, siteverify.TurnstileDummyPassSecret, siteverify.TurnstileDummyToken, "127.0.0.1")
+	if err != nil {
+		t.Skip("cloudflare turnstile unreachable: ", err)
+	}
+}
+
+func TestTurnstileDummyPassSecretLogin(t *testing.T) {
+	probeTurnstile(t)
+	app := testApp(t)
+	setCfg(t, app, "auth.captcha_provider", "turnstile")
+	setCfg(t, app, "auth.turnstile_site_key", siteverify.TurnstileDummyPassSiteKey)
+	setCfg(t, app, "auth.turnstile_secret", siteverify.TurnstileDummyPassSecret)
+
+	w := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
+		"username":     seed.AdminUsername,
+		"password":     seed.AdminPassword,
+		"captchaToken": siteverify.TurnstileDummyToken,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("dummy pass login: %d %s", w.Code, w.Body.String())
+	}
+	if tokenFrom(t, w) == "" {
+		t.Fatal("expected jwt")
+	}
+}
+
+func TestTurnstileDummyFailSecretLogin(t *testing.T) {
+	probeTurnstile(t)
+	app := testApp(t)
+	setCfg(t, app, "auth.captcha_provider", "turnstile")
+	setCfg(t, app, "auth.turnstile_secret", siteverify.TurnstileDummyFailSecret)
+
+	w := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
+		"username":     seed.AdminUsername,
+		"password":     seed.AdminPassword,
+		"captchaToken": siteverify.TurnstileDummyToken,
+	})
+	if w.Code != http.StatusBadRequest || decodeEnv(t, w).ErrorCode != CodeInvalidCaptcha {
+		t.Fatalf("dummy fail login: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestTurnstileDummySpentSecretLogin(t *testing.T) {
+	probeTurnstile(t)
+	app := testApp(t)
+	setCfg(t, app, "auth.captcha_provider", "turnstile")
+	setCfg(t, app, "auth.turnstile_secret", siteverify.TurnstileDummySpentSecret)
+
+	w := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
+		"username":     seed.AdminUsername,
+		"password":     seed.AdminPassword,
+		"captchaToken": siteverify.TurnstileDummyToken,
+	})
+	if w.Code != http.StatusBadRequest || decodeEnv(t, w).ErrorCode != CodeInvalidCaptcha {
+		t.Fatalf("dummy spent login: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAuthSettingsExposesTurnstileDummySiteKey(t *testing.T) {
+	app := testApp(t)
+	setCfg(t, app, "auth.captcha_provider", "turnstile")
+	setCfg(t, app, "auth.turnstile_site_key", siteverify.TurnstileDummyPassSiteKey)
+	setCfg(t, app, "auth.turnstile_secret", siteverify.TurnstileDummyPassSecret)
+	w := doJSON(t, app, http.MethodGet, "/api/v1/auth/settings", "", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("settings: %d %s", w.Code, w.Body.String())
+	}
+	var settings publicAuthSettings
+	if err := json.Unmarshal(decodeEnv(t, w).Data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings.CaptchaProvider != "turnstile" || settings.TurnstileSiteKey != siteverify.TurnstileDummyPassSiteKey {
+		t.Fatalf("%+v", settings)
+	}
+	if strings.Contains(w.Body.String(), siteverify.TurnstileDummyPassSecret) {
+		t.Fatal("turnstile secret leaked in public settings")
 	}
 }
 
@@ -181,8 +266,8 @@ func TestGoogleRegisterAndLogin(t *testing.T) {
 	blocked := doJSON(t, app, http.MethodPost, "/api/v1/auth/google", "", map[string]string{
 		"idToken": "tok", "client": "admin",
 	})
-	if blocked.Code != http.StatusForbidden || decodeEnv(t, blocked).Code != CodeWrongClient {
-		t.Fatalf("admin client want wrong client, got %d %s", blocked.Code, blocked.Body.String())
+	if blocked.Code != http.StatusForbidden || decodeEnv(t, blocked).ErrorCode != CodeGoogleRegisterDisabled {
+		t.Fatalf("admin client want register disabled, got %d %s", blocked.Code, blocked.Body.String())
 	}
 }
 
@@ -197,7 +282,7 @@ func TestGoogleRegisterDisabled(t *testing.T) {
 	w := doJSON(t, app, http.MethodPost, "/api/v1/auth/google", "", map[string]string{
 		"idToken": "tok", "client": "web",
 	})
-	if w.Code != http.StatusForbidden || decodeEnv(t, w).Code != CodeGoogleRegisterDisabled {
+	if w.Code != http.StatusForbidden || decodeEnv(t, w).ErrorCode != CodeGoogleRegisterDisabled {
 		t.Fatalf("got %d %s", w.Code, w.Body.String())
 	}
 }
@@ -230,7 +315,7 @@ func TestGoogleDisabledWithoutClientID(t *testing.T) {
 	w := doJSON(t, app, http.MethodPost, "/api/v1/auth/google", "", map[string]string{
 		"idToken": "tok", "client": "web",
 	})
-	if w.Code != http.StatusServiceUnavailable || decodeEnv(t, w).Code != CodeGoogleDisabled {
+	if w.Code != http.StatusServiceUnavailable || decodeEnv(t, w).ErrorCode != CodeGoogleDisabled {
 		t.Fatalf("got %d %s", w.Code, w.Body.String())
 	}
 }

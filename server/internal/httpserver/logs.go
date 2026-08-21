@@ -20,7 +20,7 @@ func (a *App) recordOpLog(c *gin.Context, module, action, description, detail st
 		path = c.Request.URL.Path
 	}
 	oldJSON, newJSON := diffJSON(oldVal, newVal)
-	_ = a.DB.Create(&models.OpLog{
+	a.enqueueOpLog(models.OpLog{
 		TraceID:     traceID(c),
 		Username:    username,
 		Module:      module,
@@ -33,7 +33,7 @@ func (a *App) recordOpLog(c *gin.Context, module, action, description, detail st
 		Description: description,
 		OldValue:    oldJSON,
 		NewValue:    newJSON,
-	}).Error
+	})
 }
 
 func (a *App) logMutations() gin.HandlerFunc {
@@ -59,7 +59,7 @@ func (a *App) logMutations() gin.HandlerFunc {
 		}
 		module := moduleOf(path)
 		action := opAction(c.Request.Method)
-		_ = a.DB.Create(&models.OpLog{
+		a.enqueueOpLog(models.OpLog{
 			TraceID:     traceID(c),
 			Username:    username,
 			Module:      module,
@@ -71,7 +71,7 @@ func (a *App) logMutations() gin.HandlerFunc {
 			LatencyMs:   time.Since(start).Milliseconds(),
 			Detail:      c.Request.URL.RawQuery,
 			Description: c.Request.Method + " " + path,
-		}).Error
+		})
 	}
 }
 
@@ -111,13 +111,30 @@ func moduleOf(path string) string {
 	}
 }
 
+func (a *App) enqueueOpLog(row models.OpLog) {
+	if a.apiLogs != nil {
+		a.apiLogs.enqueueOp(row)
+		return
+	}
+	_ = a.DB.Create(&row).Error
+}
+
+func (a *App) flushAuditLogs() {
+	if a.apiLogs != nil {
+		a.apiLogs.Flush()
+	}
+}
+
 func (a *App) handleListLoginLogs(c *gin.Context) {
+	a.flushAuditLogs()
 	p := parsePage(c, 20, 200)
 	q := a.DB.Model(&models.LoginLog{})
-	q = applyContains(q, c.Query("username"), "username")
+	q = applyPrefix(q, c.Query("username"), "username")
 	q = applyEqual(q, "status", c.Query("status"))
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, 50082, "failed to list login logs")
+	if !okCount {
+		return
+	}
 	var rows []models.LoginLog
 	if err := q.Order("id desc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50082, "failed to list login logs")
@@ -127,13 +144,16 @@ func (a *App) handleListLoginLogs(c *gin.Context) {
 }
 
 func (a *App) handleListOpLogs(c *gin.Context) {
+	a.flushAuditLogs()
 	p := parsePage(c, 20, 200)
 	q := a.DB.Model(&models.OpLog{})
-	q = applyContains(q, c.Query("username"), "username")
+	q = applyPrefix(q, c.Query("username"), "username")
 	q = applyContains(q, c.Query("module"), "module")
 	q = applyContains(q, c.Query("action"), "action")
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, 50080, "failed to list op logs")
+	if !okCount {
+		return
+	}
 	var rows []models.OpLog
 	if err := q.Order("id desc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50080, "failed to list op logs")
@@ -143,12 +163,15 @@ func (a *App) handleListOpLogs(c *gin.Context) {
 }
 
 func (a *App) handleListAPILogs(c *gin.Context) {
+	a.flushAuditLogs()
 	p := parsePage(c, 20, 200)
 	q := a.DB.Model(&models.APILog{})
 	q = applyContains(q, c.Query("traceId"), "trace_id")
 	q = applyContains(q, c.Query("path"), "path")
-	var total int64
-	_ = q.Count(&total).Error
+	total, okCount := countOrFail(c, q, 50083, "failed to list api logs")
+	if !okCount {
+		return
+	}
 	var rows []models.APILog
 	if err := q.Order("id desc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, 50083, "failed to list api logs")
@@ -162,6 +185,7 @@ func (a *App) handleListLogs(c *gin.Context) {
 }
 
 func (a *App) handleClearLogs(c *gin.Context) {
+	a.flushAuditLogs()
 	kind := c.DefaultQuery("kind", "op")
 	switch kind {
 	case "login":
@@ -198,6 +222,7 @@ func (a *App) handlePurgeLogs(c *gin.Context) {
 }
 
 func (a *App) countLogs(username, module, action string) int64 {
+	a.flushAuditLogs()
 	q := a.DB.Model(&models.OpLog{})
 	if username != "" {
 		q = q.Where("username = ?", username)
@@ -211,4 +236,20 @@ func (a *App) countLogs(username, module, action string) int64 {
 	var n int64
 	_ = q.Count(&n).Error
 	return n
+}
+
+func (a *App) handleExportLogs(c *gin.Context) {
+	a.flushAuditLogs()
+	q := a.DB.Model(&models.OpLog{})
+	q = applyPrefix(q, c.Query("username"), "username")
+	q = applyContains(q, c.Query("module"), "module")
+	q = applyContains(q, c.Query("action"), "action")
+	if err := streamCSV(c, a.DB, q.Order("id desc"), "op-logs.csv",
+		[]string{"id", "username", "module", "action", "path", "ip", "createdAt"},
+		func(r models.OpLog) []string {
+			return []string{formatUint(r.ID), r.Username, r.Module, r.Action, r.Path, r.IP, r.CreatedAt.Format(time.RFC3339)}
+		},
+	); err != nil && !c.Writer.Written() {
+		fail(c, http.StatusInternalServerError, 50080, "failed to list op logs")
+	}
 }

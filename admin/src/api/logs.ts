@@ -1,4 +1,4 @@
-import { request, qs } from "./http"
+import { request, qs, downloadCSV } from "./http"
 import type { APILog, LoginLog, OpLog, PageResult } from "@/types"
 
 export const logsApi = {
@@ -14,4 +14,6 @@ export const logsApi = {
     request<{ purged: boolean; retentionDays: number }>(`/api/v1/logs/purge?days=${days}`, {
       method: "POST",
     }),
+  exportLogs: (params?: { username?: string; module?: string; action?: string }) =>
+    downloadCSV(`/api/v1/logs/export${qs(params ?? {})}`, "op-logs.csv"),
 }

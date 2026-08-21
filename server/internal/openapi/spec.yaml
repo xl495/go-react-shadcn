@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Latch Admin API
+  title: gra Admin API
   version: 1.0.0
   description: Go + Gin + Casbin admin backend
 servers:
@@ -35,6 +35,22 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeLoginResult"
+  /auth/register:
+    post:
+      summary: Register a web account with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
       responses:
         "200":
           description: OK
@@ -255,6 +271,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnvelopeUser"
+  /auth/logout:
+    post:
+      summary: Sign out and revoke the current JWT
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeBase"
   /auth/menus:
     get:
       summary: Admin menu tree for current user
@@ -442,8 +469,15 @@ components:
       type: object
       required: [code, message]
       properties:
-        code: { type: integer }
+        code:
+          type: integer
+          enum: [0, 1]
+          description: 0 success, 1 error
         message: { type: string }
+        data: {}
+        errorCode:
+          type: integer
+          description: Machine-readable application error when code is 1
     User:
       type: object
       required: [id, username, nickname, avatar, email, phone, gender, department, title, remark, status, timezone, marketingOptIn, roles]
@@ -477,6 +511,7 @@ components:
         code: { type: string }
         description: { type: string }
         dataScope: { type: string }
+        permissionIds: { type: array, items: { type: integer } }
         permissions: { type: array, items: { $ref: "#/components/schemas/Permission" } }
     Permission:
       type: object
@@ -634,6 +669,19 @@ components:
         captchaCode: { type: string }
         captchaToken: { type: string }
         captchaVersion: { type: string }
+    RegisterRequest:
+      type: object
+      required: [username, password, email]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        email: { type: string }
+        nickname: { type: string }
+        client: { type: string }
+        captchaId: { type: string }
+        captchaCode: { type: string }
+        captchaToken: { type: string }
+        captchaVersion: { type: string }
     GoogleAuthRequest:
       type: object
       required: [idToken]
@@ -655,6 +703,7 @@ components:
       properties:
         googleEnabled: { type: boolean }
         googleRegisterEnabled: { type: boolean }
+        registerEnabled: { type: boolean }
         googleClientId: { type: string }
         captchaProvider: { type: string }
         recaptchaSiteKeyV3: { type: string }

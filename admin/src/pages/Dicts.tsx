@@ -14,7 +14,7 @@ import {
   useDictItems,
   useDicts,
 } from "@/hooks/queries"
-import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { ConfirmAlert, EmptyTableRow, ResourceTable } from "@/components/feedback"
 import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label"
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -96,11 +97,16 @@ export function DictsPage() {
       {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <div className="space-y-3">
-          <div className="rounded-lg border bg-card">
-            {isLoading ? (
-              <TableSkeleton rows={6} cols={2} />
-            ) : (
-              <Table>
+          <ResourceTable
+            loading={isLoading}
+            skeletonCols={2}
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={data?.total ?? 0}
+            onPageChange={(next) => void setParams({ page: next })}
+          >
+            <Table>
+                <TableCaption className="sr-only">{t("dict.title")}</TableCaption>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t("dict.type")}</TableHead>
@@ -142,9 +148,7 @@ export function DictsPage() {
                   )}
                 </TableBody>
               </Table>
-            )}
-          </div>
-          <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={(next) => void setParams({ page: next })} />
+          </ResourceTable>
         </div>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -157,11 +161,15 @@ export function DictsPage() {
               </Can>
             ) : null}
           </div>
-          <div className="rounded-lg border bg-card">
-            {itemsQuery.isLoading ? (
-              <TableSkeleton />
-            ) : (
-              <Table>
+          <ResourceTable
+            loading={itemsQuery.isLoading}
+            page={itemPage}
+            pageSize={PAGE_SIZE}
+            total={itemsQuery.data?.total ?? 0}
+            onPageChange={(next) => void setParams({ itemPage: next })}
+          >
+            <Table>
+                <TableCaption className="sr-only">{active?.name ?? t("dict.pickType")}</TableCaption>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t("dict.label")}</TableHead>
@@ -199,14 +207,7 @@ export function DictsPage() {
                   )}
                 </TableBody>
               </Table>
-            )}
-          </div>
-          <PaginationBar
-            page={itemPage}
-            pageSize={PAGE_SIZE}
-            total={itemsQuery.data?.total ?? 0}
-            onPageChange={(next) => void setParams({ itemPage: next })}
-          />
+          </ResourceTable>
         </div>
       </div>
 
@@ -224,7 +225,6 @@ export function DictsPage() {
               void setParams({ typeId: null, itemPage: 1 })
               toast.success(t("app.saved"))
             },
-            onError: (e) => toast.error(translateApiError(e, t)),
           })
           setPendingType(null)
         }}
@@ -240,7 +240,6 @@ export function DictsPage() {
           if (!pendingItem) return
           deleteItem.mutate(pendingItem.id, {
             onSuccess: () => toast.success(t("app.saved")),
-            onError: (e) => toast.error(translateApiError(e, t)),
           })
           setPendingItem(null)
         }}
@@ -272,7 +271,7 @@ export function DictsPage() {
                   toast.success(t("app.saved"))
                   setTypeOpen(false)
                   setTypeForm({ code: "", name: "", remark: "" })
-                }).catch((e) => toast.error(translateApiError(e, t)))
+                }).catch(() => undefined)
               }
             >
               {t("app.create")}
@@ -319,7 +318,7 @@ export function DictsPage() {
                     setItemOpen(false)
                     setItemForm({ label: "", value: "", sort: "0", remark: "" })
                   })
-                  .catch((e) => toast.error(translateApiError(e, t)))
+                  .catch(() => undefined)
               }}
             >
               {t("app.create")}

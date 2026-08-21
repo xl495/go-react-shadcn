@@ -5,9 +5,11 @@ import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { DICT, useDict } from "@/hooks/dict"
 import { formatDateTime } from "@/utils/format"
-import { translateApiError, useI18n } from "@/providers/i18n"
+import { useI18n } from "@/providers/i18n"
 import { useUpdateProfile } from "@/hooks/queries"
+import { UnsavedGuard } from "@/hooks/unsaved"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
+import { useTheme, type Theme } from "@/providers/theme"
 import { AvatarField } from "@/components/ui/avatar-field"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +22,7 @@ import { TimezoneSelect } from "@/components/ui/timezone-select"
 export function SettingsPage() {
   const { user, updateUser } = useAuth()
   const { t } = useI18n()
+  const { theme, setTheme } = useTheme()
   const genderDict = useDict(DICT.gender)
   const deptDict = useDict(DICT.department)
   const updateProfile = useUpdateProfile()
@@ -34,6 +37,16 @@ export function SettingsPage() {
     timezone: user?.timezone || "Asia/Shanghai",
     marketingOptIn: user?.marketingOptIn ?? true,
   })
+  const dirty =
+    profile.nickname !== (user?.nickname ?? "") ||
+    profile.email !== (user?.email ?? "") ||
+    profile.phone !== (user?.phone ?? "") ||
+    profile.gender !== (user?.gender ?? "") ||
+    profile.department !== (user?.department ?? "") ||
+    profile.title !== (user?.title ?? "") ||
+    profile.remark !== (user?.remark ?? "") ||
+    profile.timezone !== (user?.timezone || "Asia/Shanghai") ||
+    profile.marketingOptIn !== (user?.marketingOptIn ?? true)
 
   async function onSaveProfile(e: FormEvent) {
     e.preventDefault()
@@ -41,13 +54,14 @@ export function SettingsPage() {
       const next = await updateProfile.mutateAsync(profile)
       updateUser(next)
       toast.success(t("settings.saved"))
-    } catch (err) {
-      toast.error(translateApiError(err, t))
+    } catch {
+      // API message is toasted by the HTTP client.
     }
   }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      <UnsavedGuard dirty={dirty} />
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">{t("settings.title")}</h2>
@@ -139,6 +153,26 @@ export function SettingsPage() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.appearance")}</CardTitle>
+          <CardDescription>{t("settings.appearanceHint")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DictSelect
+            id="theme"
+            label={t("nav.theme")}
+            value={theme}
+            items={[
+              { value: "system", label: t("nav.themeMode.system") },
+              { value: "light", label: t("nav.themeMode.light") },
+              { value: "dark", label: t("nav.themeMode.dark") },
+            ]}
+            onChange={(value) => setTheme(value as Theme)}
+          />
         </CardContent>
       </Card>
 

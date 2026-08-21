@@ -6,7 +6,7 @@ import { P } from "@/constants/perms"
 import { DICT, useDict } from "@/hooks/dict"
 import { usePermissionListParams } from "@/hooks/list-params"
 import { PAGE_SIZE, useCreatePermission, useDeletePermission, usePermissions } from "@/hooks/queries"
-import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { ConfirmAlert, EmptyTableRow, ResourceTable } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label"
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -72,8 +73,8 @@ export function PermissionsPage() {
       toast.success(t("app.saved"))
       setOpen(false)
       setForm(empty)
-    } catch (e) {
-      toast.error(translateApiError(e, t) || t("permissions.createFailed"))
+    } catch {
+      // API message is toasted by the HTTP client.
     }
   }
 
@@ -115,11 +116,16 @@ export function PermissionsPage() {
         ) : null}
       </FilterForm>
       {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
-      <div className="rounded-lg border bg-card">
-        {isLoading ? (
-          <TableSkeleton rows={8} cols={colSpan} />
-        ) : (
-          <Table>
+      <ResourceTable
+        loading={isLoading}
+        skeletonCols={colSpan}
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={data?.total ?? 0}
+        onPageChange={(next) => void setParams({ page: next })}
+      >
+        <Table>
+            <TableCaption className="sr-only">{t("permissions.title")}</TableCaption>
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
@@ -163,14 +169,7 @@ export function PermissionsPage() {
               )}
             </TableBody>
           </Table>
-        )}
-      </div>
-      <PaginationBar
-        page={page}
-        pageSize={PAGE_SIZE}
-        total={data?.total ?? 0}
-        onPageChange={(next) => void setParams({ page: next })}
-      />
+      </ResourceTable>
 
       <ConfirmAlert
         open={!!pending}
@@ -183,7 +182,6 @@ export function PermissionsPage() {
           if (!pending) return
           deletePerm.mutate(pending.id, {
             onSuccess: () => toast.success(t("app.saved")),
-            onError: (e) => toast.error(translateApiError(e, t) || t("permissions.deleteFailed")),
           })
           setPending(null)
         }}

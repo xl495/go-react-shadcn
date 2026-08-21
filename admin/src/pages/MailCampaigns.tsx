@@ -12,13 +12,14 @@ import {
   useUpdateMailCampaign,
 } from "@/hooks/queries"
 import { FilterForm, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
-import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { ConfirmAlert, EmptyTableRow, ResourceTable } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DictSelect } from "@/components/ui/dict-select"
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -96,11 +97,16 @@ export function MailCampaignsPage() {
         ) : null}
       </FilterForm>
       {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
-      <div className="rounded-lg border bg-card">
-        {isLoading ? (
-          <TableSkeleton rows={8} cols={6} />
-        ) : (
-          <Table>
+      <ResourceTable
+        loading={isLoading}
+        skeletonCols={6}
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={data?.total ?? 0}
+        onPageChange={(next) => void setParams({ page: next })}
+      >
+        <Table>
+            <TableCaption className="sr-only">{t("mail.campaignsTitle")}</TableCaption>
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
@@ -149,7 +155,6 @@ export function MailCampaignsPage() {
                                   { id: row.id },
                                   {
                                     onSuccess: () => toast.success(t("mail.scheduled")),
-                                    onError: (e) => toast.error(translateApiError(e, t)),
                                   },
                                 )
                               }
@@ -168,7 +173,6 @@ export function MailCampaignsPage() {
                                   { id: row.id, body: { status: "paused" } },
                                   {
                                     onSuccess: () => toast.success(t("mail.paused")),
-                                    onError: (e) => toast.error(translateApiError(e, t)),
                                   },
                                 )
                               }
@@ -191,9 +195,7 @@ export function MailCampaignsPage() {
               )}
             </TableBody>
           </Table>
-        )}
-      </div>
-      <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={(next) => void setParams({ page: next })} />
+      </ResourceTable>
       <ConfirmAlert
         open={!!pending}
         onOpenChange={(next) => {
@@ -205,7 +207,6 @@ export function MailCampaignsPage() {
           if (!pending) return
           deleteCampaign.mutate(pending.id, {
             onSuccess: () => toast.success(t("app.saved")),
-            onError: (e) => toast.error(translateApiError(e, t)),
           })
           setPending(null)
         }}

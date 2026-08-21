@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"strings"
 	"testing"
 
 	"go-react-shadcn/internal/models"
@@ -28,5 +29,15 @@ func TestLooksHTML(t *testing.T) {
 	}
 	if !LooksHTML("<p>hello</p>") {
 		t.Fatal("expected html")
+	}
+}
+
+func TestWrapHTMLStripsScripts(t *testing.T) {
+	got := wrapHTML(`<p>hello</p><script>alert(1)</script><a href="javascript:alert(1)">x</a>`)
+	if strings.Contains(strings.ToLower(got), "<script") || strings.Contains(got, "alert(1)") {
+		t.Fatalf("script survived: %s", got)
+	}
+	if !strings.Contains(got, "hello") {
+		t.Fatalf("body dropped: %s", got)
 	}
 }

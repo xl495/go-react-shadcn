@@ -36,13 +36,20 @@ func TestResetLinkAndToken(t *testing.T) {
 	if HashToken(raw) != hash {
 		t.Fatal("hash mismatch")
 	}
-	got := ResetLink("http://127.0.0.1:5173/", "", raw)
+	got := ResetLink("http://127.0.0.1:5173/", "", raw, nil)
 	want := "http://127.0.0.1:5173/reset-password?token=" + raw
 	if got != want {
 		t.Fatalf("link=%q want %q", got, want)
 	}
-	if ResetLink("", "http://127.0.0.1:5174", "abc") != "http://127.0.0.1:5174/reset-password?token=abc" {
-		t.Fatal("origin fallback")
+	allowed := []string{"http://127.0.0.1:5174"}
+	if ResetLink("", "http://127.0.0.1:5174", "abc", allowed) != "http://127.0.0.1:5174/reset-password?token=abc" {
+		t.Fatal("allowlisted origin fallback")
+	}
+	if ResetLink("", "http://evil.example", "abc", allowed) != "http://127.0.0.1:5173/reset-password?token=abc" {
+		t.Fatal("untrusted origin must not win")
+	}
+	if VerifyLink("", "http://evil.example", "tok", allowed) != "http://127.0.0.1:5174/verify-email?token=tok" {
+		t.Fatal("verify untrusted origin")
 	}
 }
 

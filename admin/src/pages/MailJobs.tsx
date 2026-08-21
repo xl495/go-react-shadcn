@@ -6,13 +6,14 @@ import { P } from "@/constants/perms"
 import { useMailJobListParams } from "@/hooks/list-params"
 import { PAGE_SIZE, useCancelMailJob, useMailJobs, useRetryMailJob } from "@/hooks/queries"
 import { FilterForm, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
-import { ConfirmAlert, EmptyTableRow, PaginationBar, TableSkeleton } from "@/components/feedback"
+import { ConfirmAlert, EmptyTableRow, ResourceTable } from "@/components/feedback"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DictSelect } from "@/components/ui/dict-select"
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -96,11 +97,16 @@ export function MailJobsPage() {
           ) : null}
         </FilterForm>
       {error ? <p className="text-sm text-destructive">{translateApiError(error, t)}</p> : null}
-      <div className="rounded-lg border bg-card">
-        {isLoading ? (
-          <TableSkeleton rows={8} cols={7} />
-        ) : (
-          <Table>
+      <ResourceTable
+        loading={isLoading}
+        skeletonCols={7}
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={data?.total ?? 0}
+        onPageChange={(next) => void setParams({ page: next })}
+      >
+        <Table>
+            <TableCaption className="sr-only">{t("mail.jobsTitle")}</TableCaption>
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
@@ -155,9 +161,7 @@ export function MailJobsPage() {
               )}
             </TableBody>
           </Table>
-        )}
-      </div>
-      <PaginationBar page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPageChange={(next) => void setParams({ page: next })} />
+      </ResourceTable>
       <ConfirmAlert
         open={!!pending}
         onOpenChange={(next) => {
@@ -173,7 +177,6 @@ export function MailJobsPage() {
           const run = action === "retry" ? retryJob.mutate : cancelJob.mutate
           run(job.id, {
             onSuccess: () => toast.success(t("app.saved")),
-            onError: (e) => toast.error(translateApiError(e, t)),
           })
           setPending(null)
         }}

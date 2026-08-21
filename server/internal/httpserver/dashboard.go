@@ -8,28 +8,40 @@ import (
 )
 
 func (a *App) handleDashboard(c *gin.Context) {
-	var users, roles, perms, dicts, configs, logs int64
-	if err := a.DB.Model(&models.User{}).Count(&users).Error; err != nil {
+	var stats struct {
+		Users      int64 `gorm:"column:users"`
+		Roles      int64 `gorm:"column:roles"`
+		Perms      int64 `gorm:"column:permissions"`
+		Dicts      int64 `gorm:"column:dicts"`
+		Cfgs       int64 `gorm:"column:configs"`
+		Logs       int64 `gorm:"column:logs"`
+		MailQueued int64 `gorm:"column:mail_queued"`
+	}
+	err := a.DB.Raw(`SELECT
+		(SELECT COUNT(*) FROM admin_user) + (SELECT COUNT(*) FROM web_user) AS users,
+		(SELECT COUNT(*) FROM roles) AS roles,
+		(SELECT COUNT(*) FROM permissions) AS permissions,
+		(SELECT COUNT(*) FROM dict_types) AS dicts,
+		(SELECT COUNT(*) FROM sys_configs) AS configs,
+		(SELECT COUNT(*) FROM op_logs) AS logs,
+		(SELECT COUNT(*) FROM mail_jobs WHERE status IN ('queued','sending')) AS mail_queued`).Scan(&stats).Error
+	if err != nil {
 		fail(c, http.StatusInternalServerError, 50040, "failed to load stats")
 		return
 	}
-	if err := a.DB.Model(&models.Role{}).Count(&roles).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50040, "failed to load stats")
-		return
-	}
-	if err := a.DB.Model(&models.Permission{}).Count(&perms).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50040, "failed to load stats")
-		return
-	}
-	_ = a.DB.Model(&models.DictType{}).Count(&dicts).Error
-	_ = a.DB.Model(&models.SysConfig{}).Count(&configs).Error
-	_ = a.DB.Model(&models.OpLog{}).Count(&logs).Error
+	var recent []models.LoginLog
+	_ = a.DB.Order("id desc").Limit(8).Find(&recent).Error
+	var failed []models.LoginLog
+	_ = a.DB.Where("status = ?", "failed").Order("id desc").Limit(5).Find(&failed).Error
 	ok(c, gin.H{
-		"users":       users,
-		"roles":       roles,
-		"permissions": perms,
-		"dicts":       dicts,
-		"configs":     configs,
-		"logs":        logs,
+		"users":        stats.Users,
+		"roles":        stats.Roles,
+		"permissions":  stats.Perms,
+		"dicts":        stats.Dicts,
+		"configs":      stats.Cfgs,
+		"logs":         stats.Logs,
+		"mailQueued":   stats.MailQueued,
+		"recentLogins": recent,
+		"failedLogins": failed,
 	})
 }

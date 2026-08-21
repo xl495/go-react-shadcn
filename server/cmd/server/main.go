@@ -30,13 +30,19 @@ func main() {
 		slog.Error("database failed", "error", err)
 		os.Exit(1)
 	}
+	defer func() {
+		if err := store.Close(db); err != nil {
+			slog.Error("close database", "error", err)
+		}
+	}()
 	app, err := httpserver.New(cfg, db)
 	if err != nil {
 		slog.Error("server init failed", "error", err)
 		os.Exit(1)
 	}
+	defer app.Close()
 	addr := ":" + cfg.Port
-	slog.Info("latch api listening", "addr", addr, "db", cfg.DatabasePath)
+	slog.Info("gra api listening", "addr", addr, "db", cfg.DatabasePath)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

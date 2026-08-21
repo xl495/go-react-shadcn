@@ -1,4 +1,6 @@
 import { useI18n } from "@/providers/i18n"
+import { cn } from "@/utils/cn"
+import type { ReactNode } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,13 +58,14 @@ export function PaginationBar({
   const { t } = useI18n()
   const pages = Math.max(1, Math.ceil(total / pageSize))
   return (
-    <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+    <nav aria-label={t("app.pagination")} className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
       <p>{t("app.pageOf", { page, pages, total })}</p>
       <div className="flex gap-2">
         <Button
           variant="outline"
           size="sm"
           disabled={page <= 1}
+          aria-label={t("app.prev")}
           onClick={() => onPageChange(page - 1)}
         >
           {t("app.prev")}
@@ -71,13 +74,51 @@ export function PaginationBar({
           variant="outline"
           size="sm"
           disabled={page >= pages}
+          aria-label={t("app.next")}
           onClick={() => onPageChange(page + 1)}
         >
           {t("app.next")}
         </Button>
       </div>
-    </div>
+    </nav>
   )
+}
+
+export function ResourceTable({
+  loading,
+  children,
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  className,
+  skeletonCols = 6,
+}: {
+  loading: boolean
+  children: ReactNode
+  page: number
+  pageSize: number
+  total: number
+  onPageChange: (page: number) => void
+  className?: string
+  skeletonCols?: number
+}) {
+  return (
+    <>
+      <div className={cn("rounded-lg border bg-card", className)}>
+        {loading ? <TableSkeleton rows={8} cols={skeletonCols} /> : children}
+      </div>
+      <PaginationBar page={page} pageSize={pageSize} total={total} onPageChange={onPageChange} />
+    </>
+  )
+}
+
+export function StackedCards({ children }: { children: ReactNode }) {
+  return <div className="space-y-3 p-3 sm:hidden">{children}</div>
+}
+
+export function DesktopOnly({ children }: { children: ReactNode }) {
+  return <div className="hidden sm:block">{children}</div>
 }
 
 export function EmptyState({ title, hint }: { title?: string; hint?: string }) {

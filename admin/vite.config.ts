@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
+      "@latch/auth": path.resolve(__dirname, "../shared/auth"),
     },
   },
   build: {

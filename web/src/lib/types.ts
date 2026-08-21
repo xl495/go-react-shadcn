@@ -28,6 +28,7 @@ export type CaptchaChallenge = {
 export type AuthSettings = {
   googleEnabled: boolean
   googleRegisterEnabled: boolean
+  registerEnabled?: boolean
   googleClientId: string
   captchaProvider: string
   recaptchaSiteKeyV3?: string

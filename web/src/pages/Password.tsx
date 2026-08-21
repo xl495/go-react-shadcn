@@ -1,9 +1,12 @@
 import { useState, type FormEvent } from "react"
 import { api, ApiError } from "@/lib/api"
+import { useI18n } from "@/lib/i18n"
 
 export function PasswordPage() {
+  const { t } = useI18n()
   const [oldPassword, setOldPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [pending, setPending] = useState(false)
@@ -12,14 +15,19 @@ export function PasswordPage() {
     e.preventDefault()
     setMessage("")
     setError("")
+    if (newPassword !== confirmPassword) {
+      setError(t("password.mismatch"))
+      return
+    }
     setPending(true)
     try {
       await api.changePassword({ oldPassword, newPassword })
       setOldPassword("")
       setNewPassword("")
-      setMessage("密码已更新")
+      setConfirmPassword("")
+      setMessage(t("password.updated"))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message || "修改失败" : "修改失败")
+      setError(err instanceof ApiError ? err.message || t("password.failed") : t("password.failed"))
     } finally {
       setPending(false)
     }
@@ -27,23 +35,46 @@ export function PasswordPage() {
 
   return (
     <form onSubmit={onSubmit} className="grid gap-4 rounded-lg border p-6">
-      <h1 className="text-xl font-semibold tracking-tight">修改密码</h1>
-      <input
-        type="password"
-        autoComplete="current-password"
-        placeholder="当前密码"
-        value={oldPassword}
-        onChange={(e) => setOldPassword(e.target.value)}
-        className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      />
-      <input
-        type="password"
-        autoComplete="new-password"
-        placeholder="新密码（至少 8 位）"
-        value={newPassword}
-        onChange={(e) => setNewPassword(e.target.value)}
-        className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      />
+      <h1 className="text-xl font-semibold tracking-tight">{t("password.title")}</h1>
+      <div className="grid gap-1.5">
+        <label htmlFor="current-password" className="text-sm font-medium">
+          {t("password.current")}
+        </label>
+        <input
+          id="current-password"
+          type="password"
+          autoComplete="current-password"
+          value={oldPassword}
+          onChange={(e) => setOldPassword(e.target.value)}
+          className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <label htmlFor="new-password" className="text-sm font-medium">
+          {t("password.next")}
+        </label>
+        <input
+          id="new-password"
+          type="password"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <label htmlFor="confirm-password" className="text-sm font-medium">
+          {t("password.confirm")}
+        </label>
+        <input
+          id="confirm-password"
+          type="password"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </div>
       {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <button
@@ -51,7 +82,7 @@ export function PasswordPage() {
         disabled={pending}
         className="h-9 rounded-md border px-3 text-sm hover:bg-muted disabled:opacity-60"
       >
-        {pending ? "保存中…" : "更新密码"}
+        {pending ? t("password.saving") : t("password.save")}
       </button>
     </form>
   )

@@ -2,13 +2,13 @@ package httpserver
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go-react-shadcn/internal/i18n"
 	"go-react-shadcn/internal/mailer"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/passwd"
@@ -16,7 +16,8 @@ import (
 )
 
 type forgotPasswordRequest struct {
-	Email string `json:"email"`
+	Email  string `json:"email"`
+	Client string `json:"client"`
 	challengeInput
 }
 
@@ -50,19 +51,23 @@ func (a *App) handleForgotPassword(c *gin.Context) {
 
 	ok(c, gin.H{"sent": true})
 
+	kind := loginClientKind(req.Client)
 	var user models.User
-	err := a.DB.Where("lower(email) = ? AND email <> '' AND status = ?", email, "active").First(&user).Error
+	err := a.accounts(kind).Where("lower(email) = ? AND email <> '' AND status = ?", email, "active").First(&user).Error
 	if err != nil {
 		return
 	}
+	user.Kind = kind
 	raw, hash, err := mailer.NewResetToken()
 	if err != nil {
 		slog.Error("forgot password token", "error", err)
 		return
 	}
-	_ = a.DB.Where("user_id = ? AND used_at IS NULL", user.ID).Delete(&models.PasswordResetToken{}).Error
+	_ = a.DB.Where("user_id = ? AND user_kind = ? AND used_at IS NULL", user.ID, kind).Delete(&models.PasswordResetToken{}).Error
 	row := models.PasswordResetToken{
 		UserID:    user.ID,
+		UserKind:  kind,
+		Purpose:   models.TokenPurposeReset,
 		TokenHash: hash,
 		ExpiresAt: time.Now().Add(mailer.ResetTTL),
 	}
@@ -70,18 +75,22 @@ func (a *App) handleForgotPassword(c *gin.Context) {
 		slog.Error("forgot password persist", "error", err)
 		return
 	}
-	cfg, _ := mailer.Load(a.DB)
+	cfg, _ := mailer.Load(a.DB, a.Cfg.JWTSecret)
 	name := user.Nickname
 	if name == "" {
 		name = user.Username
 	}
-	link := mailer.ResetLink(cfg.ResetBaseURL, c.GetHeader("Origin"), raw)
-	body := fmt.Sprintf("您好 %s，\n\n请在 30 分钟内点击下面的链接重置密码：\n%s\n\n若非本人操作，请忽略此邮件。\n", name, link)
+	link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), "http://127.0.0.1:5173", "/reset-password?token="+raw)
+	if !okLink {
+		slog.Error("forgot password missing mail.reset_base_url in production")
+		return
+	}
+	subject, body := i18n.ResetPasswordMail(i18n.FromRequest(c.Request), name, link)
 	if _, err := a.enqueueMail(mailer.EnqueueInput{
 		Class:   models.MailClassTransactional,
 		User:    &user,
 		ToEmail: user.Email,
-		Subject: "重置 Latch 密码",
+		Subject: subject,
 		Body:    body,
 	}); err != nil {
 		slog.Error("forgot password enqueue", "error", err, "user", user.Username)
@@ -96,28 +105,36 @@ func (a *App) handleResetPassword(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeInvalidBody, "invalid request body")
 		return
 	}
+	if a.ResetGuard != nil && !a.ResetGuard.AllowIP(c.ClientIP()) {
+		fail(c, http.StatusTooManyRequests, CodeForgotRateLimited, "too many reset requests from this ip")
+		return
+	}
 	token := strings.TrimSpace(req.Token)
+	if token != "" && a.ResetTokenGuard != nil && !a.ResetTokenGuard.AllowIP(mailer.HashToken(token)) {
+		fail(c, http.StatusTooManyRequests, CodeForgotRateLimited, "too many reset requests from this ip")
+		return
+	}
 	if token == "" {
 		fail(c, http.StatusBadRequest, CodeResetTokenInvalid, "invalid or expired reset token")
 		return
 	}
-	if len(req.NewPassword) < 8 {
-		fail(c, http.StatusBadRequest, CodeNewPasswordShort, "password must be at least 8 characters")
-		return
-	}
 	var row models.PasswordResetToken
 	err := a.DB.Where("token_hash = ?", mailer.HashToken(token)).First(&row).Error
-	if err != nil || row.UsedAt != nil || time.Now().After(row.ExpiresAt) {
+	if err != nil || row.UsedAt != nil || time.Now().After(row.ExpiresAt) || (row.Purpose != "" && row.Purpose != models.TokenPurposeReset) {
 		fail(c, http.StatusBadRequest, CodeResetTokenInvalid, "invalid or expired reset token")
 		return
 	}
+	kind := models.NormalizeUserKind(row.UserKind)
 	var user models.User
-	if err := a.DB.First(&user, row.UserID).Error; err != nil {
+	if err := a.loadAccount(kind, &user, row.UserID); err != nil {
 		fail(c, http.StatusBadRequest, CodeResetTokenInvalid, "invalid or expired reset token")
 		return
 	}
 	if user.Status != "active" {
 		fail(c, http.StatusBadRequest, CodeResetTokenInvalid, "invalid or expired reset token")
+		return
+	}
+	if a.failIfWeakPassword(c, req.NewPassword, user.Username) {
 		return
 	}
 	hash, err := passwd.Hash(req.NewPassword)
@@ -127,7 +144,7 @@ func (a *App) handleResetPassword(c *gin.Context) {
 	}
 	now := time.Now()
 	err = a.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&user).Updates(map[string]any{
+		if err := models.Accounts(tx, kind).Where("id = ?", user.ID).Updates(map[string]any{
 			"password_hash": hash,
 			"token_version": user.TokenVersion + 1,
 		}).Error; err != nil {
@@ -136,13 +153,14 @@ func (a *App) handleResetPassword(c *gin.Context) {
 		if err := tx.Model(&row).Update("used_at", now).Error; err != nil {
 			return err
 		}
-		return tx.Where("user_id = ? AND id <> ? AND used_at IS NULL", user.ID, row.ID).Delete(&models.PasswordResetToken{}).Error
+		return tx.Where("user_id = ? AND user_kind = ? AND id <> ? AND used_at IS NULL", user.ID, kind, row.ID).Delete(&models.PasswordResetToken{}).Error
 	})
 	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeChangePassword, "failed to change password")
 		return
 	}
-	a.sessions.invalidate(user.ID)
+	a.revokeAuthSessions(kind, user.ID)
+	a.sessions.invalidate(kind, user.ID)
 	ok(c, gin.H{"reset": true})
 }
 
@@ -161,12 +179,12 @@ func (a *App) handleTestMail(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeMailRecipient, "invalid email address")
 		return
 	}
-	cfg, _ := mailer.Load(a.DB)
+	cfg, _ := mailer.Load(a.DB, a.Cfg.JWTSecret)
 	job, err := a.enqueueMail(mailer.EnqueueInput{
 		Class:   models.MailClassTransactional,
 		ToEmail: to,
-		Subject: "Latch 测试邮件",
-		Body:    "这是来自 Latch 的测试邮件，说明当前 SMTP 配置可用。",
+		Subject: "gra 测试邮件",
+		Body:    "这是来自 gra 的测试邮件，说明当前 SMTP 配置可用。",
 	})
 	if err != nil {
 		a.failMail(c, err)
@@ -234,4 +252,41 @@ func (a *App) failMail(c *gin.Context, err error) {
 	default:
 		fail(c, http.StatusInternalServerError, CodeSendMail, "failed to send mail")
 	}
+}
+
+func (a *App) allowedLinkOrigins() []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 8)
+	add := func(raw string) {
+		item := mailer.NormalizeOrigin(raw)
+		if item == "" {
+			return
+		}
+		if _, ok := seen[item]; ok {
+			return
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	for _, part := range strings.Split(a.Cfg.CORSOrigin, ",") {
+		add(part)
+	}
+	if a.Cfg.DevMode {
+		add("http://127.0.0.1:5173")
+		add("http://localhost:5173")
+		add("http://127.0.0.1:5174")
+		add("http://localhost:5174")
+	}
+	return out
+}
+
+func (a *App) mailPublicLink(configured, origin, fallback, suffix string) (string, bool) {
+	if mailer.NormalizeOrigin(configured) == "" && !a.Cfg.DevMode {
+		return "", false
+	}
+	base := mailer.LinkBase(configured, origin, a.allowedLinkOrigins(), fallback)
+	if base == "" {
+		return "", false
+	}
+	return base + suffix, true
 }

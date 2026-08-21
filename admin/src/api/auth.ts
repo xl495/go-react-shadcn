@@ -41,8 +41,10 @@ export const authApi = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  logout: () => request<{ loggedOut: boolean }>("/api/v1/auth/logout", { method: "POST" }),
   forgotPassword: (body: {
     email: string
+    client?: string
     captchaId?: string
     captchaCode?: string
     captchaToken?: string
@@ -50,7 +52,7 @@ export const authApi = {
   }) =>
     request<{ sent: boolean }>("/api/v1/auth/forgot-password", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, client: body.client ?? "admin" }),
     }),
   resetPassword: (body: { token: string; newPassword: string }) =>
     request<{ reset: boolean }>("/api/v1/auth/reset-password", {

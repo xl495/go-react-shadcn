@@ -19,35 +19,42 @@ import (
 	"go-react-shadcn/internal/rbac"
 	"go-react-shadcn/internal/security"
 	"go-react-shadcn/internal/seed"
+	"go-react-shadcn/internal/store"
 	"go-react-shadcn/internal/token"
 	"gorm.io/gorm"
 )
 
 type App struct {
-	Cfg          config.Config
-	DB           *gorm.DB
-	Captcha      *captcha.Service
-	Tokens       *token.Service
-	Enforcer     *casbin.Enforcer
-	LoginGuard   *security.LoginGuard
-	ForgotGuard  *security.LoginGuard
-	Mail         mailer.Sender
-	HTTP         *http.Client
-	GoogleVerify googleid.Verifier
-	SiteVerify   siteverifyClient
-	MailQ        *mailer.Queue
-	Router       *gin.Engine
-	metrics      *httpMetrics
-	sessions     *sessionCache
-	apiLogs      *apiLogQueue
-	stopOnce     sync.Once
-	stopCh       chan struct{}
+	Cfg              config.Config
+	DB               *gorm.DB
+	Captcha          *captcha.Service
+	Tokens           *token.Service
+	Enforcer         *casbin.Enforcer
+	LoginGuard       *security.LoginGuard
+	ForgotGuard      *security.LoginGuard
+	ResetGuard       *security.LoginGuard
+	ResetTokenGuard  *security.LoginGuard
+	UnsubGuard       *security.LoginGuard
+	VerifyGuard      *security.LoginGuard
+	VerifyTokenGuard *security.LoginGuard
+	Mail             mailer.Sender
+	HTTP             *http.Client
+	GoogleVerify     googleid.Verifier
+	SiteVerify       siteverifyClient
+	MailQ            *mailer.Queue
+	Router           *gin.Engine
+	metrics          *httpMetrics
+	sessions         *sessionCache
+	syscfg           *sysCache
+	depts            *deptCache
+	apiLogs          *apiLogQueue
+	mailDB           *gorm.DB
+	importMu         sync.Mutex
+	stopOnce         sync.Once
+	stopCh           chan struct{}
 }
 
 func New(cfg config.Config, db *gorm.DB) (*App, error) {
-	if err := db.AutoMigrate(models.AllModels()...); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
 	enforcer, err := rbac.NewEnforcer(db)
 	if err != nil {
 		return nil, err
@@ -59,42 +66,70 @@ func New(cfg config.Config, db *gorm.DB) (*App, error) {
 		}
 		cfg.UploadDir = filepath.Join(dir, "uploads")
 	}
-	if err := seed.Run(db, enforcer, cfg.UploadDir); err != nil {
+	if err := seed.Run(db, enforcer, cfg.UploadDir, cfg.DevMode); err != nil {
 		return nil, fmt.Errorf("seed: %w", err)
 	}
-	mailSender := &mailer.SMTP{DB: db}
+	if err := store.EnsureUserFTS(db); err != nil {
+		return nil, fmt.Errorf("user fts: %w", err)
+	}
+	mailSender := &mailer.SMTP{DB: db, Key: cfg.JWTSecret}
 	httpClient := &http.Client{Timeout: 8 * time.Second}
+	mailQ := mailer.NewQueue(db, mailSender, cfg.UnsubSecret())
+	mailQ.ConfigKey = cfg.JWTSecret
 	app := &App{
-		Cfg:         cfg,
-		DB:          db,
-		Captcha:     captcha.New(cfg.CaptchaDebug),
-		Tokens:      token.New(cfg.JWTSecret, cfg.JWTTTL),
-		Enforcer:    enforcer,
-		LoginGuard:  security.NewLoginGuard(),
-		ForgotGuard: security.NewIPLimiter(8, time.Minute),
-		Mail:        mailSender,
-		HTTP:        httpClient,
-		MailQ:       mailer.NewQueue(db, mailSender, cfg.JWTSecret),
-		metrics:     newHTTPMetrics(),
-		sessions:    newSessionCache(cfg.SessionCache),
-		apiLogs:     newAPILogQueue(db, cfg.APILogEnabled, cfg.APILogSample),
-		stopCh:      make(chan struct{}),
+		Cfg:              cfg,
+		DB:               db,
+		Captcha:          captcha.New(db, cfg.CaptchaDebug && cfg.DevMode),
+		Tokens:           token.New(cfg.JWTSecret, cfg.JWTTTL),
+		Enforcer:         enforcer,
+		LoginGuard:       security.NewLoginGuard(),
+		ForgotGuard:      security.NewIPLimiter(8, time.Minute),
+		ResetGuard:       security.NewIPLimiter(12, time.Minute),
+		ResetTokenGuard:  security.NewIPLimiter(5, time.Minute),
+		UnsubGuard:       security.NewIPLimiter(20, time.Minute),
+		VerifyGuard:      security.NewIPLimiter(12, time.Minute),
+		VerifyTokenGuard: security.NewIPLimiter(5, time.Minute),
+		Mail:             mailSender,
+		HTTP:             httpClient,
+		MailQ:            mailQ,
+		metrics:          newHTTPMetrics(),
+		sessions:         newSessionCache(cfg.SessionCache),
+		syscfg:           newSysCache(30 * time.Second),
+		depts:            &deptCache{},
+		apiLogs:          newAPILogQueue(db, cfg.APILogEnabled, cfg.APILogSample),
+		mailDB:           db,
+		stopCh:           make(chan struct{}),
 	}
 	app.Router = app.buildRouter()
-	go app.sweepLoginGuard()
+	app.warnSealedConfigs()
+	go app.backgroundJobs()
 	go app.MailQ.Run()
 	return app, nil
 }
 
-func (a *App) sweepLoginGuard() {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
+func (a *App) backgroundJobs() {
+	loginTick := time.NewTicker(time.Minute)
+	purgeTick := time.NewTicker(time.Hour)
+	defer loginTick.Stop()
+	defer purgeTick.Stop()
 	for {
 		select {
-		case <-ticker.C:
-			if a.LoginGuard != nil {
-				a.LoginGuard.Sweep()
+		case <-loginTick.C:
+			for _, g := range []*security.LoginGuard{a.LoginGuard, a.ForgotGuard, a.ResetGuard, a.ResetTokenGuard, a.UnsubGuard, a.VerifyGuard, a.VerifyTokenGuard} {
+				if g != nil {
+					g.Sweep()
+				}
 			}
+			if a.sessions != nil {
+				a.sessions.Sweep()
+			}
+		case <-purgeTick.C:
+			now := time.Now()
+			if a.Cfg.LogRetentionDays > 0 {
+				_ = a.purgeOldLogs(a.Cfg.LogRetentionDays)
+			}
+			_ = a.DB.Where("expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)", now, now.Add(-7*24*time.Hour)).
+				Delete(&models.AuthSession{}).Error
 		case <-a.stopCh:
 			return
 		}
@@ -113,25 +148,39 @@ func (a *App) Close() {
 	if a.apiLogs != nil {
 		a.apiLogs.Stop()
 	}
+	if a.mailDB != nil && a.mailDB != a.DB {
+		_ = store.Close(a.mailDB)
+	}
 }
 
 func (a *App) buildRouter() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.HandleMethodNotAllowed = true
+	a.configureTrustedProxies(r)
+	r.Use(gin.CustomRecovery(func(c *gin.Context, _ any) {
+		fail(c, http.StatusInternalServerError, CodeInternal, "internal error")
+	}))
+	r.Use(a.securityHeaders())
+	r.Use(a.limitRequestBody())
+	r.Use(gzipIfAsked())
 	r.Use(a.traceMiddleware())
 	r.Use(a.logAPIRequests())
 	r.Use(a.observeRequests())
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{a.Cfg.CORSOrigin, "http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:5174", "http://localhost:5174"},
+		AllowOriginFunc:  corsOriginAllowed(a.Cfg),
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Trace-Id"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Trace-Id", "X-Metrics-Token", "X-Locale", "Accept-Language"},
 		ExposeHeaders:    []string{"X-Trace-Id"},
 		AllowCredentials: true,
 	}))
-	r.Static("/uploads", a.Cfg.UploadDir)
+	uploads := r.Group("/uploads")
+	uploads.Use(a.uploadHeaders())
+	uploads.Static("/", a.Cfg.UploadDir)
 	r.GET("/health", a.handleHealth)
-	r.GET("/metrics", a.handleMetrics)
+	r.GET("/live", a.handleLive)
+	r.GET("/ready", a.handleReady)
+	r.GET("/metrics", a.protectMetrics(), a.handleMetrics)
 	r.GET("/openapi.yaml", a.handleOpenAPI)
 
 	api := r.Group("/api/v1")
@@ -140,6 +189,8 @@ func (a *App) buildRouter() *gin.Engine {
 	api.GET("/auth/captcha", a.handleCaptcha)
 	api.GET("/auth/settings", a.handleAuthSettings)
 	api.POST("/auth/login", a.handleLogin)
+	api.POST("/auth/register", a.handleRegister)
+	api.POST("/auth/verify-email", a.handleVerifyEmail)
 	api.POST("/auth/google", a.handleGoogleAuth)
 	api.POST("/auth/forgot-password", a.handleForgotPassword)
 	api.POST("/auth/reset-password", a.handleResetPassword)
@@ -152,6 +203,7 @@ func (a *App) buildRouter() *gin.Engine {
 	self.GET("/auth/web-menus", a.handleWebMenus)
 	self.PUT("/auth/profile", a.handleUpdateProfile)
 	self.PUT("/auth/password", a.handleChangePassword)
+	self.POST("/auth/logout", a.handleLogout)
 	self.POST("/auth/avatar", a.handleUploadOwnAvatar)
 	self.GET("/dicts/by/:code", a.handleLookupDict)
 
@@ -160,15 +212,22 @@ func (a *App) buildRouter() *gin.Engine {
 	authed.GET("/dashboard/stats", a.handleDashboard)
 
 	authed.GET("/users", a.handleListUsers)
+	authed.GET("/users/export", a.handleExportUsers)
+	authed.POST("/users/import", a.handleImportUsers)
+	authed.GET("/users/import-jobs/:id", a.handleGetUserImportJob)
 	authed.GET("/users/:id", a.handleGetUser)
 	authed.POST("/users", a.handleCreateUser)
 	authed.PUT("/users/:id", a.handleUpdateUser)
+	authed.POST("/users/:id/revoke", a.handleRevokeUser)
+	authed.GET("/users/:id/sessions", a.handleListUserSessions)
+	authed.DELETE("/users/:id/sessions/:sid", a.handleRevokeUserSession)
 	authed.DELETE("/users/:id", a.handleDeleteUser)
 	authed.PUT("/users/:id/roles", a.handleAssignUserRoles)
 	authed.POST("/users/:id/avatar", a.handleUploadUserAvatar)
 
 	authed.GET("/roles", a.handleListRoles)
 	authed.POST("/roles", a.handleCreateRole)
+	authed.GET("/roles/:id", a.handleGetRole)
 	authed.PUT("/roles/:id", a.handleUpdateRole)
 	authed.DELETE("/roles/:id", a.handleDeleteRole)
 	authed.PUT("/roles/:id/permissions", a.handleAssignRolePermissions)
@@ -194,6 +253,7 @@ func (a *App) buildRouter() *gin.Engine {
 
 	authed.GET("/configs", a.handleListConfigs)
 	authed.POST("/configs", a.handleCreateConfig)
+	authed.PUT("/configs/batch", a.handleBatchConfigs)
 	authed.PUT("/configs/:id", a.handleUpdateConfig)
 	authed.DELETE("/configs/:id", a.handleDeleteConfig)
 	authed.POST("/mail/test", a.handleTestMail)
@@ -207,12 +267,15 @@ func (a *App) buildRouter() *gin.Engine {
 	authed.DELETE("/mail/campaigns/:id", a.handleDeleteMailCampaign)
 	authed.POST("/mail/campaigns/:id/schedule", a.handleScheduleMailCampaign)
 
+	authed.GET("/logs/export", a.handleExportLogs)
 	authed.GET("/logs", a.handleListLogs)
 	authed.GET("/logs/login", a.handleListLoginLogs)
 	authed.GET("/logs/api", a.handleListAPILogs)
 	authed.DELETE("/logs", a.handleClearLogs)
 	authed.POST("/logs/purge", a.handlePurgeLogs)
 
+	r.NoRoute(notFoundJSON)
+	r.NoMethod(methodNotAllowedJSON)
 	return r
 }
 
@@ -254,4 +317,42 @@ func normalizeMethod(m string) string {
 		return "*"
 	}
 	return strings.ToUpper(strings.TrimSpace(m))
+}
+
+func corsAllowOrigins(cfg config.Config) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(raw string) {
+		item := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if item == "" {
+			return
+		}
+		if _, ok := seen[item]; ok {
+			return
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	for _, part := range strings.Split(cfg.CORSOrigin, ",") {
+		add(part)
+	}
+	if cfg.DevMode {
+		add("http://127.0.0.1:5173")
+		add("http://localhost:5173")
+		add("http://127.0.0.1:5174")
+		add("http://localhost:5174")
+	}
+	return out
+}
+
+func corsOriginAllowed(cfg config.Config) func(string) bool {
+	allowed := map[string]struct{}{}
+	for _, origin := range corsAllowOrigins(cfg) {
+		allowed[origin] = struct{}{}
+	}
+	return func(origin string) bool {
+		origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+		_, ok := allowed[origin]
+		return ok
+	}
 }

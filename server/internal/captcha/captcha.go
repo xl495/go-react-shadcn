@@ -5,7 +5,10 @@ import (
 	"time"
 
 	"github.com/mojocn/base64Captcha"
+	"gorm.io/gorm"
 )
+
+const ttl = 3 * time.Minute
 
 type Challenge struct {
 	ID     string `json:"captchaId"`
@@ -19,14 +22,66 @@ type Service struct {
 	debug  bool
 }
 
-func New(debug bool) *Service {
-	store := base64Captcha.NewMemoryStore(1024, 3*time.Minute)
-	driver := base64Captcha.NewDriverDigit(72, 200, 4, 0.35, 50)
+type challengeRow struct {
+	ID        string    `gorm:"primaryKey;size:64"`
+	Answer    string    `gorm:"size:32;not null"`
+	ExpiresAt time.Time `gorm:"index;not null"`
+}
+
+func (challengeRow) TableName() string { return "captcha_challenges" }
+
+type sqlStore struct {
+	db *gorm.DB
+}
+
+func New(db *gorm.DB, debug bool) *Service {
+	var store base64Captcha.Store
+	if db == nil {
+		store = base64Captcha.NewMemoryStore(1024, ttl)
+	} else {
+		store = newSQLStore(db)
+	}
+	driver := base64Captcha.NewDriverDigit(80, 260, 6, 0.7, 90)
 	return &Service{
 		engine: base64Captcha.NewCaptcha(driver, store),
 		store:  store,
 		debug:  debug,
 	}
+}
+
+func newSQLStore(db *gorm.DB) *sqlStore {
+	return &sqlStore{db: db}
+}
+
+func (s *sqlStore) Set(id string, value string) error {
+	if s == nil || s.db == nil || id == "" {
+		return nil
+	}
+	now := time.Now()
+	if err := s.db.Where("expires_at < ?", now).Delete(&challengeRow{}).Error; err != nil {
+		return err
+	}
+	return s.db.Save(&challengeRow{ID: id, Answer: value, ExpiresAt: now.Add(ttl)}).Error
+}
+
+func (s *sqlStore) Get(id string, clear bool) string {
+	if s == nil || s.db == nil || id == "" {
+		return ""
+	}
+	var row challengeRow
+	err := s.db.Where("id = ? AND expires_at > ?", id, time.Now()).First(&row).Error
+	if err != nil {
+		return ""
+	}
+	if clear {
+		_ = s.db.Delete(&challengeRow{}, "id = ?", id).Error
+	}
+	return row.Answer
+}
+
+func (s *sqlStore) Verify(id, answer string, clear bool) bool {
+	got := s.Get(id, clear)
+	return got != "" && got == strings.TrimSpace(answer)
 }
 
 func (s *Service) Issue() (Challenge, error) {
