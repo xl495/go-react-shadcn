@@ -5,7 +5,7 @@ import { api } from "@/api/client"
 import { useAuth } from "@/providers/auth"
 import { DICT, useDict } from "@/hooks/dict"
 import { formatDateTime } from "@/utils/format"
-import { useI18n } from "@/providers/i18n"
+import { useI18n, translateApiError } from "@/providers/i18n"
 import { useAuthSettings, useOwnLoginLogs, useOwnSessions, useRevokeOwnSession, useUpdateProfile } from "@/hooks/queries"
 import { UnsavedGuard } from "@/hooks/unsaved"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
@@ -321,6 +321,7 @@ function SecurityCards() {
   const kick = useRevokeOwnSession()
   const logs = useOwnLoginLogs()
   const [unbindPassword, setUnbindPassword] = useState("")
+  const [unbindTotp, setUnbindTotp] = useState("")
 
   return (
     <>
@@ -334,26 +335,45 @@ function SecurityCards() {
           {settings.data?.googleEnabled ? (
             user?.googleBound ? (
               <div className="flex flex-wrap items-end gap-2">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="google-unbind-password">{t("settings.googleUnbindPassword")}</Label>
-                  <Input
-                    id="google-unbind-password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={unbindPassword}
-                    onChange={(e) => setUnbindPassword(e.target.value)}
-                  />
-                </div>
+                {user.totpEnabled ? (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="google-unbind-totp">{t("settings.googleUnbindTotp")}</Label>
+                    <Input
+                      id="google-unbind-totp"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={unbindTotp}
+                      onChange={(e) => setUnbindTotp(e.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="google-unbind-password">{t("settings.googleUnbindPassword")}</Label>
+                    <Input
+                      id="google-unbind-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={unbindPassword}
+                      onChange={(e) => setUnbindPassword(e.target.value)}
+                    />
+                  </div>
+                )}
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!unbindPassword}
+                  disabled={user.totpEnabled ? unbindTotp.trim().length < 6 : !unbindPassword}
                   onClick={() =>
-                    void api.unbindGoogle({ password: unbindPassword }).then((next) => {
-                      updateUser(next)
-                      setUnbindPassword("")
-                      toast.success(t("app.saved"))
-                    })
+                    void api
+                      .unbindGoogle(
+                        user.totpEnabled ? { totpCode: unbindTotp } : { password: unbindPassword },
+                      )
+                      .then((next) => {
+                        updateUser(next)
+                        setUnbindPassword("")
+                        setUnbindTotp("")
+                        toast.success(t("app.saved"))
+                      })
+                      .catch((err) => toast.error(translateApiError(err, t)))
                   }
                 >
                   {t("settings.googleUnbind")}

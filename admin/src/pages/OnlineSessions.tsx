@@ -55,20 +55,24 @@ export function OnlineSessionsPage() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{formatDateTime(row.createdAt)}</TableCell>
                     <TableCell className="text-right">
-                      <Can perm={P.userSessionRevoke}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            kick.mutate(
-                              { id: row.userId, sid: row.id, kind: row.userKind },
-                              { onSuccess: () => { toast.success(t("app.saved")); void refetch() } },
-                            )
-                          }
-                        >
-                          {t("users.kickSession")}
-                        </Button>
-                      </Can>
+                      {row.current ? (
+                        <span className="text-xs text-muted-foreground">{t("settings.thisDevice")}</span>
+                      ) : (
+                        <Can perm={P.userSessionRevoke}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              kick.mutate(
+                                { id: row.userId, sid: row.id, kind: row.userKind },
+                                { onSuccess: () => { toast.success(t("app.saved")); void refetch() } },
+                              )
+                            }
+                          >
+                            {t("users.kickSession")}
+                          </Button>
+                        </Can>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

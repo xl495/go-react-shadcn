@@ -32,6 +32,7 @@ export function LoginPage() {
   const settingsReady = !settings.isPending
   const [totp, setTotp] = useState<{ ticket: string; enroll: boolean } | null>(null)
   const [code, setCode] = useState("")
+  const [recoveryInput, setRecoveryInput] = useState("")
   const [secret, setSecret] = useState("")
   const [otpauth, setOtpauth] = useState("")
   const [recovery, setRecovery] = useState<string[] | null>(null)
@@ -108,7 +109,11 @@ export function LoginPage() {
         const result = (await api.confirm({ ticket: totp.ticket, code })) as LoginResult
         await applyResult(result)
       } else {
-        const result = (await api.verify({ ticket: totp.ticket, code })) as LoginResult
+        const result = (await api.verify({
+          ticket: totp.ticket,
+          code: code.trim() || undefined,
+          recoveryCode: recoveryInput.trim() || undefined,
+        })) as LoginResult
         await applyResult(result)
       }
     } catch (err) {
@@ -156,7 +161,17 @@ export function LoginPage() {
             <Label htmlFor="totp">{t("login.totpTitle")}</Label>
             <Input id="totp" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} />
           </div>
-          <Button type="submit" disabled={pending || code.trim().length < 6} className="h-10 w-full">
+          {!totp.enroll ? (
+            <div className="grid gap-2">
+              <Label htmlFor="recovery">{t("login.recoveryCode")}</Label>
+              <Input id="recovery" autoComplete="off" value={recoveryInput} onChange={(e) => setRecoveryInput(e.target.value)} />
+            </div>
+          ) : null}
+          <Button
+            type="submit"
+            disabled={pending || (totp.enroll ? code.trim().length < 6 : code.trim().length < 6 && recoveryInput.trim() === "")}
+            className="h-10 w-full"
+          >
             {pending ? t("login.submitting") : t("login.totpContinue")}
           </Button>
         </form>

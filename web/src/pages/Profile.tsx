@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
-import type { User } from "@/lib/types"
+import type { AuthSettings, User } from "@/lib/types"
+import { GoogleSignIn } from "@/components/GoogleSignIn"
 
 export function ProfilePage() {
   const { user, setUser } = useAuth()
@@ -11,7 +12,7 @@ export function ProfilePage() {
 }
 
 function ProfileForm({ user, onSaved }: { user: User; onSaved: (next: User) => void }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [nickname, setNickname] = useState(user.nickname || "")
   const [email, setEmail] = useState(user.email || "")
   const [phone, setPhone] = useState(user.phone || "")
@@ -20,6 +21,13 @@ function ProfileForm({ user, onSaved }: { user: User; onSaved: (next: User) => v
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [pending, setPending] = useState(false)
+  const [settings, setSettings] = useState<AuthSettings | undefined>()
+  const [unbindPassword, setUnbindPassword] = useState("")
+  const [unbindTotp, setUnbindTotp] = useState("")
+
+  useEffect(() => {
+    api.settings().then(setSettings).catch(() => undefined)
+  }, [])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -72,6 +80,86 @@ function ProfileForm({ user, onSaved }: { user: User; onSaved: (next: User) => v
           {t("profile.pendingEmail")}: {user.pendingEmail}
         </p>
       ) : null}
+      <div className="grid gap-2 rounded-md border p-3">
+        <p className="text-sm font-medium">{t("profile.google")}</p>
+        <p className="text-sm text-muted-foreground">{user.googleBound ? t("profile.googleOn") : t("profile.googleOff")}</p>
+        {settings?.googleEnabled ? (
+          user.googleBound ? (
+            <div className="grid gap-2">
+              {user.totpEnabled ? (
+                <label className="grid gap-1.5 text-sm">
+                  <span className="text-muted-foreground">{t("profile.googleUnbindTotp")}</span>
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={unbindTotp}
+                    onChange={(e) => setUnbindTotp(e.target.value)}
+                    className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </label>
+              ) : (
+                <label className="grid gap-1.5 text-sm">
+                  <span className="text-muted-foreground">{t("profile.googleUnbindPassword")}</span>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={unbindPassword}
+                    onChange={(e) => setUnbindPassword(e.target.value)}
+                    className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </label>
+              )}
+              <button
+                type="button"
+                disabled={pending || (user.totpEnabled ? unbindTotp.trim().length < 6 : !unbindPassword)}
+                className="h-9 w-fit rounded-md border px-3 text-sm hover:bg-muted disabled:opacity-60"
+                onClick={() => {
+                  setError("")
+                  setMessage("")
+                  setPending(true)
+                  void api
+                    .unbindGoogle(user.totpEnabled ? { totpCode: unbindTotp } : { password: unbindPassword })
+                    .then((next) => {
+                      onSaved(next)
+                      setUnbindPassword("")
+                      setUnbindTotp("")
+                      setMessage(t("profile.saved"))
+                    })
+                    .catch((err) => {
+                      setError(err instanceof ApiError ? err.message || t("profile.failed") : t("profile.failed"))
+                    })
+                    .finally(() => setPending(false))
+                }}
+              >
+                {t("profile.googleUnbind")}
+              </button>
+            </div>
+          ) : (
+            <GoogleSignIn
+              clientId={settings.googleClientId}
+              locale={locale}
+              onCredential={(idToken) => {
+                setError("")
+                setMessage("")
+                setPending(true)
+                void api
+                  .bindGoogle(idToken)
+                  .then((next) => {
+                    onSaved(next)
+                    setMessage(t("profile.saved"))
+                  })
+                  .catch((err) => {
+                    setError(err instanceof ApiError ? err.message || t("profile.failed") : t("profile.failed"))
+                  })
+                  .finally(() => setPending(false))
+              }}
+              disabled={pending}
+            />
+          )
+        ) : (
+          <p className="text-sm text-muted-foreground">{t("profile.googleDisabled")}</p>
+        )}
+      </div>
       <label className="grid gap-1.5 text-sm">
         <span className="text-muted-foreground">{t("profile.phone")}</span>
         <input

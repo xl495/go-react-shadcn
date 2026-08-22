@@ -117,6 +117,7 @@ export const usersApi = {
         userAgent: string
         expiresAt: string
         createdAt: string
+        current?: boolean
       }>
     >("/api/v1/online-sessions"),
 }

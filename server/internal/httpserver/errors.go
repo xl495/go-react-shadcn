@@ -64,6 +64,7 @@ const (
 	CodeGoogleEmailMismatch    = 40027
 	CodeGoogleNeedPassword     = 40028
 	CodeInvalidBatchStatus     = 40029
+	CodeCannotRevokeCurrent    = 40032
 
 	CodeMissingToken          = 40101
 	CodeInvalidToken          = 40102
@@ -130,6 +131,7 @@ const (
 	CodeAssignPerms       = 50021
 	CodeUpdateRole        = 50023
 	CodeDeleteRole        = 50025
+	CodeCreateRole        = 50026
 	CodeListPerms         = 50030
 	CodeUpdatePerm        = 50031
 	CodeDetachPerm        = 50032

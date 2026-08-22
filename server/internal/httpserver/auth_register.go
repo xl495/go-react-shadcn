@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -49,9 +50,13 @@ func (a *App) handleRegister(c *gin.Context) {
 		return
 	}
 	username := strings.TrimSpace(req.Username)
-	email := strings.ToLower(strings.TrimSpace(req.Email))
+	email := normalizeEmail(req.Email)
 	if username == "" || email == "" || req.Password == "" {
 		fail(c, http.StatusBadRequest, CodeUserPassRequired, "username, email and password required")
+		return
+	}
+	if !mailer.ValidAddress(email) {
+		fail(c, http.StatusBadRequest, CodeMailRecipient, "invalid email address")
 		return
 	}
 	if a.failIfWeakPassword(c, req.Password, username) {
@@ -67,11 +72,7 @@ func (a *App) handleRegister(c *gin.Context) {
 		fail(c, http.StatusConflict, CodeUserExists, "username already exists")
 		return
 	}
-	if err := a.accounts(kind).Where("lower(email) = ?", email).Count(&n).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeAssignRoles, "failed to create user")
-		return
-	}
-	if n > 0 {
+	if a.emailTaken(kind, email, 0) {
 		fail(c, http.StatusConflict, CodeEmailExists, "email already exists")
 		return
 	}
@@ -113,12 +114,14 @@ func (a *App) handleRegister(c *gin.Context) {
 		return
 	}
 	if err := seed.SyncUserRoles(a.Enforcer, seed.CasbinSub(user.Kind, user.ID), roles); err != nil {
+		a.abortWebRegister(user)
 		fail(c, http.StatusInternalServerError, CodeSyncRBAC, "failed to create user")
 		return
 	}
 	user.Roles = roles
 	raw, hash, err := mailer.NewResetToken()
 	if err != nil {
+		a.abortWebRegister(user)
 		fail(c, http.StatusInternalServerError, CodeAssignRoles, "failed to create user")
 		return
 	}
@@ -127,23 +130,49 @@ func (a *App) handleRegister(c *gin.Context) {
 		TokenHash: hash, ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 	if err := a.DB.Create(&tok).Error; err != nil {
+		a.abortWebRegister(user)
 		fail(c, http.StatusInternalServerError, CodeAssignRoles, "failed to create user")
 		return
 	}
 	cfg, _ := mailer.Load(a.DB, a.Cfg.JWTSecret)
-	if link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), "http://127.0.0.1:5174", "/verify-email?token="+raw); okLink {
+	if link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), mailFallbackOrigin(models.UserKindWeb), "/verify-email?token="+raw); okLink {
 		subject, body := i18n.VerifyEmailMail(i18n.FromRequest(c.Request), link)
-		_, _ = a.enqueueMail(mailer.EnqueueInput{
+		if _, err := a.enqueueMail(mailer.EnqueueInput{
 			Class: models.MailClassTransactional, User: &user, ToEmail: email,
 			Subject: subject,
 			Body:    body,
-		})
+		}); err != nil {
+			if !a.Cfg.DevMode {
+				a.abortWebRegister(user)
+				a.failMail(c, err)
+				return
+			}
+			slog.Error("register verify enqueue", "error", err, "user", user.Username)
+		}
+	} else if !a.Cfg.DevMode {
+		a.abortWebRegister(user)
+		fail(c, http.StatusBadRequest, CodeMailIncomplete, "mail is not configured")
+		return
 	}
 	out := gin.H{"pending": true, "email": email}
 	if a.Cfg.DevMode {
 		out["verifyToken"] = raw
 	}
 	ok(c, out)
+}
+
+func (a *App) abortWebRegister(user models.User) {
+	if user.ID == 0 {
+		return
+	}
+	_ = a.DB.Where("user_id = ? AND user_kind = ?", user.ID, user.Kind).Delete(&models.PasswordResetToken{}).Error
+	_ = a.withTx(func(tx *gorm.DB) error {
+		if err := models.DeleteAccountRoles(tx, user.Kind, user.ID); err != nil {
+			return err
+		}
+		return models.Accounts(tx, user.Kind).Delete(&user).Error
+	})
+	_ = seed.RemoveUser(a.Enforcer, seed.CasbinSub(user.Kind, user.ID))
 }
 
 type verifyEmailRequest struct {

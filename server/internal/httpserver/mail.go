@@ -66,7 +66,8 @@ func (a *App) handleForgotPassword(c *gin.Context) {
 		slog.Error("forgot password token", "error", err)
 		return
 	}
-	_ = a.DB.Where("user_id = ? AND user_kind = ? AND used_at IS NULL", user.ID, kind).Delete(&models.PasswordResetToken{}).Error
+	_ = a.DB.Where("user_id = ? AND user_kind = ? AND used_at IS NULL AND (purpose = ? OR purpose = '')", user.ID, kind, models.TokenPurposeReset).
+		Delete(&models.PasswordResetToken{}).Error
 	row := models.PasswordResetToken{
 		UserID:    user.ID,
 		UserKind:  kind,
@@ -83,7 +84,7 @@ func (a *App) handleForgotPassword(c *gin.Context) {
 	if name == "" {
 		name = user.Username
 	}
-	link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), "http://127.0.0.1:5173", "/reset-password?token="+raw)
+	link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), mailFallbackOrigin(kind), "/reset-password?token="+raw)
 	if !okLink {
 		slog.Error("forgot password missing mail.reset_base_url in production")
 		return
@@ -151,15 +152,19 @@ func (a *App) handleResetPassword(c *gin.Context) {
 	now := time.Now()
 	err = a.DB.Transaction(func(tx *gorm.DB) error {
 		if err := models.Accounts(tx, kind).Where("id = ?", user.ID).Updates(map[string]any{
-			"password_hash": hash,
-			"token_version": user.TokenVersion + 1,
+			"password_hash":        hash,
+			"token_version":        user.TokenVersion + 1,
+			"locked_until":         nil,
+			"failed_login_count":   0,
+			"must_change_password": false,
 		}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&row).Update("used_at", now).Error; err != nil {
 			return err
 		}
-		return tx.Where("user_id = ? AND user_kind = ? AND id <> ? AND used_at IS NULL", user.ID, kind, row.ID).Delete(&models.PasswordResetToken{}).Error
+		return tx.Where("user_id = ? AND user_kind = ? AND id <> ? AND used_at IS NULL AND (purpose = ? OR purpose = '')", user.ID, kind, row.ID, models.TokenPurposeReset).
+			Delete(&models.PasswordResetToken{}).Error
 	})
 	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeChangePassword, "failed to change password")
@@ -287,10 +292,16 @@ func (a *App) allowedLinkOrigins() []string {
 }
 
 func (a *App) mailPublicLink(configured, origin, fallback, suffix string) (string, bool) {
-	if mailer.NormalizeOrigin(configured) == "" && !a.Cfg.DevMode {
+	configuredBase := mailer.NormalizeOrigin(configured)
+	if configuredBase == "" && !a.Cfg.DevMode {
 		return "", false
 	}
-	base := mailer.LinkBase(configured, origin, a.allowedLinkOrigins(), fallback)
+	base := ""
+	if mailer.OriginAllowed(origin, a.allowedLinkOrigins()) {
+		base = mailer.NormalizeOrigin(origin)
+	} else {
+		base = mailer.LinkBase(configured, origin, a.allowedLinkOrigins(), fallback)
+	}
 	if base == "" {
 		return "", false
 	}

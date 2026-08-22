@@ -282,7 +282,8 @@ func (a *App) handleCreateUser(c *gin.Context) {
 		return
 	}
 	kind := normalizeUserKind(req.Kind)
-	if req.Email != "" && a.emailTaken(kind, req.Email, 0) {
+	email := normalizeEmail(req.Email)
+	if email != "" && a.emailTaken(kind, email, 0) {
 		fail(c, http.StatusConflict, CodeEmailExists, "email already exists")
 		return
 	}
@@ -323,9 +324,9 @@ func (a *App) handleCreateUser(c *gin.Context) {
 	}
 	user := models.User{
 		Username: req.Username, PasswordHash: hash, Status: status,
-		Nickname: req.Nickname, Avatar: req.Avatar, Email: req.Email, Phone: req.Phone,
+		Nickname: req.Nickname, Avatar: req.Avatar, Phone: req.Phone,
 		Gender: req.Gender, Department: req.Department, Title: req.Title, Remark: req.Remark,
-		Timezone: tz, MarketingOptIn: optIn, EmailVerified: true, Kind: kind,
+		Timezone: tz, MarketingOptIn: optIn, EmailVerified: true, Kind: kind, Email: email,
 	}
 	a.applyDepartmentLink(&user)
 	if err := a.withTx(func(tx *gorm.DB) error {
@@ -335,7 +336,7 @@ func (a *App) handleCreateUser(c *gin.Context) {
 		return models.ReplaceUserRoles(tx, kind, user.ID, roles)
 	}); err != nil {
 		if isUniqueViolation(err) {
-			if req.Email != "" && a.emailTaken(kind, req.Email, 0) {
+			if email != "" && a.emailTaken(kind, email, 0) {
 				fail(c, http.StatusConflict, CodeEmailExists, "email already exists")
 				return
 			}
@@ -365,6 +366,7 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 	}
 	oldDTO := a.toUserDTO(user)
 	revoke := false
+	wipeEmailChange := false
 	if req.Password != nil && *req.Password != "" {
 		if a.failIfWeakPassword(c, *req.Password, user.Username) {
 			return
@@ -401,11 +403,15 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 		user.Avatar = next
 	}
 	if req.Email != nil {
-		if *req.Email != "" && a.emailTaken(user.Kind, *req.Email, user.ID) {
+		next := normalizeEmail(*req.Email)
+		if next != "" && a.emailTaken(user.Kind, next, user.ID) {
 			fail(c, http.StatusConflict, CodeEmailExists, "email already exists")
 			return
 		}
-		user.Email = *req.Email
+		user.Email = next
+		user.PendingEmail = ""
+		user.EmailVerified = next != ""
+		wipeEmailChange = true
 	}
 	if req.Phone != nil {
 		user.Phone = *req.Phone
@@ -449,6 +455,10 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 	if err := a.saveAccount(&user); err != nil {
 		fail(c, http.StatusInternalServerError, 50014, "failed to update user")
 		return
+	}
+	if wipeEmailChange {
+		_ = a.DB.Where("user_id = ? AND user_kind = ? AND purpose = ? AND used_at IS NULL", user.ID, user.Kind, models.TokenPurposeEmailChange).
+			Delete(&models.PasswordResetToken{}).Error
 	}
 	if revoke {
 		a.revokeAuthSessions(user.Kind, user.ID)
@@ -513,7 +523,7 @@ func (a *App) handleListUserSessions(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeListSessions, "failed to list sessions")
 		return
 	}
-	ok(c, rows)
+	ok(c, toOwnSessionDTOs(c, rows))
 }
 
 func (a *App) handleRevokeUserSession(c *gin.Context) {
@@ -524,6 +534,9 @@ func (a *App) handleRevokeUserSession(c *gin.Context) {
 	var row models.AuthSession
 	if err := a.DB.Where("id = ? AND user_kind = ? AND user_id = ?", c.Param("sid"), user.Kind, user.ID).First(&row).Error; err != nil {
 		fail(c, http.StatusNotFound, CodeSessionNotFound, "session not found")
+		return
+	}
+	if rejectCurrentSession(c, row.JTI) {
 		return
 	}
 	a.revokeAuthSessionJTI(row.JTI)
@@ -623,7 +636,10 @@ func (a *App) emailTaken(kind, email string, exceptID uint) bool {
 	if email == "" {
 		return false
 	}
-	q := a.accounts(kind).Where("lower(email) = ? AND email <> ''", email)
+	q := a.accounts(kind).Where(
+		"(lower(email) = ? AND email <> '') OR (lower(pending_email) = ? AND pending_email <> '')",
+		email, email,
+	)
 	if exceptID > 0 {
 		q = q.Where("id <> ?", exceptID)
 	}

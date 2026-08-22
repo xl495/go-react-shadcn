@@ -126,6 +126,11 @@ export function UserDetailPage() {
           </CardHeader>
           <CardContent className="grid gap-3 text-sm">
             <Field label={t("users.email")} value={user.email} />
+            {user.pendingEmail ? <Field label={t("settings.pendingEmail")} value={user.pendingEmail} /> : null}
+            <Field
+              label={t("users.emailVerified")}
+              value={user.emailVerified ? t("app.active") : t("app.disabled")}
+            />
             <Field label={t("users.phone")} value={user.phone} />
             <Field label={t("users.gender")} value={genderDict.label(user.gender)} />
           </CardContent>
@@ -167,9 +172,10 @@ export function UserDetailPage() {
                   <p className="truncate text-xs text-muted-foreground">
                     {row.userAgent || "—"} · {formatDateTime(row.createdAt)}
                     {row.revokedAt ? ` · ${t("users.sessionRevoked")}` : ""}
+                    {row.current ? ` · ${t("settings.thisDevice")}` : ""}
                   </p>
                 </div>
-                {!row.revokedAt ? (
+                {!row.revokedAt && !row.current ? (
                   <Can perm={P.userSessionRevoke}>
                     <Button
                       variant="ghost"

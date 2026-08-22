@@ -71,6 +71,52 @@ func TestRegisterWebUserAndRejectWhenClosed(t *testing.T) {
 	}
 }
 
+func TestRegisterRejectsInvalidAndPendingEmail(t *testing.T) {
+	app := testApp(t)
+	id, answer, _ := issueCaptcha(t, app)
+	bad := doJSON(t, app, http.MethodPost, "/api/v1/auth/register", "", map[string]string{
+		"username": "bademailuser", "email": "not-an-email", "password": "bademail12",
+		"client": "web", "captchaId": id, "captchaCode": answer,
+	})
+	if bad.Code != http.StatusBadRequest || decodeEnv(t, bad).ErrorCode != CodeMailRecipient {
+		t.Fatalf("invalid email: %d %s", bad.Code, bad.Body.String())
+	}
+
+	var member models.User
+	if err := app.accounts(models.UserKindWeb).Where("username = ?", seed.MemberUsername).First(&member).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := app.accounts(models.UserKindWeb).Where("id = ?", member.ID).Update("pending_email", "held@example.com").Error; err != nil {
+		t.Fatal(err)
+	}
+	id, answer, _ = issueCaptcha(t, app)
+	taken := doJSON(t, app, http.MethodPost, "/api/v1/auth/register", "", map[string]string{
+		"username": "heldmail", "email": "held@example.com", "password": "heldmail12",
+		"client": "web", "captchaId": id, "captchaCode": answer,
+	})
+	if taken.Code != http.StatusConflict || decodeEnv(t, taken).ErrorCode != CodeEmailExists {
+		t.Fatalf("pending email: %d %s", taken.Code, taken.Body.String())
+	}
+}
+
+func TestRegisterRollsBackWhenMailUnavailable(t *testing.T) {
+	app := testApp(t)
+	setCfg(t, app, "mail.reset_base_url", "")
+	id, answer, _ := issueCaptcha(t, app)
+	app.Cfg.DevMode = false
+	created := doJSON(t, app, http.MethodPost, "/api/v1/auth/register", "", map[string]string{
+		"username": "mailfailuser", "email": "mailfail@example.com", "password": "MailFail12a",
+		"client": "web", "captchaId": id, "captchaCode": answer,
+	})
+	if created.Code != http.StatusBadRequest || decodeEnv(t, created).ErrorCode != CodeMailIncomplete {
+		t.Fatalf("register without mail: %d %s", created.Code, created.Body.String())
+	}
+	var n int64
+	if err := app.accounts(models.UserKindWeb).Where("username = ?", "mailfailuser").Count(&n).Error; err != nil || n != 0 {
+		t.Fatalf("orphan register user n=%d err=%v", n, err)
+	}
+}
+
 func TestTraceIDRejectsNonUUID(t *testing.T) {
 	app := testApp(t)
 	token := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)

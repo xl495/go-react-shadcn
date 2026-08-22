@@ -3,7 +3,7 @@ package totp
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: RFC 6238 TOTP authenticators use HMAC-SHA1
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	period  = 30
-	digits  = 6
-	window  = 1
-	issuer  = "gra"
+	period = 30
+	digits = 6
+	window = 1
+	issuer = "gra"
 )
 
 func RandomSecret() (string, error) {
@@ -38,7 +38,7 @@ func URI(account, secret string) string {
 }
 
 func Code(secret string, at time.Time) (string, error) {
-	return hotp(secret, uint64(at.Unix()/period))
+	return hotp(secret, asCounter(at.Unix()/period))
 }
 
 func Valid(secret, code string, at time.Time) bool {
@@ -46,18 +46,22 @@ func Valid(secret, code string, at time.Time) bool {
 	if len(code) != digits {
 		return false
 	}
-	counter := uint64(at.Unix() / period)
+	base := at.Unix() / period
 	for i := -window; i <= window; i++ {
-		n := int64(counter) + int64(i)
-		if n < 0 {
-			continue
-		}
-		got, err := hotp(secret, uint64(n))
+		n := base + int64(i)
+		got, err := hotp(secret, asCounter(n))
 		if err == nil && hmac.Equal([]byte(got), []byte(code)) {
 			return true
 		}
 	}
 	return false
+}
+
+func asCounter(n int64) uint64 {
+	if n < 0 {
+		return 0
+	}
+	return uint64(n) //nolint:gosec // G115: TOTP time-step is a non-negative Unix counter
 }
 
 func hotp(secret string, counter uint64) (string, error) {

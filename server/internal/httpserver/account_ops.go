@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -51,6 +52,48 @@ type ownSessionDTO struct {
 	Current   bool       `json:"current"`
 }
 
+func currentSessionJTI(c *gin.Context) string {
+	claims := currentUser(c)
+	if claims == nil {
+		return ""
+	}
+	return claims.ID
+}
+
+func toOwnSessionDTOs(c *gin.Context, rows []models.AuthSession) []ownSessionDTO {
+	jti := currentSessionJTI(c)
+	out := make([]ownSessionDTO, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, ownSessionDTO{
+			ID:        row.ID,
+			UserID:    row.UserID,
+			UserKind:  row.UserKind,
+			IP:        row.IP,
+			UserAgent: row.UserAgent,
+			ExpiresAt: row.ExpiresAt,
+			RevokedAt: row.RevokedAt,
+			CreatedAt: row.CreatedAt,
+			Current:   jti != "" && row.JTI == jti,
+		})
+	}
+	return out
+}
+
+func rejectCurrentSession(c *gin.Context, jti string) bool {
+	if jti != "" && jti == currentSessionJTI(c) {
+		fail(c, http.StatusBadRequest, CodeCannotRevokeCurrent, "cannot revoke the current session")
+		return true
+	}
+	return false
+}
+
+func mailFallbackOrigin(kind string) string {
+	if models.NormalizeUserKind(kind) == models.UserKindWeb {
+		return "http://127.0.0.1:5174"
+	}
+	return "http://127.0.0.1:5173"
+}
+
 type onlineSessionDTO struct {
 	ID        uint       `json:"id"`
 	UserID    uint       `json:"userId"`
@@ -61,6 +104,7 @@ type onlineSessionDTO struct {
 	ExpiresAt time.Time  `json:"expiresAt"`
 	RevokedAt *time.Time `json:"revokedAt"`
 	CreatedAt time.Time  `json:"createdAt"`
+	Current   bool       `json:"current"`
 }
 
 func (a *App) rejectWebMaintenance(c *gin.Context, client string) bool {
@@ -110,26 +154,7 @@ func (a *App) handleListOwnSessions(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeListSessions, "failed to list sessions")
 		return
 	}
-	claims := currentUser(c)
-	currentJTI := ""
-	if claims != nil {
-		currentJTI = claims.ID
-	}
-	out := make([]ownSessionDTO, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, ownSessionDTO{
-			ID:        row.ID,
-			UserID:    row.UserID,
-			UserKind:  row.UserKind,
-			IP:        row.IP,
-			UserAgent: row.UserAgent,
-			ExpiresAt: row.ExpiresAt,
-			RevokedAt: row.RevokedAt,
-			CreatedAt: row.CreatedAt,
-			Current:   currentJTI != "" && row.JTI == currentJTI,
-		})
-	}
-	ok(c, out)
+	ok(c, toOwnSessionDTOs(c, rows))
 }
 
 func (a *App) handleRevokeOwnSession(c *gin.Context) {
@@ -141,6 +166,9 @@ func (a *App) handleRevokeOwnSession(c *gin.Context) {
 	var row models.AuthSession
 	if err := a.DB.Where("id = ? AND user_kind = ? AND user_id = ?", c.Param("id"), user.Kind, user.ID).First(&row).Error; err != nil {
 		fail(c, http.StatusNotFound, CodeSessionNotFound, "session not found")
+		return
+	}
+	if rejectCurrentSession(c, row.JTI) {
 		return
 	}
 	a.revokeAuthSessionJTI(row.JTI)
@@ -248,7 +276,7 @@ func (a *App) handleCopyRole(c *gin.Context) {
 			fail(c, http.StatusConflict, CodeRoleExists, "role code already exists")
 			return
 		}
-		fail(c, http.StatusInternalServerError, 50021, "failed to create role")
+		fail(c, http.StatusInternalServerError, CodeCreateRole, "failed to create role")
 		return
 	}
 	if err := seed.SyncRolePolicies(a.Enforcer, role.Code, perms); err != nil {
@@ -307,8 +335,8 @@ func (a *App) handleBatchUserStatus(c *gin.Context) {
 				return
 			}
 			if n == 0 {
-				fail(c, http.StatusBadRequest, CodeCannotDisableLastAdmin, "cannot disable the last active admin")
-				return
+				skipped = append(skipped, id)
+				continue
 			}
 		}
 		values := map[string]any{"status": status}
@@ -378,6 +406,7 @@ func (a *App) handleOnlineSessions(c *gin.Context) {
 	}
 	loadNames(models.UserKindAdmin, adminIDs)
 	loadNames(models.UserKindWeb, webIDs)
+	jti := currentSessionJTI(c)
 	out := make([]onlineSessionDTO, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, onlineSessionDTO{
@@ -390,6 +419,7 @@ func (a *App) handleOnlineSessions(c *gin.Context) {
 			ExpiresAt: row.ExpiresAt,
 			RevokedAt: row.RevokedAt,
 			CreatedAt: row.CreatedAt,
+			Current:   jti != "" && row.JTI == jti,
 		})
 	}
 	ok(c, out)
@@ -417,11 +447,12 @@ func (a *App) handleGoogleBind(c *gin.Context) {
 		fail(c, http.StatusUnauthorized, CodeGoogleTokenInvalid, "google sign-in failed")
 		return
 	}
-	if ident.Email == "" || !ident.EmailVerified {
+	email := normalizeEmail(ident.Email)
+	if email == "" || !ident.EmailVerified {
 		fail(c, http.StatusUnauthorized, CodeGoogleEmailUnverified, "google email is not verified")
 		return
 	}
-	if user.Email != "" && !strings.EqualFold(user.Email, ident.Email) {
+	if user.Email != "" && !strings.EqualFold(user.Email, email) {
 		fail(c, http.StatusBadRequest, CodeGoogleEmailMismatch, "google account email does not match")
 		return
 	}
@@ -435,7 +466,11 @@ func (a *App) handleGoogleBind(c *gin.Context) {
 	}
 	updates := map[string]any{"google_id": ident.Subject}
 	if user.Email == "" {
-		updates["email"] = ident.Email
+		if a.emailTaken(user.Kind, email, user.ID) {
+			fail(c, http.StatusConflict, CodeEmailExists, "email already exists")
+			return
+		}
+		updates["email"] = email
 		updates["email_verified"] = true
 	}
 	if err := a.updateAccount(&user, updates); err != nil {
@@ -502,18 +537,37 @@ func (a *App) beginEmailChange(c *gin.Context, user *models.User, newEmail strin
 	}
 	user.PendingEmail = newEmail
 	cfg, _ := mailer.Load(a.DB, a.Cfg.JWTSecret)
-	if link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), "http://127.0.0.1:5174", "/verify-email?token="+raw); okLink {
+	link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), mailFallbackOrigin(user.Kind), "/verify-email?token="+raw)
+	if okLink {
 		subject, body := i18n.VerifyEmailMail(i18n.FromRequest(c.Request), link)
-		_, _ = a.enqueueMail(mailer.EnqueueInput{
+		if _, err := a.enqueueMail(mailer.EnqueueInput{
 			Class: models.MailClassTransactional, User: user, ToEmail: newEmail,
 			Subject: subject,
 			Body:    body,
-		})
+		}); err != nil {
+			if !a.Cfg.DevMode {
+				a.rollbackEmailChange(user)
+				a.failMail(c, err)
+				return "", false
+			}
+			slog.Error("email-change enqueue", "error", err, "user", user.Username)
+		}
+	} else if !a.Cfg.DevMode {
+		a.rollbackEmailChange(user)
+		fail(c, http.StatusBadRequest, CodeMailIncomplete, "mail is not configured")
+		return "", false
 	}
 	if a.Cfg.DevMode {
 		return raw, true
 	}
 	return "", true
+}
+
+func (a *App) rollbackEmailChange(user *models.User) {
+	_ = a.DB.Where("user_id = ? AND user_kind = ? AND purpose = ? AND used_at IS NULL", user.ID, user.Kind, models.TokenPurposeEmailChange).
+		Delete(&models.PasswordResetToken{}).Error
+	_ = a.updateAccount(user, map[string]any{"pending_email": ""})
+	user.PendingEmail = ""
 }
 
 func (a *App) confirmSensitiveAction(c *gin.Context, user models.User, password, totpCode string) bool {

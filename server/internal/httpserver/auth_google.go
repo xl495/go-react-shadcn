@@ -102,6 +102,9 @@ func (a *App) handleGoogleAuth(c *gin.Context) {
 		case errGoogleAccountConflict:
 			a.recordLoginLog(c, ident.Email, "failed", "google account conflict")
 			fail(c, http.StatusForbidden, CodeGoogleAccountConflict, "this google account is already linked to another user")
+		case errGoogleEmailTaken:
+			a.recordLoginLog(c, ident.Email, "failed", "google email taken")
+			fail(c, http.StatusConflict, CodeEmailExists, "email already exists")
 		default:
 			a.recordLoginLog(c, ident.Email, "failed", "google user create")
 			fail(c, http.StatusInternalServerError, CodeAssignRoles, "failed to create user")
@@ -135,18 +138,23 @@ func (a *App) handleGoogleAuth(c *gin.Context) {
 var (
 	errGoogleRegisterDisabled = errString("google register disabled")
 	errGoogleAccountConflict  = errString("google account conflict")
+	errGoogleEmailTaken       = errString("google email taken")
 )
 
 func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (models.User, bool, error) {
 	kind = models.NormalizeUserKind(kind)
+	ident.Email = normalizeEmail(ident.Email)
 	var byGoogle models.User
 	if ident.Subject != "" {
 		err := a.accounts(kind).Where("google_id = ? AND google_id <> ''", ident.Subject).First(&byGoogle).Error
 		if err == nil {
 			byGoogle.Kind = kind
 			updates := map[string]any{}
-			if byGoogle.Email == "" {
+			if byGoogle.Email == "" && ident.Email != "" && !a.emailTaken(kind, ident.Email, byGoogle.ID) {
 				updates["email"] = ident.Email
+				if ident.EmailVerified {
+					updates["email_verified"] = true
+				}
 			}
 			if byGoogle.Nickname == "" && ident.Name != "" {
 				updates["nickname"] = ident.Name
@@ -190,6 +198,9 @@ func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (mode
 
 	if kind != models.UserKindWeb || !a.googleRegisterEnabled() {
 		return models.User{}, false, errGoogleRegisterDisabled
+	}
+	if ident.Email != "" && a.emailTaken(kind, ident.Email, 0) {
+		return models.User{}, false, errGoogleEmailTaken
 	}
 
 	username, err := a.uniqueUsername(kind, googleUsername(ident.Email, ident.Subject))

@@ -10,3 +10,9 @@ linters:
         text: "G101:"
       - linters: [gosec]
         path: _test\.go
+      - linters: [gosec]
+        path: internal/totp/totp\.go
+        text: "G505:"
+      - linters: [gosec]
+        path: internal/totp/totp\.go
+        text: "G115:"

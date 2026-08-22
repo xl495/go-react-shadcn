@@ -57,7 +57,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EnvelopeLoginResult"
+                $ref: "#/components/schemas/EnvelopeRegister"
   /auth/google:
     post:
       summary: Sign in or register with a Google ID token
@@ -106,6 +106,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnvelopeReset"
+  /auth/verify-email:
+    post:
+      summary: Verify a registration or email-change token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeVerifyEmail"
   /mail/test:
     post:
       summary: Queue a test email using SMTP settings
@@ -437,7 +453,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EnvelopeUser"
+                $ref: "#/components/schemas/EnvelopeUnlocked"
   /users/{id}/sessions:
     get:
       summary: List a user's login sessions
@@ -668,6 +684,12 @@ components:
         status: { type: string }
         timezone: { type: string }
         marketingOptIn: { type: boolean }
+        pendingEmail: { type: string }
+        emailVerified: { type: boolean }
+        googleBound: { type: boolean }
+        totpEnabled: { type: boolean }
+        mustChangePassword: { type: boolean }
+        lockedUntil: { type: string, nullable: true }
         kind: { type: string, description: "admin or web" }
         lastLoginAt: { type: string, nullable: true }
         lastLoginIp: { type: string }
@@ -921,6 +943,29 @@ components:
       properties:
         token: { type: string }
         newPassword: { type: string }
+    VerifyEmailRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+    RegisterPending:
+      type: object
+      required: [pending]
+      properties:
+        pending: { type: boolean }
+        email: { type: string }
+        verifyToken: { type: string }
+    VerifyEmailResult:
+      type: object
+      properties:
+        changed: { type: boolean }
+        user: { $ref: "#/components/schemas/User" }
+        token: { type: string }
+        expiresAt: { type: string }
+        totpRequired: { type: boolean }
+        totpTicket: { type: string }
+        totpEnroll: { type: boolean }
+        recoveryCodes: { type: array, items: { type: string } }
     TestMailRequest:
       type: object
       required: [to]
@@ -1203,6 +1248,18 @@ components:
               type: object
               properties:
                 reset: { type: boolean }
+    EnvelopeRegister:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/RegisterPending" }
+    EnvelopeVerifyEmail:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/VerifyEmailResult" }
     EnvelopeRole:
       allOf:
         - $ref: "#/components/schemas/EnvelopeBase"
@@ -1250,3 +1307,12 @@ components:
               properties:
                 temporaryPassword: { type: string }
                 mustChangePassword: { type: boolean }
+    EnvelopeUnlocked:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                unlocked: { type: integer }

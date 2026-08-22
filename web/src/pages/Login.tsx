@@ -25,6 +25,7 @@ export function LoginPage() {
   const challengeRef = useRef<AuthChallengeHandle>(null)
   const [totp, setTotp] = useState<{ ticket: string; enroll: boolean } | null>(null)
   const [code, setCode] = useState("")
+  const [recoveryCode, setRecoveryCode] = useState("")
   const [secret, setSecret] = useState("")
   const [otpauth, setOtpauth] = useState("")
 
@@ -89,13 +90,17 @@ export function LoginPage() {
 
   async function onTotp(e: FormEvent) {
     e.preventDefault()
-    if (!totp) return
+    if (!totp || closed) return
     setError("")
     setLoading(true)
     try {
       const result = totp.enroll
         ? await api.totpConfirm({ ticket: totp.ticket, code })
-        : await api.totpVerify({ ticket: totp.ticket, code })
+        : await api.totpVerify({
+            ticket: totp.ticket,
+            code: code.trim() || undefined,
+            recoveryCode: recoveryCode.trim() || undefined,
+          })
       await applyResult(result)
     } catch (err) {
       setError(err instanceof ApiError ? err.message || t("login.failed") : t("login.failed"))
@@ -128,8 +133,21 @@ export function LoginPage() {
             onChange={(e) => setCode(e.target.value)}
             className="h-10 w-full rounded-md border bg-background px-3 text-sm"
           />
+          {!totp.enroll ? (
+            <input
+              autoComplete="off"
+              placeholder={t("login.recoveryCode")}
+              value={recoveryCode}
+              onChange={(e) => setRecoveryCode(e.target.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            />
+          ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <button type="submit" disabled={loading} className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60">
+          <button
+            type="submit"
+            disabled={loading || closed || (totp.enroll ? code.trim().length < 6 : code.trim().length < 6 && recoveryCode.trim() === "")}
+            className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
+          >
             {loading ? t("login.submitting") : t("login.totpContinue")}
           </button>
         </form>

@@ -139,8 +139,18 @@ func TestUnlockAndCopyRoleAndBatchStatus(t *testing.T) {
 	last := doJSON(t, app, http.MethodPut, "/api/v1/users/batch-status", admin, map[string]any{
 		"ids": []uint{adminUser.ID}, "status": "disabled", "kind": "admin",
 	})
-	if last.Code != http.StatusBadRequest || decodeEnv(t, last).ErrorCode != CodeCannotDisableLastAdmin {
+	if last.Code != http.StatusOK {
 		t.Fatalf("disable last admin: %d %s", last.Code, last.Body.String())
+	}
+	var lastBatch struct {
+		Updated []uint `json:"updated"`
+		Skipped []uint `json:"skipped"`
+	}
+	if err := json.Unmarshal(decodeEnv(t, last).Data, &lastBatch); err != nil {
+		t.Fatal(err)
+	}
+	if len(lastBatch.Updated) != 0 || len(lastBatch.Skipped) != 1 || lastBatch.Skipped[0] != adminUser.ID {
+		t.Fatalf("last admin should be skipped: %+v", lastBatch)
 	}
 	if w := doJSON(t, app, http.MethodPut, "/api/v1/users/batch-status", viewer, map[string]any{
 		"ids": []uint{op.ID}, "status": "disabled", "kind": "admin",
@@ -343,9 +353,23 @@ func TestEmailChangeRequiresVerify(t *testing.T) {
 	if taken.Code != http.StatusConflict {
 		t.Fatalf("taken email: %d %s", taken.Code, taken.Body.String())
 	}
+	opTok := loginOK(t, app, seed.OperatorUsername, seed.OperatorPassword)
+	pendingClash := doJSON(t, app, http.MethodPut, "/api/v1/auth/profile", opTok, map[string]any{
+		"nickname": "张操作", "email": "viewer2@example.com", "phone": "13800000002",
+		"gender": "male", "department": "ops", "title": "操作员", "remark": "",
+	})
+	if pendingClash.Code != http.StatusConflict {
+		t.Fatalf("pending email clash: %d %s", pendingClash.Code, pendingClash.Body.String())
+	}
 	confirm := doJSON(t, app, http.MethodPost, "/api/v1/auth/verify-email", "", map[string]string{"token": dto.EmailVerifyToken})
 	if confirm.Code != http.StatusOK {
 		t.Fatalf("verify: %d %s", confirm.Code, confirm.Body.String())
+	}
+	var changed struct {
+		Changed bool `json:"changed"`
+	}
+	if err := json.Unmarshal(decodeEnv(t, confirm).Data, &changed); err != nil || !changed.Changed {
+		t.Fatalf("email-change verify contract: %s", confirm.Body.String())
 	}
 	me2 := doJSON(t, app, http.MethodGet, "/api/v1/auth/me", viewer, nil)
 	if !strings.Contains(me2.Body.String(), "viewer2@example.com") {
@@ -519,5 +543,190 @@ func TestMaintenanceBlocksWebVerifyAndReset(t *testing.T) {
 	adminVerify := doJSON(t, app, http.MethodPost, "/api/v1/auth/verify-email", "", map[string]string{"token": rawAdmin})
 	if adminVerify.Code != http.StatusOK {
 		t.Fatalf("admin verify during maintenance: %d %s", adminVerify.Code, adminVerify.Body.String())
+	}
+}
+
+func TestCannotRevokeCurrentSession(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	w := doJSON(t, app, http.MethodGet, "/api/v1/auth/sessions", admin, nil)
+	var rows []ownSessionDTO
+	if err := json.Unmarshal(decodeEnv(t, w).Data, &rows); err != nil || len(rows) == 0 {
+		t.Fatalf("sessions: %v %s", err, w.Body.String())
+	}
+	var current uint
+	for _, row := range rows {
+		if row.Current {
+			current = row.ID
+			break
+		}
+	}
+	if current == 0 {
+		t.Fatal("missing current session")
+	}
+	denied := doJSON(t, app, http.MethodDelete, "/api/v1/auth/sessions/"+formatUint(current), admin, nil)
+	if denied.Code != http.StatusBadRequest || decodeEnv(t, denied).ErrorCode != CodeCannotRevokeCurrent {
+		t.Fatalf("revoke current: %d %s", denied.Code, denied.Body.String())
+	}
+}
+
+func TestForgotPasswordKeepsEmailChangeToken(t *testing.T) {
+	app := testApp(t)
+	var viewer models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.ViewerUsername).First(&viewer).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, hash, err := mailer.NewResetToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DB.Create(&models.PasswordResetToken{
+		UserID: viewer.ID, UserKind: models.UserKindAdmin, Purpose: models.TokenPurposeEmailChange,
+		TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	id, ans, _ := issueCaptcha(t, app)
+	forgot := doJSON(t, app, http.MethodPost, "/api/v1/auth/forgot-password", "", map[string]string{
+		"email": "viewer@latch.local", "captchaId": id, "captchaCode": ans,
+	})
+	if forgot.Code != http.StatusOK {
+		t.Fatalf("forgot: %d %s", forgot.Code, forgot.Body.String())
+	}
+	var n int64
+	if err := app.DB.Model(&models.PasswordResetToken{}).
+		Where("user_id = ? AND user_kind = ? AND purpose = ? AND used_at IS NULL", viewer.ID, models.UserKindAdmin, models.TokenPurposeEmailChange).
+		Count(&n).Error; err != nil || n != 1 {
+		t.Fatalf("email-change token wiped: n=%d err=%v", n, err)
+	}
+}
+
+func TestResetPasswordClearsLockAndMustChange(t *testing.T) {
+	app := testApp(t)
+	var op models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.OperatorUsername).First(&op).Error; err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().Add(time.Hour)
+	if err := app.updateAccount(&op, map[string]any{
+		"locked_until": until, "failed_login_count": 9, "must_change_password": true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw, hash, err := mailer.NewResetToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DB.Create(&models.PasswordResetToken{
+		UserID: op.ID, UserKind: models.UserKindAdmin, Purpose: models.TokenPurposeReset,
+		TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	reset := doJSON(t, app, http.MethodPost, "/api/v1/auth/reset-password", "", map[string]string{
+		"token": raw, "newPassword": "operator-reset-9",
+	})
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset: %d %s", reset.Code, reset.Body.String())
+	}
+	tok := loginOK(t, app, seed.OperatorUsername, "operator-reset-9")
+	dicts := doJSON(t, app, http.MethodGet, "/api/v1/dicts", tok, nil)
+	if dicts.Code != http.StatusOK {
+		t.Fatalf("must-change after self reset: %d %s", dicts.Code, dicts.Body.String())
+	}
+}
+
+func TestAdminUpdateUserClearsPendingEmail(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	var viewer models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.ViewerUsername).First(&viewer).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, hash, err := mailer.NewResetToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.updateAccount(&viewer, map[string]any{"pending_email": "viewer-next@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DB.Create(&models.PasswordResetToken{
+		UserID: viewer.ID, UserKind: models.UserKindAdmin, Purpose: models.TokenPurposeEmailChange,
+		TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	updated := doJSON(t, app, http.MethodPut, "/api/v1/users/"+formatUint(viewer.ID), admin, map[string]any{
+		"email": "viewer-admin@example.com",
+	})
+	if updated.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", updated.Code, updated.Body.String())
+	}
+	var dto userDTO
+	if err := json.Unmarshal(decodeEnv(t, updated).Data, &dto); err != nil {
+		t.Fatal(err)
+	}
+	if dto.Email != "viewer-admin@example.com" || dto.PendingEmail != "" || !dto.EmailVerified {
+		t.Fatalf("dto: %+v", dto)
+	}
+	var n int64
+	if err := app.DB.Model(&models.PasswordResetToken{}).
+		Where("user_id = ? AND user_kind = ? AND purpose = ? AND used_at IS NULL", viewer.ID, models.UserKindAdmin, models.TokenPurposeEmailChange).
+		Count(&n).Error; err != nil || n != 0 {
+		t.Fatalf("email-change token remains n=%d err=%v", n, err)
+	}
+}
+
+func TestGoogleBindRejectsTakenEmail(t *testing.T) {
+	app := testApp(t)
+	setCfg(t, app, "auth.google_enabled", "1")
+	setCfg(t, app, "auth.google_client_id", "client-1")
+	var viewer models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.ViewerUsername).First(&viewer).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := app.updateAccount(&viewer, map[string]any{"email": ""}); err != nil {
+		t.Fatal(err)
+	}
+	app.GoogleVerify = stubGoogle{ident: googleid.Identity{
+		Subject: "gid-taken-mail", Email: "admin@latch.local", EmailVerified: true,
+	}}
+	tok := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)
+	denied := doJSON(t, app, http.MethodPost, "/api/v1/auth/google/bind", tok, map[string]string{"idToken": "tok"})
+	if denied.Code != http.StatusConflict || decodeEnv(t, denied).ErrorCode != CodeEmailExists {
+		t.Fatalf("bind taken email: %d %s", denied.Code, denied.Body.String())
+	}
+}
+
+func TestGoogleLoginSkipsTakenEmptyEmailFill(t *testing.T) {
+	app := testApp(t)
+	setCfg(t, app, "auth.google_enabled", "1")
+	setCfg(t, app, "auth.google_client_id", "client-1")
+	hash, err := randomUnusableHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{
+		Username: "gempty", PasswordHash: hash, Status: "active",
+		Timezone: mailer.DefaultTimezone, Kind: models.UserKindWeb, GoogleID: "gid-empty",
+	}
+	if err := app.accounts(models.UserKindWeb).Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	app.GoogleVerify = stubGoogle{ident: googleid.Identity{
+		Subject: "gid-empty", Email: "webuser@latch.local", EmailVerified: true,
+	}}
+	w := doJSON(t, app, http.MethodPost, "/api/v1/auth/google", "", map[string]string{
+		"idToken": "tok", "client": "web",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("google: %d %s", w.Code, w.Body.String())
+	}
+	var row models.User
+	if err := app.accounts(models.UserKindWeb).Where("username = ?", "gempty").First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Email != "" {
+		t.Fatalf("filled taken email: %q", row.Email)
 	}
 }

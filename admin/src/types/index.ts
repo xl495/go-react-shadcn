@@ -3,6 +3,7 @@ import type { components } from "./generated/api-schema"
 type Schema = components["schemas"]
 
 export type User = Schema["User"] & {
+  emailVerified?: boolean
   totpEnabled?: boolean
   lockedUntil?: string | null
   mustChangePassword?: boolean

@@ -134,7 +134,7 @@ export const api = {
       body: JSON.stringify({ ...body, client: body.client ?? "web" }),
     }),
   verifyEmail: (body: { token: string }) =>
-    request<LoginResult>("/api/v1/auth/verify-email", {
+    request<LoginResult & { changed?: boolean }>("/api/v1/auth/verify-email", {
       method: "POST",
       body: JSON.stringify(body),
     }),

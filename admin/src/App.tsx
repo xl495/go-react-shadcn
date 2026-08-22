@@ -24,6 +24,9 @@ const ResetPasswordPage = lazy(() =>
 const UnsubscribePage = lazy(() =>
   import("@/pages/Unsubscribe").then((m) => ({ default: m.UnsubscribePage })),
 )
+const VerifyEmailPage = lazy(() =>
+  import("@/pages/VerifyEmail").then((m) => ({ default: m.VerifyEmailPage })),
+)
 const ForbiddenPage = lazy(() => import("@/pages/Errors").then((m) => ({ default: m.ForbiddenPage })))
 const NotFoundPage = lazy(() => import("@/pages/Errors").then((m) => ({ default: m.NotFoundPage })))
 
@@ -51,6 +54,7 @@ const router = createBrowserRouter([
       { path: "forgot-password", element: <ForgotPasswordPage /> },
       { path: "reset-password", element: <ResetPasswordPage /> },
       { path: "unsubscribe", element: <UnsubscribePage /> },
+      { path: "verify-email", element: <VerifyEmailPage /> },
       {
         element: (
           <RequireAuth>

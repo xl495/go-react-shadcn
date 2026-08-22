@@ -54,7 +54,10 @@ func TestForgotPasswordIgnoresUntrustedOrigin(t *testing.T) {
 	// CORS would reject Origin: http://evil.example before the handler.
 	// The mail helper must still ignore it when building the link.
 	if link, ok := app.mailPublicLink("http://127.0.0.1:5173", "http://evil.example", "http://127.0.0.1:5174", "/reset-password?token=abc"); !ok || strings.Contains(link, "evil.example") {
-		t.Fatalf("configured base must win: %q ok=%v", link, ok)
+		t.Fatalf("untrusted origin must not win: %q ok=%v", link, ok)
+	}
+	if link, ok := app.mailPublicLink("http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5173", "/verify-email?token=abc"); !ok || !strings.Contains(link, "http://127.0.0.1:5174/verify-email") {
+		t.Fatalf("allowlisted origin should win: %q ok=%v", link, ok)
 	}
 	if link, ok := app.mailPublicLink("", "http://evil.example", "http://127.0.0.1:5173", "/reset-password?token=abc"); !ok || strings.Contains(link, "evil.example") {
 		t.Fatalf("untrusted origin must not win: %q ok=%v", link, ok)

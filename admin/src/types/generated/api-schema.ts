@@ -145,7 +145,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["EnvelopeLoginResult"];
+                        "application/json": components["schemas"]["EnvelopeRegister"];
                     };
                 };
             };
@@ -266,6 +266,46 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["EnvelopeReset"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify a registration or email-change token */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["VerifyEmailRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnvelopeVerifyEmail"];
                     };
                 };
             };
@@ -1148,7 +1188,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["EnvelopeUser"];
+                        "application/json": components["schemas"]["EnvelopeUnlocked"];
                     };
                 };
             };
@@ -1706,6 +1746,12 @@ export interface components {
             status: string;
             timezone: string;
             marketingOptIn: boolean;
+            pendingEmail?: string;
+            emailVerified?: boolean;
+            googleBound?: boolean;
+            totpEnabled?: boolean;
+            mustChangePassword?: boolean;
+            lockedUntil?: string | null;
             /** @description admin or web */
             kind?: string;
             lastLoginAt?: string | null;
@@ -1917,6 +1963,24 @@ export interface components {
             token: string;
             newPassword: string;
         };
+        VerifyEmailRequest: {
+            token: string;
+        };
+        RegisterPending: {
+            pending: boolean;
+            email?: string;
+            verifyToken?: string;
+        };
+        VerifyEmailResult: {
+            changed?: boolean;
+            user?: components["schemas"]["User"];
+            token?: string;
+            expiresAt?: string;
+            totpRequired?: boolean;
+            totpTicket?: string;
+            totpEnroll?: boolean;
+            recoveryCodes?: string[];
+        };
         TestMailRequest: {
             to: string;
         };
@@ -2078,6 +2142,12 @@ export interface components {
                 reset?: boolean;
             };
         };
+        EnvelopeRegister: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["RegisterPending"];
+        };
+        EnvelopeVerifyEmail: components["schemas"]["EnvelopeBase"] & {
+            data?: components["schemas"]["VerifyEmailResult"];
+        };
         EnvelopeRole: components["schemas"]["EnvelopeBase"] & {
             data?: components["schemas"]["Role"];
         };
@@ -2102,6 +2172,11 @@ export interface components {
             data?: {
                 temporaryPassword?: string;
                 mustChangePassword?: boolean;
+            };
+        };
+        EnvelopeUnlocked: components["schemas"]["EnvelopeBase"] & {
+            data?: {
+                unlocked?: number;
             };
         };
     };

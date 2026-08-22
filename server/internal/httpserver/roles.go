@@ -104,7 +104,7 @@ func (a *App) handleCreateRole(c *gin.Context) {
 			fail(c, http.StatusConflict, 40920, "role code already exists")
 			return
 		}
-		fail(c, http.StatusInternalServerError, 50021, "failed to create role")
+		fail(c, http.StatusInternalServerError, CodeCreateRole, "failed to create role")
 		return
 	}
 	if err := seed.SyncRolePolicies(a.Enforcer, role.Code, perms); err != nil {
