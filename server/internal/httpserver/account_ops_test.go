@@ -243,7 +243,12 @@ func TestGoogleBindUnbindAndNoSecretLeak(t *testing.T) {
 	if !strings.Contains(body, `"googleBound":true`) {
 		t.Fatalf("missing googleBound: %s", body)
 	}
-	un := doJSON(t, app, http.MethodPost, "/api/v1/auth/google/unbind", viewer, nil)
+	if w := doJSON(t, app, http.MethodPost, "/api/v1/auth/google/unbind", viewer, nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("unbind without password: %d %s", w.Code, w.Body.String())
+	}
+	un := doJSON(t, app, http.MethodPost, "/api/v1/auth/google/unbind", viewer, map[string]string{
+		"password": seed.ViewerPassword,
+	})
 	if un.Code != http.StatusOK {
 		t.Fatalf("unbind: %d %s", un.Code, un.Body.String())
 	}
@@ -327,5 +332,109 @@ func TestEmailChangeRequiresVerify(t *testing.T) {
 	me2 := doJSON(t, app, http.MethodGet, "/api/v1/auth/me", viewer, nil)
 	if !strings.Contains(me2.Body.String(), "viewer2@example.com") {
 		t.Fatalf("email not updated: %s", me2.Body.String())
+	}
+	var jobs int64
+	if err := app.DB.Model(&models.MailJob{}).Where("to_email = ?", "viewer2@example.com").Count(&jobs).Error; err != nil || jobs < 1 {
+		t.Fatalf("email-change mail not queued: jobs=%d err=%v", jobs, err)
+	}
+}
+
+func TestLoginLogsStayOnOwnKind(t *testing.T) {
+	app := testApp(t)
+	if err := app.DB.Create(&models.LoginLog{
+		Username: seed.AdminUsername, UserKind: models.UserKindWeb, Status: "success", IP: "9.9.9.9",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	logs := doJSON(t, app, http.MethodGet, "/api/v1/auth/login-logs", admin, nil)
+	page := decodePage[models.LoginLog](t, logs)
+	for _, row := range page.Items {
+		if row.IP == "9.9.9.9" || row.UserKind == models.UserKindWeb {
+			t.Fatalf("admin saw web login log: %+v", row)
+		}
+	}
+}
+
+func TestLockRevokesExistingJWT(t *testing.T) {
+	app := testApp(t)
+	tok := loginOK(t, app, seed.OperatorUsername, seed.OperatorPassword)
+	for i := 0; i < app.LoginGuard.MaxFailures(); i++ {
+		id, ans, _ := issueCaptcha(t, app)
+		w := login(t, app, seed.OperatorUsername, "wrong-password-9", id, ans)
+		if w.Code == http.StatusOK {
+			t.Fatalf("wrong password succeeded on attempt %d", i)
+		}
+	}
+	me := doJSON(t, app, http.MethodGet, "/api/v1/auth/me", tok, nil)
+	code := decodeEnv(t, me).ErrorCode
+	if me.Code == http.StatusOK || (code != CodeAccountLocked && code != CodeInvalidToken) {
+		t.Fatalf("locked jwt still valid: %d %s", me.Code, me.Body.String())
+	}
+	var op models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.OperatorUsername).First(&op).Error; err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().Add(time.Hour)
+	if err := app.updateAccount(&op, map[string]any{"locked_until": until, "failed_login_count": 9}); err != nil {
+		t.Fatal(err)
+	}
+	fresh := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	_ = doJSON(t, app, http.MethodPost, "/api/v1/users/"+formatUint(op.ID)+"/unlock", fresh, nil)
+	tok2 := loginOK(t, app, seed.OperatorUsername, seed.OperatorPassword)
+	if err := app.updateAccount(&op, map[string]any{"locked_until": until}); err != nil {
+		t.Fatal(err)
+	}
+	app.sessions.invalidate(models.UserKindAdmin, op.ID)
+	locked := doJSON(t, app, http.MethodGet, "/api/v1/auth/me", tok2, nil)
+	if locked.Code != http.StatusForbidden || decodeEnv(t, locked).ErrorCode != CodeAccountLocked {
+		t.Fatalf("lock bit ignored: %d %s", locked.Code, locked.Body.String())
+	}
+}
+
+func TestLastAdminCannotBeRemoved(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	var user models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.AdminUsername).First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	disabled := doJSON(t, app, http.MethodPut, "/api/v1/users/"+formatUint(user.ID), admin, map[string]any{
+		"status": "disabled",
+	})
+	if disabled.Code != http.StatusBadRequest || decodeEnv(t, disabled).ErrorCode != CodeCannotDisableLastAdmin {
+		t.Fatalf("disable last admin: %d %s", disabled.Code, disabled.Body.String())
+	}
+	var viewerRole models.Role
+	if err := app.DB.Where("code = ?", seed.RoleViewer).First(&viewerRole).Error; err != nil {
+		t.Fatal(err)
+	}
+	demote := doJSON(t, app, http.MethodPut, "/api/v1/users/"+formatUint(user.ID)+"/roles", admin, map[string]any{
+		"roleIds": []uint{viewerRole.ID},
+	})
+	if demote.Code != http.StatusBadRequest || decodeEnv(t, demote).ErrorCode != CodeCannotDisableLastAdmin {
+		t.Fatalf("demote last admin: %d %s", demote.Code, demote.Body.String())
+	}
+}
+
+func TestOwnSessionsMarkCurrent(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	w := doJSON(t, app, http.MethodGet, "/api/v1/auth/sessions", admin, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sessions: %d %s", w.Code, w.Body.String())
+	}
+	var rows []ownSessionDTO
+	if err := json.Unmarshal(decodeEnv(t, w).Data, &rows); err != nil || len(rows) == 0 {
+		t.Fatalf("decode sessions: %v %s", err, w.Body.String())
+	}
+	current := 0
+	for _, row := range rows {
+		if row.Current {
+			current++
+		}
+	}
+	if current != 1 {
+		t.Fatalf("current sessions=%d want 1 body=%s", current, w.Body.String())
 	}
 }

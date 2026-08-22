@@ -50,6 +50,7 @@ func (a *App) handleLogin(c *gin.Context) {
 	if a.rejectWebMaintenance(c, req.Client) {
 		return
 	}
+	setLoginKind(c, loginClientKind(req.Client))
 
 	ip := c.ClientIP()
 	if !a.LoginGuard.AllowIP(ip) {
@@ -100,6 +101,10 @@ func (a *App) handleLogin(c *gin.Context) {
 			updates["locked_until"] = until
 		}
 		_ = a.updateAccount(&user, updates)
+		if updates["locked_until"] != nil {
+			a.revokeAuthSessions(user.Kind, user.ID)
+			a.sessions.invalidate(user.Kind, user.ID)
+		}
 		a.recordLoginLog(c, user.Username, "failed", "invalid credentials")
 		fail(c, http.StatusUnauthorized, 40103, "invalid credentials")
 		return
@@ -132,6 +137,7 @@ func (a *App) finishLogin(c *gin.Context, user models.User, ip, successDetail st
 }
 
 func (a *App) completeLogin(c *gin.Context, user models.User, ip, successDetail string, recovery []string) {
+	setLoginKind(c, user.Kind)
 	now := time.Now()
 	if isAnomalousLogin(user, ip) {
 		a.recordLoginLog(c, user.Username, "warning", "anomalous ip:"+ip+" prev:"+user.LastLoginIP)

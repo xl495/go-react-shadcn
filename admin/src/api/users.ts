@@ -10,6 +10,7 @@ export type UserSession = {
   expiresAt: string
   revokedAt?: string | null
   createdAt: string
+  current?: boolean
 }
 
 export type UserImportJob = {

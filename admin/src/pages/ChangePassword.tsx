@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
+import { useAuth } from "@/providers/auth"
 import { useI18n } from "@/providers/i18n"
 import { useChangePassword } from "@/hooks/queries"
 import { Button } from "@/components/ui/button"
@@ -10,6 +11,7 @@ import { Label } from "@/components/ui/label"
 
 export function ChangePasswordPage() {
   const { t } = useI18n()
+  const { logout } = useAuth()
   const changePassword = useChangePassword()
   const [oldPassword, setOldPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -26,7 +28,8 @@ export function ChangePasswordPage() {
       setOldPassword("")
       setNewPassword("")
       setConfirmPassword("")
-      toast.success(t("settings.passwordChanged"))
+      toast.success(t("settings.passwordChangedRelogin"))
+      await logout()
     } catch {
       // API message is toasted by the HTTP client.
     }

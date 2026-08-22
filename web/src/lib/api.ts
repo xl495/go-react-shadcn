@@ -221,6 +221,7 @@ export const api = {
         userAgent: string
         createdAt: string
         revokedAt?: string | null
+        current?: boolean
       }>
     >("/api/v1/auth/sessions"),
   revokeOwnSession: (id: number) =>
@@ -232,7 +233,8 @@ export const api = {
     }>("/api/v1/auth/login-logs?page=1&pageSize=20"),
   bindGoogle: (idToken: string) =>
     request<User>("/api/v1/auth/google/bind", { method: "POST", body: JSON.stringify({ idToken }) }),
-  unbindGoogle: () => request<User>("/api/v1/auth/google/unbind", { method: "POST" }),
+  unbindGoogle: (body: { password?: string; totpCode?: string }) =>
+    request<User>("/api/v1/auth/google/unbind", { method: "POST", body: JSON.stringify(body) }),
 }
 
 export type NotificationItem = {

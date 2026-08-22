@@ -13,6 +13,7 @@ type sessionSnapshot struct {
 	tokenVersion int
 	status       string
 	mustChange   bool
+	lockedUntil  *time.Time
 	expires      time.Time
 }
 
@@ -52,13 +53,19 @@ func (s *sessionCache) get(kind string, id uint) (sessionSnapshot, bool) {
 	return snap, true
 }
 
-func (s *sessionCache) put(kind string, id uint, tokenVersion int, status string, mustChange bool) {
+func (s *sessionCache) put(kind string, id uint, tokenVersion int, status string, mustChange bool, lockedUntil *time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var until *time.Time
+	if lockedUntil != nil {
+		copied := *lockedUntil
+		until = &copied
+	}
 	s.items[accountSessionKey(kind, id)] = sessionSnapshot{
 		tokenVersion: tokenVersion,
 		status:       status,
 		mustChange:   mustChange,
+		lockedUntil:  until,
 		expires:      time.Now().Add(s.ttl),
 	}
 }

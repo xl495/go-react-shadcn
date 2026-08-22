@@ -2,7 +2,14 @@ import { useEffect, useState } from "react"
 import { api, ApiError } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 
-type Session = { id: number; ip: string; userAgent: string; createdAt: string; revokedAt?: string | null }
+type Session = {
+  id: number
+  ip: string
+  userAgent: string
+  createdAt: string
+  revokedAt?: string | null
+  current?: boolean
+}
 type LoginRow = { id: number; status: string; ip: string; createdAt: string }
 
 export function DevicesPage() {
@@ -37,11 +44,16 @@ export function DevicesPage() {
         {sessions.map((row) => (
           <div key={row.id} className="flex items-center justify-between gap-3 border-b py-2 last:border-0">
             <div className="min-w-0">
-              <p className="font-mono text-xs">{row.ip || "—"}</p>
+              <p className="font-mono text-xs">
+                {row.ip || "—"}
+                {row.current ? ` · ${t("devices.current")}` : ""}
+              </p>
               <p className="truncate text-xs text-muted-foreground">{row.userAgent}</p>
             </div>
             {row.revokedAt ? (
               <span className="text-xs text-muted-foreground">{t("devices.revoked")}</span>
+            ) : row.current ? (
+              <span className="text-xs text-muted-foreground">{t("devices.current")}</span>
             ) : (
               <button
                 type="button"

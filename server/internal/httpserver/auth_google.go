@@ -63,6 +63,7 @@ func (a *App) handleGoogleAuth(c *gin.Context) {
 	if a.rejectWebMaintenance(c, req.Client) {
 		return
 	}
+	setLoginKind(c, loginClientKind(req.Client))
 	if !a.googleEnabled() {
 		fail(c, http.StatusServiceUnavailable, CodeGoogleDisabled, "google sign-in is not enabled")
 		return

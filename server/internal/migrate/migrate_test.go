@@ -25,8 +25,8 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	if dirty {
 		t.Fatal("expected clean migration state")
 	}
-	if version != 21 {
-		t.Fatalf("version=%d, want 21", version)
+	if version != 22 {
+		t.Fatalf("version=%d, want 22", version)
 	}
 
 	db, err := sql.Open("sqlite", path)

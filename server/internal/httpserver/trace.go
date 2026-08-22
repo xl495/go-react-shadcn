@@ -174,9 +174,28 @@ func truncateText(s string, n int) string {
 	return s[:n] + "...(truncated)"
 }
 
+const ctxLoginKindKey = "loginKind"
+
+func setLoginKind(c *gin.Context, kind string) {
+	c.Set(ctxLoginKindKey, models.NormalizeUserKind(kind))
+}
+
+func loginKindFrom(c *gin.Context) string {
+	if v, ok := c.Get(ctxLoginKindKey); ok {
+		if s, _ := v.(string); s != "" {
+			return models.NormalizeUserKind(s)
+		}
+	}
+	if claims := currentUser(c); claims != nil {
+		return claimsKind(claims)
+	}
+	return models.UserKindAdmin
+}
+
 func (a *App) recordLoginLog(c *gin.Context, username, status, failReason string) {
 	row := models.LoginLog{
 		Username:   username,
+		UserKind:   loginKindFrom(c),
 		IP:         c.ClientIP(),
 		UserAgent:  truncateText(c.GetHeader("User-Agent"), 512),
 		Location:   a.lookupLocation(c.ClientIP()),

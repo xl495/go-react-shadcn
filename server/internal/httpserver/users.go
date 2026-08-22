@@ -381,6 +381,9 @@ func (a *App) handleUpdateUser(c *gin.Context) {
 		if !a.requireDictValue(c, seed.DictUserStatus, *req.Status) {
 			return
 		}
+		if a.rejectLastAdminLoss(c, user, *req.Status, nil, false) {
+			return
+		}
 		user.Status = *req.Status
 		if *req.Status != "active" {
 			revoke = true
@@ -462,6 +465,9 @@ func (a *App) handleDeleteUser(c *gin.Context) {
 	}
 	if seed.IsSeedUsername(user.Username) {
 		fail(c, http.StatusBadRequest, 40013, "cannot delete seeded user")
+		return
+	}
+	if a.rejectLastAdminLoss(c, user, "", nil, true) {
 		return
 	}
 	a.sessions.invalidate(user.Kind, user.ID)
@@ -577,6 +583,13 @@ func (a *App) handleAssignUserRoles(c *gin.Context) {
 		return
 	}
 	if a.rejectPrivilegedRoleGrant(c, actor, roles) {
+		return
+	}
+	if err := models.AttachRoles(a.DB, user.Kind, &user); err != nil {
+		fail(c, http.StatusInternalServerError, CodeAssignRoles, "failed to assign roles")
+		return
+	}
+	if a.rejectLastAdminLoss(c, user, "", roles, false) {
 		return
 	}
 	if err := a.withTx(func(tx *gorm.DB) error {

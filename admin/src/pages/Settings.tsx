@@ -110,6 +110,11 @@ export function SettingsPage() {
                   value={profile[key]}
                   onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
                 />
+                {key === "email" && user?.pendingEmail ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t("settings.pendingEmail")}: {user.pendingEmail}. {t("settings.pendingEmailHint")}
+                  </p>
+                ) : null}
               </div>
             ))}
             <DictSelect
@@ -315,6 +320,7 @@ function SecurityCards() {
   const sessions = useOwnSessions()
   const kick = useRevokeOwnSession()
   const logs = useOwnLoginLogs()
+  const [unbindPassword, setUnbindPassword] = useState("")
 
   return (
     <>
@@ -327,18 +333,32 @@ function SecurityCards() {
           <p className="text-sm">{user?.googleBound ? t("settings.googleOn") : t("settings.googleOff")}</p>
           {settings.data?.googleEnabled ? (
             user?.googleBound ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  void api.unbindGoogle().then((next) => {
-                    updateUser(next)
-                    toast.success(t("app.saved"))
-                  })
-                }
-              >
-                {t("settings.googleUnbind")}
-              </Button>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="google-unbind-password">{t("settings.googleUnbindPassword")}</Label>
+                  <Input
+                    id="google-unbind-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={unbindPassword}
+                    onChange={(e) => setUnbindPassword(e.target.value)}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!unbindPassword}
+                  onClick={() =>
+                    void api.unbindGoogle({ password: unbindPassword }).then((next) => {
+                      updateUser(next)
+                      setUnbindPassword("")
+                      toast.success(t("app.saved"))
+                    })
+                  }
+                >
+                  {t("settings.googleUnbind")}
+                </Button>
+              </div>
             ) : (
               <GoogleSignIn
                 clientId={settings.data.googleClientId}
@@ -368,19 +388,26 @@ function SecurityCards() {
             (sessions.data ?? []).map((row) => (
               <div key={row.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
                 <div className="min-w-0">
-                  <p className="font-mono text-xs">{row.ip || "—"}</p>
+                  <p className="font-mono text-xs">
+                    {row.ip || "—"}
+                    {row.current ? ` · ${t("settings.thisDevice")}` : ""}
+                  </p>
                   <p className="truncate text-xs text-muted-foreground">{row.userAgent}</p>
                   <p className="text-xs text-muted-foreground">{formatDateTime(row.createdAt)}</p>
                 </div>
                 {row.revokedAt ? (
                   <span className="text-xs text-muted-foreground">{t("users.sessionRevoked")}</span>
+                ) : row.current ? (
+                  <span className="text-xs text-muted-foreground">{t("settings.thisDevice")}</span>
                 ) : (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() =>
-                      kick.mutate(row.id, { onSuccess: () => toast.success(t("app.saved")) })
+                      kick.mutate(row.id, {
+                        onSuccess: () => toast.success(t("app.saved")),
+                      })
                     }
                   >
                     {t("users.kickSession")}

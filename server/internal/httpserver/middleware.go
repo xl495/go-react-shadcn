@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go-react-shadcn/internal/models"
+	"go-react-shadcn/internal/security"
 	"go-react-shadcn/internal/seed"
 	"go-react-shadcn/internal/token"
 )
@@ -29,19 +30,24 @@ func (a *App) requireJWT() gin.HandlerFunc {
 		kind := claimsKind(claims)
 		tokenVersion, status := 0, ""
 		mustChange := false
+		var lockedUntil *time.Time
 		if snap, ok := a.sessions.get(kind, claims.UserID); ok {
-			tokenVersion, status, mustChange = snap.tokenVersion, snap.status, snap.mustChange
+			tokenVersion, status, mustChange, lockedUntil = snap.tokenVersion, snap.status, snap.mustChange, snap.lockedUntil
 		} else {
 			var user models.User
-			if err := a.accounts(kind).Select("id", "token_version", "status", "must_change_password").First(&user, claims.UserID).Error; err != nil {
+			if err := a.accounts(kind).Select("id", "token_version", "status", "must_change_password", "locked_until").First(&user, claims.UserID).Error; err != nil {
 				fail(c, http.StatusUnauthorized, CodeInvalidToken, "invalid or expired token")
 				return
 			}
-			tokenVersion, status, mustChange = user.TokenVersion, user.Status, user.MustChangePassword
-			a.sessions.put(kind, user.ID, tokenVersion, status, mustChange)
+			tokenVersion, status, mustChange, lockedUntil = user.TokenVersion, user.Status, user.MustChangePassword, user.LockedUntil
+			a.sessions.put(kind, user.ID, tokenVersion, status, mustChange, lockedUntil)
 		}
 		if status != "active" || tokenVersion != claims.TokenVersion {
 			fail(c, http.StatusUnauthorized, CodeInvalidToken, "invalid or expired token")
+			return
+		}
+		if security.IsLocked(lockedUntil, time.Now()) {
+			fail(c, http.StatusForbidden, CodeAccountLocked, "account locked")
 			return
 		}
 		if claims.ID != "" {

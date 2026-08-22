@@ -66,7 +66,8 @@ export const authApi = {
     request<import("@/types").PageResult<import("@/types").LoginLog>>("/api/v1/auth/login-logs?page=1&pageSize=20"),
   bindGoogle: (idToken: string) =>
     request<User>("/api/v1/auth/google/bind", { method: "POST", body: JSON.stringify({ idToken }) }),
-  unbindGoogle: () => request<User>("/api/v1/auth/google/unbind", { method: "POST" }),
+  unbindGoogle: (body: { password?: string; totpCode?: string }) =>
+    request<User>("/api/v1/auth/google/unbind", { method: "POST", body: JSON.stringify(body) }),
   verifyEmail: (token: string) =>
     request<{ changed?: boolean; token?: string; user?: User }>("/api/v1/auth/verify-email", {
       method: "POST",

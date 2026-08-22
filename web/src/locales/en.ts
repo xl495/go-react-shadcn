@@ -112,7 +112,7 @@ export const en: WebMessages = {
     next: "New password (at least 8 characters)",
     confirm: "Confirm new password",
     mismatch: "The new passwords do not match",
-    updated: "Password updated",
+    updated: "Password updated. Sign in again.",
     failed: "Update failed",
     save: "Update password",
     saving: "Saving…",
@@ -129,6 +129,7 @@ export const en: WebMessages = {
     subtitle: "Sessions and recent sign-in history for this account",
     kick: "Kick",
     revoked: "Revoked",
+    current: "This device",
     logs: "Sign-in history",
   },
   unsub: {

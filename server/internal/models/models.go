@@ -196,6 +196,7 @@ type SysConfig struct {
 type LoginLog struct {
 	ID         uint      `json:"id" gorm:"primaryKey"`
 	Username   string    `json:"username" gorm:"size:64;index;not null"`
+	UserKind   string    `json:"userKind" gorm:"size:16;not null;default:admin;index"`
 	IP         string    `json:"ip" gorm:"size:64"`
 	UserAgent  string    `json:"userAgent" gorm:"size:512"`
 	Location   string    `json:"location" gorm:"size:128"`

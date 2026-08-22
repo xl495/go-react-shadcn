@@ -5,7 +5,7 @@ import { useI18n } from "@/lib/i18n"
 
 export function PasswordPage() {
   const { t } = useI18n()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const [oldPassword, setOldPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -28,6 +28,7 @@ export function PasswordPage() {
       setNewPassword("")
       setConfirmPassword("")
       setMessage(t("password.updated"))
+      await logout()
     } catch (err) {
       setError(err instanceof ApiError ? err.message || t("password.failed") : t("password.failed"))
     } finally {

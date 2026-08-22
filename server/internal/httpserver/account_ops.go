@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go-react-shadcn/internal/i18n"
 	"go-react-shadcn/internal/mailer"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/passwd"
+	"go-react-shadcn/internal/secretbox"
 	"go-react-shadcn/internal/seed"
+	"go-react-shadcn/internal/totp"
 	"gorm.io/gorm"
 )
 
@@ -29,6 +32,23 @@ type batchStatusRequest struct {
 
 type googleBindRequest struct {
 	IDToken string `json:"idToken"`
+}
+
+type googleUnbindRequest struct {
+	Password string `json:"password"`
+	TotpCode string `json:"totpCode"`
+}
+
+type ownSessionDTO struct {
+	ID        uint       `json:"id"`
+	UserID    uint       `json:"userId"`
+	UserKind  string     `json:"userKind"`
+	IP        string     `json:"ip"`
+	UserAgent string     `json:"userAgent"`
+	ExpiresAt time.Time  `json:"expiresAt"`
+	RevokedAt *time.Time `json:"revokedAt"`
+	CreatedAt time.Time  `json:"createdAt"`
+	Current   bool       `json:"current"`
 }
 
 type onlineSessionDTO struct {
@@ -86,7 +106,26 @@ func (a *App) handleListOwnSessions(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeListUsers, "failed to list users")
 		return
 	}
-	ok(c, rows)
+	claims := currentUser(c)
+	currentJTI := ""
+	if claims != nil {
+		currentJTI = claims.ID
+	}
+	out := make([]ownSessionDTO, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, ownSessionDTO{
+			ID:        row.ID,
+			UserID:    row.UserID,
+			UserKind:  row.UserKind,
+			IP:        row.IP,
+			UserAgent: row.UserAgent,
+			ExpiresAt: row.ExpiresAt,
+			RevokedAt: row.RevokedAt,
+			CreatedAt: row.CreatedAt,
+			Current:   currentJTI != "" && row.JTI == currentJTI,
+		})
+	}
+	ok(c, out)
 }
 
 func (a *App) handleRevokeOwnSession(c *gin.Context) {
@@ -112,7 +151,7 @@ func (a *App) handleOwnLoginLogs(c *gin.Context) {
 	}
 	a.flushAuditLogs()
 	p := parsePage(c, 20, 100)
-	q := a.DB.Model(&models.LoginLog{}).Where("username = ?", claims.Username)
+	q := a.DB.Model(&models.LoginLog{}).Where("username = ? AND user_kind = ?", claims.Username, claimsKind(claims))
 	total, okCount := countOrFail(c, q, 50082, "failed to list login logs")
 	if !okCount {
 		return
@@ -411,6 +450,11 @@ func (a *App) handleGoogleUnbind(c *gin.Context) {
 		ok(c, a.toUserDTO(user))
 		return
 	}
+	var req googleUnbindRequest
+	_ = c.ShouldBindJSON(&req)
+	if !a.confirmSensitiveAction(c, user, req.Password, req.TotpCode) {
+		return
+	}
 	if err := a.updateAccount(&user, map[string]any{"google_id": ""}); err != nil {
 		fail(c, http.StatusInternalServerError, CodeUpdateProfile, "failed to update profile")
 		return
@@ -429,8 +473,6 @@ func (a *App) beginEmailChange(c *gin.Context, user *models.User, newEmail strin
 		fail(c, http.StatusInternalServerError, CodeUpdateProfile, "failed to update profile")
 		return "", false
 	}
-	_ = a.DB.Where("user_id = ? AND user_kind = ? AND purpose = ? AND used_at IS NULL", user.ID, user.Kind, models.TokenPurposeEmailChange).
-		Delete(&models.PasswordResetToken{}).Error
 	row := models.PasswordResetToken{
 		UserID:    user.ID,
 		UserKind:  user.Kind,
@@ -438,15 +480,79 @@ func (a *App) beginEmailChange(c *gin.Context, user *models.User, newEmail strin
 		TokenHash: hash,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
-	if err := a.DB.Create(&row).Error; err != nil {
+	if err := a.withTx(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ? AND user_kind = ? AND purpose = ? AND used_at IS NULL", user.ID, user.Kind, models.TokenPurposeEmailChange).
+			Delete(&models.PasswordResetToken{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		return models.Accounts(tx, user.Kind).Where("id = ?", user.ID).Update("pending_email", newEmail).Error
+	}); err != nil {
 		fail(c, http.StatusInternalServerError, CodeUpdateProfile, "failed to update profile")
 		return "", false
 	}
 	user.PendingEmail = newEmail
+	cfg, _ := mailer.Load(a.DB, a.Cfg.JWTSecret)
+	if link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), "http://127.0.0.1:5174", "/verify-email?token="+raw); okLink {
+		subject, body := i18n.VerifyEmailMail(i18n.FromRequest(c.Request), link)
+		_, _ = a.enqueueMail(mailer.EnqueueInput{
+			Class: models.MailClassTransactional, User: user, ToEmail: newEmail,
+			Subject: subject,
+			Body:    body,
+		})
+	}
 	if a.Cfg.DevMode {
 		return raw, true
 	}
 	return "", true
+}
+
+func (a *App) confirmSensitiveAction(c *gin.Context, user models.User, password, totpCode string) bool {
+	if user.TotpEnabled {
+		secret := secretbox.MustOpen(a.Cfg.JWTSecret, user.TotpSecret)
+		if secret == "" || !totp.Valid(secret, totpCode, time.Now()) {
+			fail(c, http.StatusBadRequest, CodeInvalidTotp, "invalid totp code")
+			return false
+		}
+		return true
+	}
+	if strings.TrimSpace(password) == "" {
+		fail(c, http.StatusBadRequest, CodeGoogleNeedPassword, "set a password before unbinding google")
+		return false
+	}
+	if !passwd.Match(user.PasswordHash, password) {
+		fail(c, http.StatusBadRequest, CodeWrongPassword, "current password is wrong")
+		return false
+	}
+	return true
+}
+
+func (a *App) rejectLastAdminLoss(c *gin.Context, user models.User, nextStatus string, nextRoles []models.Role, deleting bool) bool {
+	if models.NormalizeUserKind(user.Kind) != models.UserKindAdmin || !hasRole(user.Roles, seed.RoleAdmin) {
+		return false
+	}
+	losing := deleting
+	if nextStatus != "" && nextStatus != "active" {
+		losing = true
+	}
+	if nextRoles != nil && !hasRole(nextRoles, seed.RoleAdmin) {
+		losing = true
+	}
+	if !losing {
+		return false
+	}
+	n, err := a.countActiveAdmins(user.ID)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeUpdateUser, "failed to update user")
+		return true
+	}
+	if n == 0 {
+		fail(c, http.StatusBadRequest, CodeCannotDisableLastAdmin, "cannot disable the last active admin")
+		return true
+	}
+	return false
 }
 
 func randomTempPassword() (string, error) {

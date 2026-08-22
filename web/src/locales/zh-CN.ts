@@ -110,7 +110,7 @@ export const zhCN = {
     next: "新密码（至少 8 位）",
     confirm: "确认新密码",
     mismatch: "两次输入的新密码不一致",
-    updated: "密码已更新",
+    updated: "密码已更新，请重新登录。",
     failed: "修改失败",
     save: "更新密码",
     saving: "保存中…",
@@ -127,6 +127,7 @@ export const zhCN = {
     subtitle: "本账号的登录会话与最近登录记录",
     kick: "踢下线",
     revoked: "已失效",
+    current: "当前设备",
     logs: "登录记录",
   },
   unsub: {
