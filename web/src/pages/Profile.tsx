@@ -67,6 +67,11 @@ function ProfileForm({ user, onSaved }: { user: User; onSaved: (next: User) => v
           className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </label>
+      {user.pendingEmail ? (
+        <p className="text-sm text-muted-foreground">
+          {t("profile.pendingEmail")}: {user.pendingEmail}
+        </p>
+      ) : null}
       <label className="grid gap-1.5 text-sm">
         <span className="text-muted-foreground">{t("profile.phone")}</span>
         <input

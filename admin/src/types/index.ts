@@ -2,7 +2,14 @@ import type { components } from "./generated/api-schema"
 
 type Schema = components["schemas"]
 
-export type User = Schema["User"] & { totpEnabled?: boolean }
+export type User = Schema["User"] & {
+  totpEnabled?: boolean
+  lockedUntil?: string | null
+  mustChangePassword?: boolean
+  googleBound?: boolean
+  pendingEmail?: string
+  emailVerifyToken?: string
+}
 export type Role = Schema["Role"] & { permissionIds?: number[] }
 export type Permission = Schema["Permission"]
 export type MenuNode = Schema["MenuNode"]
@@ -25,7 +32,7 @@ export type LoginResult = Schema["LoginResult"] & {
   recoveryCodes?: string[]
   user?: User
 }
-export type AuthSettings = Schema["AuthSettings"]
+export type AuthSettings = Schema["AuthSettings"] & { maintenance?: boolean }
 export type DictLookup = Schema["DictLookup"]
 
 export type PageResult<T> = {

@@ -21,6 +21,7 @@ export const en: WebMessages = {
     home: "Home",
     profile: "Profile",
     password: "Password",
+    devices: "Devices",
     notifications: "Inbox",
   },
   login: {
@@ -36,6 +37,7 @@ export const en: WebMessages = {
     submit: "Sign in",
     submitting: "Signing in…",
     failed: "Sign-in failed",
+    maintenance: "The site is under maintenance. Web sign-in is paused.",
     totpTitle: "Two-factor code",
     totpHint: "Enter the 6-digit code from your authenticator app",
     totpEnroll: "Scan this URI or enter the secret in your authenticator, then confirm",
@@ -102,6 +104,7 @@ export const en: WebMessages = {
     failed: "Save failed",
     save: "Save profile",
     saving: "Saving…",
+    pendingEmail: "Pending email (keep using the current address until confirmed)",
   },
   password: {
     title: "Change password",
@@ -113,12 +116,20 @@ export const en: WebMessages = {
     failed: "Update failed",
     save: "Update password",
     saving: "Saving…",
+    mustChange: "An admin reset your password. Change it before continuing.",
   },
   notify: {
     title: "Inbox",
     readAll: "Mark all read",
     markRead: "Mark read",
     empty: "No notifications",
+  },
+  devices: {
+    title: "My devices",
+    subtitle: "Sessions and recent sign-in history for this account",
+    kick: "Kick",
+    revoked: "Revoked",
+    logs: "Sign-in history",
   },
   unsub: {
     title: "Unsubscribe from marketing email",

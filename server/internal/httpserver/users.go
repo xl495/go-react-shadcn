@@ -14,28 +14,33 @@ import (
 )
 
 type userDTO struct {
-	ID              uint      `json:"id"`
-	Username        string    `json:"username"`
-	Nickname        string    `json:"nickname"`
-	Avatar          string    `json:"avatar"`
-	Email           string    `json:"email"`
-	Phone           string    `json:"phone"`
-	Gender          string    `json:"gender"`
-	Department      string    `json:"department"`
-	Title           string    `json:"title"`
-	Remark          string    `json:"remark"`
-	Status          string    `json:"status"`
-	Timezone        string    `json:"timezone"`
-	MarketingOptIn  bool      `json:"marketingOptIn"`
-	EmailVerified   bool      `json:"emailVerified"`
-	Kind            string    `json:"kind"`
-	TotpEnabled     bool      `json:"totpEnabled"`
-	LastLoginAt     any       `json:"lastLoginAt"`
-	LastLoginIP     string    `json:"lastLoginIp"`
-	Roles           []roleDTO `json:"roles"`
-	PermissionCodes []string  `json:"permissionCodes"`
-	CreatedAt       any       `json:"createdAt"`
-	UpdatedAt       any       `json:"updatedAt"`
+	ID                 uint      `json:"id"`
+	Username           string    `json:"username"`
+	Nickname           string    `json:"nickname"`
+	Avatar             string    `json:"avatar"`
+	Email              string    `json:"email"`
+	PendingEmail       string    `json:"pendingEmail,omitempty"`
+	Phone              string    `json:"phone"`
+	Gender             string    `json:"gender"`
+	Department         string    `json:"department"`
+	Title              string    `json:"title"`
+	Remark             string    `json:"remark"`
+	Status             string    `json:"status"`
+	Timezone           string    `json:"timezone"`
+	MarketingOptIn     bool      `json:"marketingOptIn"`
+	EmailVerified      bool      `json:"emailVerified"`
+	Kind               string    `json:"kind"`
+	TotpEnabled        bool      `json:"totpEnabled"`
+	MustChangePassword bool      `json:"mustChangePassword"`
+	GoogleBound        bool      `json:"googleBound"`
+	LockedUntil        any       `json:"lockedUntil,omitempty"`
+	LastLoginAt        any       `json:"lastLoginAt"`
+	LastLoginIP        string    `json:"lastLoginIp"`
+	Roles              []roleDTO `json:"roles"`
+	PermissionCodes    []string  `json:"permissionCodes"`
+	EmailVerifyToken   string    `json:"emailVerifyToken,omitempty"`
+	CreatedAt          any       `json:"createdAt"`
+	UpdatedAt          any       `json:"updatedAt"`
 }
 
 type roleDTO struct {
@@ -138,16 +143,22 @@ func toUserDTOOpts(u models.User, withPerms bool) userDTO {
 		Timezone:       u.Timezone,
 		MarketingOptIn: u.MarketingOptIn,
 		EmailVerified:  u.EmailVerified,
-		Kind:           normalizeUserKind(u.Kind),
-		TotpEnabled:    u.TotpEnabled,
-		LastLoginAt:    u.LastLoginAt,
-		LastLoginIP:    u.LastLoginIP,
+		Kind:               normalizeUserKind(u.Kind),
+		TotpEnabled:        u.TotpEnabled,
+		MustChangePassword: u.MustChangePassword,
+		GoogleBound:        u.GoogleID != "",
+		PendingEmail:       u.PendingEmail,
+		LastLoginAt:        u.LastLoginAt,
+		LastLoginIP:        u.LastLoginIP,
 		Roles:          roles,
 		CreatedAt:      u.CreatedAt,
 		UpdatedAt:      u.UpdatedAt,
 	}
 	if withPerms {
 		dto.PermissionCodes = collectCodes(u)
+	}
+	if u.LockedUntil != nil {
+		dto.LockedUntil = u.LockedUntil
 	}
 	return dto
 }

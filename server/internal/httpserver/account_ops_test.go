@@ -1,0 +1,331 @@
+package httpserver
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"go-react-shadcn/internal/googleid"
+	"go-react-shadcn/internal/models"
+	"go-react-shadcn/internal/seed"
+)
+
+func TestOwnSessionsCannotKickOthers(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	viewer := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)
+
+	own := doJSON(t, app, http.MethodGet, "/api/v1/auth/sessions", viewer, nil)
+	if own.Code != http.StatusOK {
+		t.Fatalf("own sessions: %d %s", own.Code, own.Body.String())
+	}
+	var mine []models.AuthSession
+	if err := json.Unmarshal(decodeEnv(t, own).Data, &mine); err != nil || len(mine) == 0 {
+		t.Fatalf("viewer sessions: %v %s", err, own.Body.String())
+	}
+
+	adminList := doJSON(t, app, http.MethodGet, "/api/v1/auth/sessions", admin, nil)
+	var admins []models.AuthSession
+	if err := json.Unmarshal(decodeEnv(t, adminList).Data, &admins); err != nil || len(admins) == 0 {
+		t.Fatalf("admin sessions: %v %s", err, adminList.Body.String())
+	}
+	stolen := doJSON(t, app, http.MethodDelete, "/api/v1/auth/sessions/"+formatUint(admins[0].ID), viewer, nil)
+	if stolen.Code != http.StatusNotFound {
+		t.Fatalf("viewer kick admin session: %d %s", stolen.Code, stolen.Body.String())
+	}
+	denied := doJSON(t, app, http.MethodGet, "/api/v1/users/"+formatUint(admins[0].UserID)+"/sessions", viewer, nil)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("viewer list admin sessions: %d %s", denied.Code, denied.Body.String())
+	}
+}
+
+func TestMustChangePasswordBlocksUsers(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	var op models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.OperatorUsername).First(&op).Error; err != nil {
+		t.Fatal(err)
+	}
+	reset := doJSON(t, app, http.MethodPost, "/api/v1/users/"+formatUint(op.ID)+"/reset-password", admin, nil)
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset: %d %s", reset.Code, reset.Body.String())
+	}
+	var payload struct {
+		TemporaryPassword  string `json:"temporaryPassword"`
+		MustChangePassword bool   `json:"mustChangePassword"`
+	}
+	if err := json.Unmarshal(decodeEnv(t, reset).Data, &payload); err != nil || payload.TemporaryPassword == "" || !payload.MustChangePassword {
+		t.Fatalf("reset payload: %s", reset.Body.String())
+	}
+	tok := loginOK(t, app, seed.OperatorUsername, payload.TemporaryPassword)
+	blocked := doJSON(t, app, http.MethodGet, "/api/v1/users", tok, nil)
+	if blocked.Code != http.StatusForbidden || decodeEnv(t, blocked).ErrorCode != CodeMustChangePassword {
+		t.Fatalf("must change users: %d %s", blocked.Code, blocked.Body.String())
+	}
+	me := doJSON(t, app, http.MethodGet, "/api/v1/auth/me", tok, nil)
+	if me.Code != http.StatusOK {
+		t.Fatalf("me: %d %s", me.Code, me.Body.String())
+	}
+	changed := doJSON(t, app, http.MethodPut, "/api/v1/auth/password", tok, map[string]string{
+		"oldPassword": payload.TemporaryPassword, "newPassword": "operator-pass-9",
+	})
+	if changed.Code != http.StatusOK {
+		t.Fatalf("change: %d %s", changed.Code, changed.Body.String())
+	}
+	fresh := loginOK(t, app, seed.OperatorUsername, "operator-pass-9")
+	users := doJSON(t, app, http.MethodGet, "/api/v1/users", fresh, nil)
+	if users.Code != http.StatusOK {
+		t.Fatalf("users after change: %d %s", users.Code, users.Body.String())
+	}
+}
+
+func TestUnlockAndCopyRoleAndBatchStatus(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	viewer := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)
+
+	var op models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.OperatorUsername).First(&op).Error; err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().Add(time.Hour)
+	if err := app.accounts(models.UserKindAdmin).Where("id = ?", op.ID).Updates(map[string]any{
+		"locked_until": until, "failed_login_count": 9,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	detail := doJSON(t, app, http.MethodGet, "/api/v1/users/"+formatUint(op.ID), admin, nil)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), "lockedUntil") {
+		t.Fatalf("lockedUntil missing: %s", detail.Body.String())
+	}
+	if w := doJSON(t, app, http.MethodPost, "/api/v1/users/"+formatUint(op.ID)+"/unlock", viewer, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("viewer unlock: %d %s", w.Code, w.Body.String())
+	}
+	if w := doJSON(t, app, http.MethodPost, "/api/v1/users/"+formatUint(op.ID)+"/unlock", admin, nil); w.Code != http.StatusOK {
+		t.Fatalf("admin unlock: %d %s", w.Code, w.Body.String())
+	}
+	if tok := loginOK(t, app, seed.OperatorUsername, seed.OperatorPassword); tok == "" {
+		t.Fatal("login after unlock")
+	}
+
+	var viewerRole models.Role
+	if err := app.DB.Where("code = ?", seed.RoleViewer).First(&viewerRole).Error; err != nil {
+		t.Fatal(err)
+	}
+	if w := doJSON(t, app, http.MethodPost, "/api/v1/roles/"+formatUint(viewerRole.ID)+"/copy", viewer, map[string]string{
+		"name": "cloned", "code": "cloned-viewer",
+	}); w.Code != http.StatusForbidden {
+		t.Fatalf("viewer copy: %d %s", w.Code, w.Body.String())
+	}
+	if w := doJSON(t, app, http.MethodPost, "/api/v1/roles/"+formatUint(viewerRole.ID)+"/copy", admin, map[string]string{
+		"name": "cloned", "code": seed.RoleAdmin,
+	}); w.Code != http.StatusBadRequest {
+		t.Fatalf("copy builtin: %d %s", w.Code, w.Body.String())
+	}
+	copied := doJSON(t, app, http.MethodPost, "/api/v1/roles/"+formatUint(viewerRole.ID)+"/copy", admin, map[string]string{
+		"name": "观察员副本", "code": "viewer-copy",
+	})
+	if copied.Code != http.StatusOK {
+		t.Fatalf("copy: %d %s", copied.Code, copied.Body.String())
+	}
+
+	var adminUser models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.AdminUsername).First(&adminUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	last := doJSON(t, app, http.MethodPut, "/api/v1/users/batch-status", admin, map[string]any{
+		"ids": []uint{adminUser.ID}, "status": "disabled", "kind": "admin",
+	})
+	if last.Code != http.StatusBadRequest || decodeEnv(t, last).ErrorCode != CodeCannotDisableLastAdmin {
+		t.Fatalf("disable last admin: %d %s", last.Code, last.Body.String())
+	}
+	if w := doJSON(t, app, http.MethodPut, "/api/v1/users/batch-status", viewer, map[string]any{
+		"ids": []uint{op.ID}, "status": "disabled", "kind": "admin",
+	}); w.Code != http.StatusForbidden {
+		t.Fatalf("viewer batch: %d %s", w.Code, w.Body.String())
+	}
+	disabled := doJSON(t, app, http.MethodPut, "/api/v1/users/batch-status", admin, map[string]any{
+		"ids": []uint{op.ID}, "status": "disabled", "kind": "admin",
+	})
+	if disabled.Code != http.StatusOK {
+		t.Fatalf("batch disable: %d %s", disabled.Code, disabled.Body.String())
+	}
+}
+
+func TestBatchStatusHonorsDataScope(t *testing.T) {
+	app := testApp(t)
+	var opRole models.Role
+	if err := app.DB.Preload("Permissions").Where("code = ?", seed.RoleOperator).First(&opRole).Error; err != nil {
+		t.Fatal(err)
+	}
+	var update models.Permission
+	if err := app.DB.Where("code = ?", "user:update").First(&update).Error; err != nil {
+		t.Fatal(err)
+	}
+	perms := opRole.Permissions
+	perms = append(perms, update)
+	if err := app.DB.Model(&opRole).Association("Permissions").Replace(perms); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.SyncRolePolicies(app.Enforcer, opRole.Code, perms); err != nil {
+		t.Fatal(err)
+	}
+	var adminUser, opUser models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.AdminUsername).First(&adminUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.OperatorUsername).First(&opUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	opTok := loginOK(t, app, seed.OperatorUsername, seed.OperatorPassword)
+	w := doJSON(t, app, http.MethodPut, "/api/v1/users/batch-status", opTok, map[string]any{
+		"ids": []uint{adminUser.ID, opUser.ID}, "status": "disabled", "kind": "admin",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("scoped batch: %d %s", w.Code, w.Body.String())
+	}
+	var again models.User
+	if err := app.accounts(models.UserKindAdmin).Where("id = ?", adminUser.ID).First(&again).Error; err != nil {
+		t.Fatal(err)
+	}
+	if again.Status != "active" {
+		t.Fatalf("admin should stay active, got %s", again.Status)
+	}
+}
+
+func TestMaintenanceBlocksWebNotAdmin(t *testing.T) {
+	app := testApp(t)
+	setCfg(t, app, "app.maintenance", "1")
+	settings := doJSON(t, app, http.MethodGet, "/api/v1/auth/settings", "", nil)
+	if settings.Code != http.StatusOK || !strings.Contains(settings.Body.String(), `"maintenance":true`) {
+		t.Fatalf("settings: %s", settings.Body.String())
+	}
+	id, ans, _ := issueCaptcha(t, app)
+	web := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username": seed.MemberUsername, "password": seed.MemberPassword, "client": "web",
+		"captchaId": id, "captchaCode": ans,
+	})
+	if web.Code != http.StatusServiceUnavailable || decodeEnv(t, web).ErrorCode != CodeMaintenance {
+		t.Fatalf("web login: %d %s", web.Code, web.Body.String())
+	}
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	if admin == "" {
+		t.Fatal("admin login during maintenance")
+	}
+	live := doJSON(t, app, http.MethodGet, "/live", "", nil)
+	if live.Code != http.StatusOK {
+		t.Fatalf("live: %d", live.Code)
+	}
+}
+
+func TestGoogleBindUnbindAndNoSecretLeak(t *testing.T) {
+	app := testApp(t)
+	setCfg(t, app, "auth.google_enabled", "1")
+	setCfg(t, app, "auth.google_client_id", "client-1")
+	app.GoogleVerify = stubGoogle{ident: googleid.Identity{
+		Subject: "gid-viewer", Email: "viewer@latch.local", EmailVerified: true, Name: "李访客",
+	}}
+	viewer := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)
+	off := doJSON(t, app, http.MethodPost, "/api/v1/auth/google/bind", viewer, map[string]string{"idToken": "tok"})
+	if off.Code != http.StatusOK {
+		t.Fatalf("bind with google on: %d %s", off.Code, off.Body.String())
+	}
+	me := doJSON(t, app, http.MethodGet, "/api/v1/auth/me", viewer, nil)
+	if me.Code != http.StatusOK {
+		t.Fatalf("me: %d %s", me.Code, me.Body.String())
+	}
+	body := me.Body.String()
+	if strings.Contains(body, "gid-viewer") || strings.Contains(body, `"google_id"`) || strings.Contains(body, `"totpSecret"`) {
+		t.Fatalf("secret leak: %s", body)
+	}
+	if !strings.Contains(body, `"googleBound":true`) {
+		t.Fatalf("missing googleBound: %s", body)
+	}
+	un := doJSON(t, app, http.MethodPost, "/api/v1/auth/google/unbind", viewer, nil)
+	if un.Code != http.StatusOK {
+		t.Fatalf("unbind: %d %s", un.Code, un.Body.String())
+	}
+	if tok := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword); tok == "" {
+		t.Fatal("password login after unbind")
+	}
+	setCfg(t, app, "auth.google_enabled", "0")
+	again := doJSON(t, app, http.MethodPost, "/api/v1/auth/google/bind", viewer, map[string]string{"idToken": "tok"})
+	if again.Code != http.StatusServiceUnavailable {
+		t.Fatalf("bind while off: %d %s", again.Code, again.Body.String())
+	}
+}
+
+func TestOwnLoginLogsAndOnlineSessions(t *testing.T) {
+	app := testApp(t)
+	admin := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)
+	_ = loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)
+	viewer := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)
+
+	logs := doJSON(t, app, http.MethodGet, "/api/v1/auth/login-logs", admin, nil)
+	page := decodePage[models.LoginLog](t, logs)
+	for _, row := range page.Items {
+		if row.Username != seed.AdminUsername {
+			t.Fatalf("admin login-logs leaked %q", row.Username)
+		}
+	}
+	vlogs := doJSON(t, app, http.MethodGet, "/api/v1/auth/login-logs?username="+seed.AdminUsername, viewer, nil)
+	vpage := decodePage[models.LoginLog](t, vlogs)
+	for _, row := range vpage.Items {
+		if row.Username != seed.ViewerUsername {
+			t.Fatalf("viewer saw %q", row.Username)
+		}
+	}
+
+	if w := doJSON(t, app, http.MethodGet, "/api/v1/online-sessions", viewer, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("viewer online: %d %s", w.Code, w.Body.String())
+	}
+	online := doJSON(t, app, http.MethodGet, "/api/v1/online-sessions", admin, nil)
+	if online.Code != http.StatusOK || !strings.Contains(online.Body.String(), seed.AdminUsername) {
+		t.Fatalf("online: %d %s", online.Code, online.Body.String())
+	}
+}
+
+func TestEmailChangeRequiresVerify(t *testing.T) {
+	app := testApp(t)
+	viewer := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)
+	updated := doJSON(t, app, http.MethodPut, "/api/v1/auth/profile", viewer, map[string]any{
+		"nickname": "李访客", "email": "viewer2@example.com", "phone": "13800000003",
+		"gender": "female", "department": "market", "title": "观察员", "remark": "",
+		"timezone": "Asia/Shanghai",
+	})
+	if updated.Code != http.StatusOK {
+		t.Fatalf("profile: %d %s", updated.Code, updated.Body.String())
+	}
+	var dto userDTO
+	if err := json.Unmarshal(decodeEnv(t, updated).Data, &dto); err != nil {
+		t.Fatal(err)
+	}
+	if dto.Email != "viewer@latch.local" || dto.PendingEmail != "viewer2@example.com" || dto.EmailVerifyToken == "" {
+		t.Fatalf("pending not applied: %+v", dto)
+	}
+	me := doJSON(t, app, http.MethodGet, "/api/v1/auth/me", viewer, nil)
+	var meDTO userDTO
+	if err := json.Unmarshal(decodeEnv(t, me).Data, &meDTO); err != nil {
+		t.Fatal(err)
+	}
+	if meDTO.Email != "viewer@latch.local" {
+		t.Fatalf("me email changed early: %s", me.Body.String())
+	}
+	taken := doJSON(t, app, http.MethodPut, "/api/v1/auth/profile", viewer, map[string]any{
+		"nickname": "李访客", "email": "admin@latch.local", "phone": "13800000003",
+		"gender": "female", "department": "market", "title": "观察员", "remark": "",
+	})
+	if taken.Code != http.StatusConflict {
+		t.Fatalf("taken email: %d %s", taken.Code, taken.Body.String())
+	}
+	confirm := doJSON(t, app, http.MethodPost, "/api/v1/auth/verify-email", "", map[string]string{"token": dto.EmailVerifyToken})
+	if confirm.Code != http.StatusOK {
+		t.Fatalf("verify: %d %s", confirm.Code, confirm.Body.String())
+	}
+	me2 := doJSON(t, app, http.MethodGet, "/api/v1/auth/me", viewer, nil)
+	if !strings.Contains(me2.Body.String(), "viewer2@example.com") {
+		t.Fatalf("email not updated: %s", me2.Body.String())
+	}
+}

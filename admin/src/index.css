@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "../../shared/fonts/gra.css";
+@import "./assets/fonts/gra.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

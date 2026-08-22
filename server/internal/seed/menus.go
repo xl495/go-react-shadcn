@@ -19,6 +19,7 @@ func adminNavSeeds() []navSeed {
 		{"组织管理", "org:menu", "", "", "", "FolderTree", "", 15},
 		{"后台用户", "user:list", "user:list", "/users", "UsersPage", "Users", "org:menu", 20},
 		{"Web用户", "webuser:list", "user:list", "/web-users", "WebUsersPage", "Globe", "org:menu", 21},
+		{"在线用户", "session:list", "session:list", "/online", "OnlineSessionsPage", "Radio", "org:menu", 22},
 		{"部门列表", "dept:list", "dept:list", "/departments", "DepartmentsPage", "Building2", "org:menu", 25},
 		{"角色菜单", "role:list", "role:list", "/roles", "RolesPage", "Shield", "org:menu", 30},
 		{"权限菜单", "perm:list", "perm:list", "/permissions", "PermissionsPage", "KeyRound", "org:menu", 40},
@@ -38,6 +39,7 @@ func webNavSeeds() []navSeed {
 		{"消息", "web:notify", "notify:list", "/notifications", "NotificationsPage", "Bell", "", 15},
 		{"我的资料", "web:profile", "me:read", "/profile", "ProfilePage", "User", "", 20},
 		{"修改密码", "web:password", "me:read", "/password", "PasswordPage", "KeyRound", "", 30},
+		{"我的设备", "web:devices", "me:read", "/devices", "DevicesPage", "Monitor", "", 35},
 	}
 }
 

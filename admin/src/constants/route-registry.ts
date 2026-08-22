@@ -14,6 +14,7 @@ export type PageKey =
   | "MailCampaignsPage"
   | "MenusPage"
   | "NotificationsPage"
+  | "OnlineSessionsPage"
 
 export const PAGE_REGISTRY: Record<
   PageKey,
@@ -39,6 +40,9 @@ export const PAGE_REGISTRY: Record<
   MenusPage: lazy(() => import("@/pages/Menus").then((m) => ({ default: m.MenusPage }))),
   NotificationsPage: lazy(() =>
     import("@/pages/Notifications").then((m) => ({ default: m.NotificationsPage })),
+  ),
+  OnlineSessionsPage: lazy(() =>
+    import("@/pages/OnlineSessions").then((m) => ({ default: m.OnlineSessionsPage })),
   ),
 }
 

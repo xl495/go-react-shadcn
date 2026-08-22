@@ -120,6 +120,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation()
   if (loading) return <AuthFallback />
   if (!token || !user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (user.mustChangePassword && location.pathname !== "/password") {
+    return <Navigate to="/password" replace />
+  }
   return children
 }
 

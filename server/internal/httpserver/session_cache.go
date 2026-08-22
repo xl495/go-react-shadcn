@@ -12,6 +12,7 @@ import (
 type sessionSnapshot struct {
 	tokenVersion int
 	status       string
+	mustChange   bool
 	expires      time.Time
 }
 
@@ -51,12 +52,13 @@ func (s *sessionCache) get(kind string, id uint) (sessionSnapshot, bool) {
 	return snap, true
 }
 
-func (s *sessionCache) put(kind string, id uint, tokenVersion int, status string) {
+func (s *sessionCache) put(kind string, id uint, tokenVersion int, status string, mustChange bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[accountSessionKey(kind, id)] = sessionSnapshot{
 		tokenVersion: tokenVersion,
 		status:       status,
+		mustChange:   mustChange,
 		expires:      time.Now().Add(s.ttl),
 	}
 }

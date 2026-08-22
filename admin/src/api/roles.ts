@@ -20,4 +20,6 @@ export const rolesApi = {
       method: "PUT",
       body: JSON.stringify({ permissionIds }),
     }),
+  copyRole: (id: number, body: { name: string; code: string }) =>
+    request<Role>(`/api/v1/roles/${id}/copy`, { method: "POST", body: JSON.stringify(body) }),
 }

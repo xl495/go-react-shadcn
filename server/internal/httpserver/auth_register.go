@@ -33,6 +33,9 @@ func (a *App) handleRegister(c *gin.Context) {
 		fail(c, http.StatusForbidden, CodeRegisterDisabled, "registration is disabled")
 		return
 	}
+	if a.rejectWebMaintenance(c, req.Client) {
+		return
+	}
 	if loginClientKind(req.Client) != models.UserKindWeb {
 		fail(c, http.StatusForbidden, CodeWrongClient, "email registration is only available on the web client")
 		return
@@ -167,7 +170,7 @@ func (a *App) handleVerifyEmail(c *gin.Context) {
 		return
 	}
 	var row models.PasswordResetToken
-	err := a.DB.Where("token_hash = ? AND purpose = ?", mailer.HashToken(token), models.TokenPurposeVerify).First(&row).Error
+	err := a.DB.Where("token_hash = ?", mailer.HashToken(token)).First(&row).Error
 	if err != nil || row.UsedAt != nil || time.Now().After(row.ExpiresAt) {
 		fail(c, http.StatusBadRequest, CodeResetTokenInvalid, "invalid or expired reset token")
 		return
@@ -179,6 +182,36 @@ func (a *App) handleVerifyEmail(c *gin.Context) {
 		return
 	}
 	now := time.Now()
+	if row.Purpose == models.TokenPurposeEmailChange {
+		email := normalizeEmail(user.PendingEmail)
+		if email == "" {
+			fail(c, http.StatusBadRequest, CodeResetTokenInvalid, "invalid or expired reset token")
+			return
+		}
+		if a.emailTaken(kind, email, user.ID) {
+			fail(c, http.StatusConflict, CodeEmailExists, "email already exists")
+			return
+		}
+		if err := a.updateAccount(&user, map[string]any{
+			"email":          email,
+			"pending_email":  "",
+			"email_verified": true,
+		}); err != nil {
+			fail(c, http.StatusInternalServerError, CodeUpdateUser, "failed to update user")
+			return
+		}
+		_ = a.DB.Model(&row).Update("used_at", now).Error
+		user.Email = email
+		user.PendingEmail = ""
+		user.EmailVerified = true
+		_ = models.AttachRoles(a.DB, kind, &user)
+		ok(c, gin.H{"changed": true, "user": a.toUserDTO(user)})
+		return
+	}
+	if row.Purpose != "" && row.Purpose != models.TokenPurposeVerify {
+		fail(c, http.StatusBadRequest, CodeResetTokenInvalid, "invalid or expired reset token")
+		return
+	}
 	if err := a.updateAccount(&user, map[string]any{"email_verified": true}); err != nil {
 		fail(c, http.StatusInternalServerError, CodeUpdateUser, "failed to update user")
 		return

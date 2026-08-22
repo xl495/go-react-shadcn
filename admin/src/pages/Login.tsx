@@ -12,7 +12,7 @@ import { GoogleSignIn } from "@/components/auth/GoogleSignIn"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { safeInternalPath } from "@latch/auth/safe-path"
+import { safeInternalPath } from "@/lib/safe-path"
 import type { LoginResult, User } from "@/types"
 
 export function LoginPage() {
@@ -166,6 +166,9 @@ export function LoginPage() {
             <p className="font-display text-[13px] text-muted-foreground">gra</p>
             <h1 className="mt-1 font-display text-[2rem] leading-none tracking-tight">{t("login.title")}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{t("login.subtitle")}</p>
+            {settings.data?.maintenance ? (
+              <p className="mt-2 text-sm text-destructive">{t("login.maintenance")}</p>
+            ) : null}
           </div>
           {settings.data?.googleEnabled ? (
             <div className="space-y-3">

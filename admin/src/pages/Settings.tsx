@@ -6,7 +6,7 @@ import { useAuth } from "@/providers/auth"
 import { DICT, useDict } from "@/hooks/dict"
 import { formatDateTime } from "@/utils/format"
 import { useI18n } from "@/providers/i18n"
-import { useUpdateProfile } from "@/hooks/queries"
+import { useAuthSettings, useOwnLoginLogs, useOwnSessions, useRevokeOwnSession, useUpdateProfile } from "@/hooks/queries"
 import { UnsavedGuard } from "@/hooks/unsaved"
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher"
 import { useTheme, type Theme } from "@/providers/theme"
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { TimezoneSelect } from "@/components/ui/timezone-select"
+import { GoogleSignIn } from "@/components/auth/GoogleSignIn"
 
 export function SettingsPage() {
   const { user, updateUser } = useAuth()
@@ -166,6 +167,8 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
+      <SecurityCards />
+
       <Card>
         <CardHeader>
           <CardTitle>{t("settings.appearance")}</CardTitle>
@@ -302,5 +305,107 @@ function TotpCard() {
         )}
       </div>
     </div>
+  )
+}
+
+function SecurityCards() {
+  const { t, locale } = useI18n()
+  const { user, updateUser } = useAuth()
+  const settings = useAuthSettings()
+  const sessions = useOwnSessions()
+  const kick = useRevokeOwnSession()
+  const logs = useOwnLoginLogs()
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.google")}</CardTitle>
+          <CardDescription>{t("settings.googleHint")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm">{user?.googleBound ? t("settings.googleOn") : t("settings.googleOff")}</p>
+          {settings.data?.googleEnabled ? (
+            user?.googleBound ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  void api.unbindGoogle().then((next) => {
+                    updateUser(next)
+                    toast.success(t("app.saved"))
+                  })
+                }
+              >
+                {t("settings.googleUnbind")}
+              </Button>
+            ) : (
+              <GoogleSignIn
+                clientId={settings.data.googleClientId}
+                locale={locale}
+                onCredential={(idToken) =>
+                  void api.bindGoogle(idToken).then((next) => {
+                    updateUser(next)
+                    toast.success(t("app.saved"))
+                  })
+                }
+              />
+            )
+          ) : (
+            <p className="text-sm text-muted-foreground">{t("settings.googleDisabled")}</p>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.devices")}</CardTitle>
+          <CardDescription>{t("settings.devicesHint")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {(sessions.data ?? []).length === 0 ? (
+            <p className="text-muted-foreground">{t("app.empty")}</p>
+          ) : (
+            (sessions.data ?? []).map((row) => (
+              <div key={row.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs">{row.ip || "—"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{row.userAgent}</p>
+                  <p className="text-xs text-muted-foreground">{formatDateTime(row.createdAt)}</p>
+                </div>
+                {row.revokedAt ? (
+                  <span className="text-xs text-muted-foreground">{t("users.sessionRevoked")}</span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      kick.mutate(row.id, { onSuccess: () => toast.success(t("app.saved")) })
+                    }
+                  >
+                    {t("users.kickSession")}
+                  </Button>
+                )}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.loginHistory")}</CardTitle>
+          <CardDescription>{t("settings.loginHistoryHint")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {(logs.data?.items ?? []).slice(0, 10).map((row) => (
+            <div key={row.id} className="flex justify-between gap-3 border-b py-2 last:border-0">
+              <span>{row.status}</span>
+              <span className="font-mono text-xs text-muted-foreground">{row.ip}</span>
+              <span className="text-xs text-muted-foreground">{formatDateTime(row.createdAt)}</span>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </>
   )
 }

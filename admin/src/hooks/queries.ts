@@ -10,6 +10,7 @@ export const FALLBACK_MENU_ROUTES: MenuNode[] = [
   { id: 0, code: "notify:list", name: "Notifications", kind: "menu", routePath: "/notifications", component: "NotificationsPage", icon: "Bell", sort: 12, hidden: false },
   { id: 0, code: "user:list", name: "Staff users", kind: "menu", routePath: "/users", component: "UsersPage", icon: "Users", sort: 20, hidden: false, permCode: "user:list" },
   { id: 0, code: "webuser:list", name: "Web users", kind: "menu", routePath: "/web-users", component: "WebUsersPage", icon: "Globe", sort: 21, hidden: false, permCode: "user:list" },
+  { id: 0, code: "session:list", name: "Online", kind: "menu", routePath: "/online", component: "OnlineSessionsPage", icon: "Radio", sort: 22, hidden: false },
   { id: 0, code: "dept:list", name: "Departments", kind: "menu", routePath: "/departments", component: "DepartmentsPage", icon: "Building2", sort: 25, hidden: false },
   { id: 0, code: "role:list", name: "Roles", kind: "menu", routePath: "/roles", component: "RolesPage", icon: "Shield", sort: 30, hidden: false },
   { id: 0, code: "perm:list", name: "Permissions", kind: "menu", routePath: "/permissions", component: "PermissionsPage", icon: "KeyRound", sort: 40, hidden: false },
@@ -208,7 +209,72 @@ export function useRevokeUserSession() {
       api.revokeUserSession(id, sid, kind),
     onSuccess: (_d, vars) => {
       void qc.invalidateQueries({ queryKey: ["users", "sessions", vars.id] })
+      void qc.invalidateQueries({ queryKey: ["online-sessions"] })
     },
+  })
+}
+
+export function useResetUserPassword() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, kind }: { id: number; kind?: string }) => api.resetUserPassword(id, kind),
+    onSuccess: (_d, vars) => void qc.invalidateQueries({ queryKey: ["users", "detail", vars.id] }),
+  })
+}
+
+export function useUnlockUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, kind }: { id: number; kind?: string }) => api.unlockUser(id, kind),
+    onSuccess: (_d, vars) => void qc.invalidateQueries({ queryKey: ["users", "detail", vars.id] }),
+  })
+}
+
+export function useBatchUserStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.batchUserStatus,
+    onSuccess: () => void invalidate(qc, ["users", "list"], ["online-sessions"]),
+  })
+}
+
+export function useOnlineSessions() {
+  return useQuery({
+    queryKey: ["online-sessions"],
+    queryFn: () => api.onlineSessions(),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useOwnSessions() {
+  return useQuery({
+    queryKey: ["auth", "sessions"],
+    queryFn: () => api.ownSessions(),
+    enabled: !!getToken(),
+  })
+}
+
+export function useRevokeOwnSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.revokeOwnSession,
+    onSuccess: () => void invalidate(qc, ["auth", "sessions"]),
+  })
+}
+
+export function useOwnLoginLogs() {
+  return useQuery({
+    queryKey: ["auth", "login-logs"],
+    queryFn: () => api.ownLoginLogs(),
+    enabled: !!getToken(),
+  })
+}
+
+export function useCopyRole() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: { name: string; code: string } }) => api.copyRole(id, body),
+    onSuccess: () => void invalidate(qc, ["roles"]),
   })
 }
 

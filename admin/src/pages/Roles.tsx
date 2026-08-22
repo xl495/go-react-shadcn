@@ -5,7 +5,7 @@ import { Can } from "@/components/auth/Can"
 import { roleDesc, roleLabel, translateApiError, useI18n } from "@/providers/i18n"
 import { P } from "@/constants/perms"
 import { useSearchPageParams } from "@/hooks/list-params"
-import { PAGE_SIZE, useCreateRole, useDeleteRole, useRoles } from "@/hooks/queries"
+import { PAGE_SIZE, useCopyRole, useCreateRole, useDeleteRole, useRoles } from "@/hooks/queries"
 import { ConfirmAlert, DesktopOnly, EmptyState, EmptyTableRow, ResourceTable, StackedCards } from "@/components/feedback"
 import { FilterForm, SearchField, SearchSubmitButton, useSyncedDraft } from "@/components/SearchField"
 import { Badge } from "@/components/ui/badge"
@@ -41,8 +41,12 @@ export function RolesPage() {
   const { data: rolesPage, isLoading, error: rolesError } = useRoles({ page, pageSize: PAGE_SIZE, q: q || undefined })
   const roles = rolesPage?.items ?? []
   const createRole = useCreateRole()
+  const copyRole = useCopyRole()
   const deleteRole = useDeleteRole()
   const [open, setOpen] = useState(false)
+  const [copying, setCopying] = useState<Role | null>(null)
+  const [copyName, setCopyName] = useState("")
+  const [copyCode, setCopyCode] = useState("")
   const [name, setName] = useState("")
   const [code, setCode] = useState("")
   const [description, setDescription] = useState("")
@@ -121,6 +125,19 @@ export function RolesPage() {
                   <Button asChild variant="ghost" size="sm">
                     <Link to={`/roles/${role.id}`}>{t("roles.detail")}</Link>
                   </Button>
+                  <Can perm={P.roleCreate}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setCopying(role)
+                        setCopyName(`${role.name} copy`)
+                        setCopyCode(`${role.code}-copy`)
+                      }}
+                    >
+                      {t("roles.copy")}
+                    </Button>
+                  </Can>
                 </div>
               </div>
             ))
@@ -161,10 +178,23 @@ export function RolesPage() {
                   <TableCell className="tabular-nums">{role.permissionIds?.length ?? 0}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link to={`/roles/${role.id}`}>{t("roles.detail")}</Link>
-                      </Button>
-                      <Can perm={P.roleDelete}>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to={`/roles/${role.id}`}>{t("roles.detail")}</Link>
+                  </Button>
+                  <Can perm={P.roleCreate}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setCopying(role)
+                        setCopyName(`${role.name} copy`)
+                        setCopyCode(`${role.code}-copy`)
+                      }}
+                    >
+                      {t("roles.copy")}
+                    </Button>
+                  </Can>
+                  <Can perm={P.roleDelete}>
                         <Button variant="ghost" size="sm" onClick={() => setPending(role)}>
                           {t("app.delete")}
                         </Button>
@@ -233,6 +263,43 @@ export function RolesPage() {
           </div>
           <DialogFooter>
             <Button onClick={() => void create()}>{t("app.create")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!copying} onOpenChange={(next) => { if (!next) setCopying(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("roles.copy")}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="cn">{t("app.name")}</Label>
+              <Input id="cn" value={copyName} onChange={(e) => setCopyName(e.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="cc">{t("app.code")}</Label>
+              <Input id="cc" value={copyCode} onChange={(e) => setCopyCode(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                if (!copying) return
+                copyRole.mutate(
+                  { id: copying.id, body: { name: copyName, code: copyCode } },
+                  {
+                    onSuccess: (role) => {
+                      toast.success(t("app.saved"))
+                      setCopying(null)
+                      navigate(`/roles/${role.id}`)
+                    },
+                  },
+                )
+              }}
+            >
+              {t("roles.copy")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

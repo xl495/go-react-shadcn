@@ -21,6 +21,10 @@ export function VerifyEmailPage() {
       .verifyEmail({ token })
       .then((result) => {
         if (cancelled) return
+        if (!result.token || !result.user) {
+          setError(t("verify.failed"))
+          return
+        }
         login(result.token, result.user)
         navigate("/", { replace: true })
       })

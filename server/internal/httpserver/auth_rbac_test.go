@@ -619,8 +619,11 @@ func TestProfileAndPassword(t *testing.T) {
 	if err := json.Unmarshal(updEnv.Data, &after); err != nil {
 		t.Fatal(err)
 	}
-	if after.Nickname != "访客改名" || after.Email != "viewer2@latch.local" || after.Department != "market" {
+	if after.Nickname != "访客改名" || after.Email != "viewer@latch.local" || after.PendingEmail != "viewer2@latch.local" || after.Department != "market" {
 		t.Fatalf("profile not saved: %+v", after)
+	}
+	if after.EmailVerifyToken == "" {
+		t.Fatal("dev mode should return email verify token")
 	}
 
 	bad := doJSON(t, app, http.MethodPut, "/api/v1/auth/password", token, map[string]string{

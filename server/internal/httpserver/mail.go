@@ -36,6 +36,9 @@ func (a *App) handleForgotPassword(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeInvalidBody, "invalid request body")
 		return
 	}
+	if a.rejectWebMaintenance(c, req.Client) {
+		return
+	}
 	if a.ForgotGuard != nil && !a.ForgotGuard.AllowIP(c.ClientIP()) {
 		fail(c, http.StatusTooManyRequests, CodeForgotRateLimited, "too many reset requests from this ip")
 		return

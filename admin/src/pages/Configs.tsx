@@ -49,6 +49,7 @@ const APP_GROUP: Group = {
   hintKey: "config.appHint",
   fields: [
     { key: "app.name", kind: "text" },
+    { key: "app.maintenance", kind: "switch" },
     {
       key: "app.default_locale",
       kind: "select",

@@ -28,16 +28,17 @@ func (a *App) requireJWT() gin.HandlerFunc {
 		}
 		kind := claimsKind(claims)
 		tokenVersion, status := 0, ""
+		mustChange := false
 		if snap, ok := a.sessions.get(kind, claims.UserID); ok {
-			tokenVersion, status = snap.tokenVersion, snap.status
+			tokenVersion, status, mustChange = snap.tokenVersion, snap.status, snap.mustChange
 		} else {
 			var user models.User
-			if err := a.accounts(kind).Select("id", "token_version", "status").First(&user, claims.UserID).Error; err != nil {
+			if err := a.accounts(kind).Select("id", "token_version", "status", "must_change_password").First(&user, claims.UserID).Error; err != nil {
 				fail(c, http.StatusUnauthorized, CodeInvalidToken, "invalid or expired token")
 				return
 			}
-			tokenVersion, status = user.TokenVersion, user.Status
-			a.sessions.put(kind, user.ID, tokenVersion, status)
+			tokenVersion, status, mustChange = user.TokenVersion, user.Status, user.MustChangePassword
+			a.sessions.put(kind, user.ID, tokenVersion, status, mustChange)
 		}
 		if status != "active" || tokenVersion != claims.TokenVersion {
 			fail(c, http.StatusUnauthorized, CodeInvalidToken, "invalid or expired token")
@@ -51,7 +52,17 @@ func (a *App) requireJWT() gin.HandlerFunc {
 				return
 			}
 		}
+		if kind == models.UserKindWeb && a.sysOn("app.maintenance", false) {
+			if c.FullPath() != "/api/v1/auth/logout" {
+				fail(c, http.StatusServiceUnavailable, CodeMaintenance, "the site is under maintenance")
+				return
+			}
+		}
 		c.Set(ctxUserKey, claims)
+		if mustChange && !mustChangeAllowed(c) {
+			fail(c, http.StatusForbidden, CodeMustChangePassword, "you must change your password")
+			return
+		}
 		c.Next()
 	}
 }
@@ -85,6 +96,21 @@ func (a *App) casbinAllowed(sub, path, method string) (bool, error) {
 	}
 	if method == http.MethodPut && path == "/api/v1/nav-menus/reorder" {
 		return a.Enforcer.Enforce(sub, "/api/v1/nav-menus/:id", http.MethodPut)
+	}
+	if method == http.MethodPost && path == "/api/v1/users/:id/reset-password" {
+		return a.Enforcer.Enforce(sub, "/api/v1/users/:id", http.MethodPut)
+	}
+	if method == http.MethodPost && path == "/api/v1/users/:id/unlock" {
+		return a.Enforcer.Enforce(sub, "/api/v1/users/:id", http.MethodPut)
+	}
+	if method == http.MethodPut && path == "/api/v1/users/batch-status" {
+		return a.Enforcer.Enforce(sub, "/api/v1/users/:id", http.MethodPut)
+	}
+	if method == http.MethodPost && path == "/api/v1/roles/:id/copy" {
+		return a.Enforcer.Enforce(sub, "/api/v1/roles", http.MethodPost)
+	}
+	if method == http.MethodGet && path == "/api/v1/online-sessions" {
+		return a.Enforcer.Enforce(sub, "/api/v1/users/:id/sessions", http.MethodGet)
 	}
 	return false, nil
 }

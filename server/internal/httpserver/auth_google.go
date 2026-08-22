@@ -29,6 +29,7 @@ type publicAuthSettings struct {
 	RecaptchaSiteKeyV3    string `json:"recaptchaSiteKeyV3"`
 	RecaptchaSiteKeyV2    string `json:"recaptchaSiteKeyV2"`
 	TurnstileSiteKey      string `json:"turnstileSiteKey"`
+	Maintenance           bool   `json:"maintenance"`
 }
 
 type googleAuthRequest struct {
@@ -49,6 +50,7 @@ func (a *App) handleAuthSettings(c *gin.Context) {
 		RecaptchaSiteKeyV3:    a.sysValue("auth.recaptcha_site_key_v3"),
 		RecaptchaSiteKeyV2:    a.sysValue("auth.recaptcha_site_key_v2"),
 		TurnstileSiteKey:      a.sysValue("auth.turnstile_site_key"),
+		Maintenance:           a.sysOn("app.maintenance", false),
 	})
 }
 
@@ -56,6 +58,9 @@ func (a *App) handleGoogleAuth(c *gin.Context) {
 	var req googleAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeInvalidBody, "invalid request body")
+		return
+	}
+	if a.rejectWebMaintenance(c, req.Client) {
 		return
 	}
 	if !a.googleEnabled() {

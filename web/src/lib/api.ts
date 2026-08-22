@@ -213,6 +213,26 @@ export const api = {
     request<LoginResult>("/api/v1/auth/totp/confirm", { method: "POST", body: JSON.stringify(body) }),
   totpVerify: (body: { ticket: string; code?: string; recoveryCode?: string }) =>
     request<LoginResult>("/api/v1/auth/totp/verify", { method: "POST", body: JSON.stringify(body) }),
+  ownSessions: () =>
+    request<
+      Array<{
+        id: number
+        ip: string
+        userAgent: string
+        createdAt: string
+        revokedAt?: string | null
+      }>
+    >("/api/v1/auth/sessions"),
+  revokeOwnSession: (id: number) =>
+    request<{ revoked: number }>(`/api/v1/auth/sessions/${id}`, { method: "DELETE" }),
+  ownLoginLogs: () =>
+    request<{
+      items: Array<{ id: number; status: string; ip: string; createdAt: string }>
+      total: number
+    }>("/api/v1/auth/login-logs?page=1&pageSize=20"),
+  bindGoogle: (idToken: string) =>
+    request<User>("/api/v1/auth/google/bind", { method: "POST", body: JSON.stringify({ idToken }) }),
+  unbindGoogle: () => request<User>("/api/v1/auth/google/unbind", { method: "POST" }),
 }
 
 export type NotificationItem = {

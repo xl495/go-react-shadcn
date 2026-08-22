@@ -37,7 +37,7 @@ export function RegisterPage() {
         setPendingEmail(result.email || email)
         return
       }
-      if ("token" in result) {
+      if ("token" in result && result.token && result.user) {
         login(result.token, result.user)
         navigate("/", { replace: true })
       }
@@ -56,6 +56,10 @@ export function RegisterPage() {
     setLoading(true)
     try {
       const result = await api.google({ idToken, client: "web" })
+      if (!result.token || !result.user) {
+        setError(t("register.failed"))
+        return
+      }
       login(result.token, result.user)
       navigate("/", { replace: true })
     } catch (err) {
@@ -74,6 +78,9 @@ export function RegisterPage() {
         <div>
           <h1 className="font-display text-[2rem] leading-none tracking-tight">{t("register.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("register.subtitle")}</p>
+          {settings?.maintenance ? (
+            <p className="mt-2 text-sm text-destructive">{t("login.maintenance")}</p>
+          ) : null}
         </div>
         {pendingEmail ? (
           <p className="text-sm text-muted-foreground">{t("register.checkEmail")}</p>

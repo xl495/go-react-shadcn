@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
-import { CircleHelp, House, KeyRound, LogOut, PanelLeftClose, PanelLeftOpen, User, Bell } from "lucide-react"
+import { CircleHelp, House, KeyRound, LogOut, Monitor, PanelLeftClose, PanelLeftOpen, User, Bell } from "lucide-react"
 import { api, ApiError, isSessionExpired } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { menuLabel, useI18n } from "@/lib/i18n"
@@ -14,6 +14,7 @@ const ICONS: Record<string, typeof House> = {
   User,
   KeyRound,
   Bell,
+  Monitor,
 }
 
 function menuIcon(name: string): typeof House {

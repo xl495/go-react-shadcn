@@ -47,6 +47,9 @@ func (a *App) handleLogin(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40001, "invalid request body")
 		return
 	}
+	if a.rejectWebMaintenance(c, req.Client) {
+		return
+	}
 
 	ip := c.ClientIP()
 	if !a.LoginGuard.AllowIP(ip) {
@@ -215,12 +218,7 @@ func (a *App) handleUpdateProfile(c *gin.Context) {
 		!a.requireDepartmentCode(c, req.Department) {
 		return
 	}
-	if req.Email != "" && a.emailTaken(user.Kind, req.Email, user.ID) {
-		fail(c, http.StatusConflict, CodeEmailExists, "email already exists")
-		return
-	}
 	user.Nickname = req.Nickname
-	user.Email = req.Email
 	user.Phone = req.Phone
 	user.Gender = req.Gender
 	user.Department = req.Department
@@ -241,11 +239,28 @@ func (a *App) handleUpdateProfile(c *gin.Context) {
 	if req.MarketingOptIn != nil {
 		user.MarketingOptIn = *req.MarketingOptIn
 	}
+	newEmail := normalizeEmail(req.Email)
+	verifyToken := ""
+	if newEmail == normalizeEmail(user.Email) {
+		// keep current email
+	} else if newEmail == "" {
+		user.Email = ""
+		user.EmailVerified = false
+		user.PendingEmail = ""
+	} else {
+		tok, okBegin := a.beginEmailChange(c, &user, newEmail)
+		if !okBegin {
+			return
+		}
+		verifyToken = tok
+	}
 	if err := a.saveAccount(&user); err != nil {
 		fail(c, http.StatusInternalServerError, 50041, "failed to update profile")
 		return
 	}
-	ok(c, a.toUserDTO(user))
+	dto := a.toUserDTO(user)
+	dto.EmailVerifyToken = verifyToken
+	ok(c, dto)
 }
 
 func (a *App) handleChangePassword(c *gin.Context) {
@@ -276,8 +291,9 @@ func (a *App) handleChangePassword(c *gin.Context) {
 		return
 	}
 	if err := a.updateAccount(&user, map[string]any{
-		"password_hash": hash,
-		"token_version": user.TokenVersion + 1,
+		"password_hash":        hash,
+		"token_version":        user.TokenVersion + 1,
+		"must_change_password": false,
 	}); err != nil {
 		fail(c, http.StatusInternalServerError, CodeChangePassword, "failed to change password")
 		return

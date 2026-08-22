@@ -64,12 +64,16 @@ func catalog() []catalogPerm {
 		{"强制下线", "user:revoke", "/api/v1/users/:id/revoke", "POST", KindButton, "用户详情-踢下线"},
 		{"会话列表", "user:sessions", "/api/v1/users/:id/sessions", "GET", KindAPI, "查看登录会话"},
 		{"踢掉会话", "user:session:revoke", "/api/v1/users/:id/sessions/:sid", "DELETE", KindButton, "踢掉单个会话"},
+		{"重置密码", "user:reset", "/api/v1/users/:id/reset-password", "POST", KindButton, "管理员重置密码"},
+		{"解锁账号", "user:unlock", "/api/v1/users/:id/unlock", "POST", KindButton, "解除登录锁定"},
+		{"批量用户状态", "user:batch", "/api/v1/users/batch-status", "PUT", KindAPI, "批量启用或停用"},
 		{"角色菜单", "role:list", "/api/v1/roles", "GET", KindMenu, "进入角色页"},
 		{"查看角色", "role:detail", "/api/v1/roles/:id", "GET", KindAPI, "读取单个角色"},
 		{"新建角色", "role:create", "/api/v1/roles", "POST", KindButton, "角色页-新建按钮"},
 		{"更新角色", "role:update", "/api/v1/roles/:id", "PUT", KindButton, "角色页-更新按钮"},
 		{"删除角色", "role:delete", "/api/v1/roles/:id", "DELETE", KindButton, "角色页-删除按钮"},
 		{"分配角色权限", "role:perms", "/api/v1/roles/:id/permissions", "PUT", KindButton, "角色页-权限勾选"},
+		{"复制角色", "role:copy", "/api/v1/roles/:id/copy", "POST", KindButton, "复制角色与权限"},
 		{"权限菜单", "perm:list", "/api/v1/permissions", "GET", KindMenu, "进入权限页"},
 		{"新建权限", "perm:create", "/api/v1/permissions", "POST", KindButton, "权限页-新建按钮"},
 		{"更新权限", "perm:update", "/api/v1/permissions/:id", "PUT", KindButton, "权限页-更新按钮"},
@@ -115,6 +119,7 @@ func catalog() []catalogPerm {
 		{"删除菜单", "menu:delete", "/api/v1/nav-menus/:id", "DELETE", KindButton, ""},
 		{"站内通知", "notify:list", "/api/v1/notifications", "GET", KindMenu, "查看站内通知"},
 		{"发布公告", "announce:create", "/api/v1/announcements", "POST", KindButton, "按端发布公告"},
+		{"在线用户", "session:list", "/api/v1/online-sessions", "GET", KindMenu, "查看未过期会话"},
 	}
 }
 
@@ -577,6 +582,7 @@ func ensureConfigs(db *gorm.DB) error {
 		{Key: "app.name", Value: "gra", Name: "系统名称", Group: "app", Remark: "浏览器标题与侧栏品牌"},
 		{Key: "app.captcha_enabled", Value: "1", Name: "登录验证码", Group: "app", Remark: "兼容项；优先使用 auth.captcha_provider"},
 		{Key: "app.default_locale", Value: "zh-CN", Name: "默认语言", Group: "app", Remark: "zh-CN / en"},
+		{Key: "app.maintenance", Value: "0", Name: "维护模式", Group: "app", Remark: "1 时用户端暂停登录与业务接口"},
 		{Key: "auth.register_enabled", Value: "1", Name: "邮箱注册", Group: "auth", Remark: "1 允许用户端用户名密码注册"},
 		{Key: "auth.admin_totp_required", Value: "0", Name: "管理端强制 TOTP", Group: "auth", Remark: "1 要求后台账号绑定二次验证"},
 		{Key: "auth.google_enabled", Value: "0", Name: "Google 登录", Group: "auth", Remark: "1 开启 / 0 关闭"},
@@ -697,6 +703,7 @@ func syncMenuMeta(db *gorm.DB) error {
 		"log:list":           {"/logs", "ClipboardList", "LogsPage", 70},
 		"menu:list":          {"/menus", "PanelTop", "MenusPage", 55},
 		"notify:list":        {"/notifications", "Bell", "NotificationsPage", 12},
+		"session:list":       {"/online", "Radio", "OnlineSessionsPage", 22},
 	}
 	for code, m := range meta {
 		if err := db.Model(&models.Permission{}).Where("code = ?", code).Updates(map[string]any{
@@ -721,7 +728,7 @@ func syncMenuParents(db *gorm.DB) error {
 	}
 	groups := map[string][]string{
 		"org:menu": {
-			"user:list", "dept:list", "role:list", "perm:list",
+			"user:list", "dept:list", "role:list", "perm:list", "session:list",
 		},
 		"system:menu": {
 			"dict:list", "config:list", "menu:list", "mail:jobs:list", "mail:campaign:list", "log:list",

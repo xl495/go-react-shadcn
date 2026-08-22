@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from "react"
 import { api, ApiError } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
 
 export function PasswordPage() {
   const { t } = useI18n()
+  const { user } = useAuth()
   const [oldPassword, setOldPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -36,6 +38,9 @@ export function PasswordPage() {
   return (
     <form onSubmit={onSubmit} className="grid gap-4 rounded-lg border p-6">
       <h1 className="text-xl font-semibold tracking-tight">{t("password.title")}</h1>
+      {user?.mustChangePassword ? (
+        <p className="text-sm text-destructive">{t("password.mustChange")}</p>
+      ) : null}
       <div className="grid gap-1.5">
         <label htmlFor="current-password" className="text-sm font-medium">
           {t("password.current")}

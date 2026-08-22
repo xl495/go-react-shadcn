@@ -2,7 +2,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom"
 import { DICT, useDict } from "@/hooks/dict"
 import { formatDateTime } from "@/utils/format"
 import { roleLabel, translateApiError, useI18n } from "@/providers/i18n"
-import { useRevokeUser, useRevokeUserSession, useUser, useUserSessions } from "@/hooks/queries"
+import { useRevokeUser, useRevokeUserSession, useResetUserPassword, useUnlockUser, useUser, useUserSessions } from "@/hooks/queries"
 import { toast } from "sonner"
 import { Can } from "@/components/auth/Can"
 import { P } from "@/constants/perms"
@@ -25,6 +25,8 @@ export function UserDetailPage() {
   const { data: sessions } = useUserSessions(userId, kind)
   const revokeUser = useRevokeUser()
   const revokeSession = useRevokeUserSession()
+  const resetPassword = useResetUserPassword()
+  const unlockUser = useUnlockUser()
 
   if (!userId) {
     return <p className="text-sm text-destructive">{t("errors.40410")}</p>
@@ -38,6 +40,37 @@ export function UserDetailPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold tracking-tight">{t("users.detail")}</h2>
         <div className="flex gap-2">
+          <Can perm={P.userUpdate}>
+            {user.lockedUntil ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  unlockUser.mutate(
+                    { id: user.id, kind },
+                    { onSuccess: () => toast.success(t("users.unlocked")) },
+                  )
+                }
+              >
+                {t("users.unlock")}
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                resetPassword.mutate(
+                  { id: user.id, kind },
+                  {
+                    onSuccess: (data) =>
+                      toast.success(t("users.tempPassword", { password: data.temporaryPassword })),
+                  },
+                )
+              }
+            >
+              {t("users.resetPassword")}
+            </Button>
+          </Can>
           <Can perm={P.userRevoke}>
             <Button
               variant="outline"
@@ -82,6 +115,7 @@ export function UserDetailPage() {
               value={(user.roles ?? []).map((r) => roleLabel(r.code, r.name, t)).join(" · ")}
             />
             <Field label={t("app.status")} value={statusDict.label(user.status)} />
+            <Field label={t("users.lockedUntil")} value={user.lockedUntil ? formatDateTime(user.lockedUntil) : undefined} />
           </CardContent>
         </Card>
         <Card>

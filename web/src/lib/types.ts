@@ -4,6 +4,7 @@ export type User = {
   nickname: string
   avatar: string
   email?: string
+  pendingEmail?: string
   phone: string
   gender?: string
   department?: string
@@ -13,6 +14,8 @@ export type User = {
   timezone?: string
   marketingOptIn?: boolean
   totpEnabled?: boolean
+  mustChangePassword?: boolean
+  googleBound?: boolean
 }
 
 export type LoginResult = {
@@ -39,6 +42,7 @@ export type AuthSettings = {
   recaptchaSiteKeyV3?: string
   recaptchaSiteKeyV2?: string
   turnstileSiteKey?: string
+  maintenance?: boolean
 }
 
 export type MenuNode = {

@@ -80,6 +80,7 @@ const MENU_NAV_KEYS: Record<string, string> = {
   "web:home": "nav.home",
   "web:profile": "nav.profile",
   "web:password": "nav.password",
+  "web:devices": "nav.devices",
   "web:notify": "nav.notifications",
 }
 

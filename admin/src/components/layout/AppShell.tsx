@@ -18,6 +18,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelTop,
+  Radio,
   Settings,
   Settings2,
   Shield,
@@ -60,6 +61,7 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   Monitor,
   PanelTop,
   Bell,
+  Radio,
 }
 
 function menuIcon(name: string): typeof LayoutDashboard {

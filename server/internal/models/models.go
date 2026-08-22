@@ -49,9 +49,11 @@ type User struct {
 	EmailVerified    bool        `json:"emailVerified" gorm:"not null;default:false"`
 	Kind             string      `json:"kind" gorm:"-"`
 	GoogleID         string      `json:"-" gorm:"size:64;index"`
-	TotpEnabled      bool        `json:"totpEnabled" gorm:"not null;default:false"`
-	TotpSecret       string      `json:"-" gorm:"size:255"`
-	TotpVerifiedAt   *time.Time  `json:"-"`
+	TotpEnabled         bool       `json:"totpEnabled" gorm:"not null;default:false"`
+	TotpSecret          string     `json:"-" gorm:"size:255"`
+	TotpVerifiedAt      *time.Time `json:"-"`
+	MustChangePassword  bool       `json:"mustChangePassword" gorm:"not null;default:false"`
+	PendingEmail        string     `json:"pendingEmail,omitempty" gorm:"size:128"`
 	CreatedAt        time.Time   `json:"createdAt"`
 	UpdatedAt        time.Time   `json:"updatedAt"`
 	Roles            []Role      `json:"roles,omitempty" gorm:"many2many:user_roles;"`
@@ -152,8 +154,9 @@ func (NavMenu) TableName() string { return "nav_menu" }
 const (
 	NavAudienceAdmin   = "admin"
 	NavAudienceWeb     = "web"
-	TokenPurposeReset  = "reset"
-	TokenPurposeVerify = "verify"
+	TokenPurposeReset       = "reset"
+	TokenPurposeVerify      = "verify"
+	TokenPurposeEmailChange = "email_change"
 )
 
 type DictType struct {

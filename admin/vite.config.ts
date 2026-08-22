@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
-      "@latch/auth": path.resolve(__dirname, "../shared/auth"),
+      "lucide-react": path.resolve(__dirname, "node_modules/lucide-react"),
     },
   },
   build: {

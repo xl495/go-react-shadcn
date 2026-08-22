@@ -148,6 +148,7 @@ const MENU_NAV_KEYS: Record<string, string> = {
   "log:list": "nav.logs",
   "menu:list": "nav.menus",
   "notify:list": "nav.notifications",
+  "session:list": "nav.online",
 }
 
 export function menuLabel(code: string, fallback: string, t: I18nState["t"]) {

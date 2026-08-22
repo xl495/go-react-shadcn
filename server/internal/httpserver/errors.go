@@ -60,6 +60,10 @@ const (
 	CodeNavMenuHasChildren     = 40097
 	CodeInvalidTotp            = 40098
 	CodeTotpAlreadyEnabled     = 40099
+	CodeCannotDisableLastAdmin = 40026
+	CodeGoogleEmailMismatch    = 40027
+	CodeGoogleNeedPassword     = 40028
+	CodeInvalidBatchStatus     = 40029
 
 	CodeMissingToken          = 40101
 	CodeInvalidToken          = 40102
@@ -77,6 +81,7 @@ const (
 	CodeRegisterDisabled       = 40317
 	CodeEmailUnverified        = 40318
 	CodePrivilegedRole         = 40319
+	CodeMustChangePassword     = 40321
 
 	CodeRouteNotFound        = 40400
 	CodeUserMissingMe        = 40401
@@ -153,4 +158,5 @@ const (
 	CodeUnhealthy      = 50301
 	CodeMailDisabled   = 50310
 	CodeGoogleDisabled = 50320
+	CodeMaintenance    = 50330
 )

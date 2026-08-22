@@ -12,6 +12,9 @@ export const P = {
   userRevoke: "user:revoke",
   userSessions: "user:sessions",
   userSessionRevoke: "user:session:revoke",
+  userReset: "user:update",
+  userUnlock: "user:update",
+  userBatch: "user:update",
   roleList: "role:list",
   roleDetail: "role:detail",
   roleCreate: "role:create",
@@ -58,6 +61,7 @@ export const P = {
   menuDelete: "menu:delete",
   notifyList: "notify:list",
   announceCreate: "announce:create",
+  sessionList: "session:list",
 } as const
 
 export type PermCode = (typeof P)[keyof typeof P]

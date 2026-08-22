@@ -19,6 +19,7 @@ const VerifyEmailPage = lazy(() => import("@/pages/VerifyEmail").then((m) => ({ 
 const UnsubscribePage = lazy(() => import("@/pages/Unsubscribe").then((m) => ({ default: m.UnsubscribePage })))
 const ProfilePage = lazy(() => import("@/pages/Profile").then((m) => ({ default: m.ProfilePage })))
 const PasswordPage = lazy(() => import("@/pages/Password").then((m) => ({ default: m.PasswordPage })))
+const DevicesPage = lazy(() => import("@/pages/Devices").then((m) => ({ default: m.DevicesPage })))
 const NotificationsPage = lazy(() =>
   import("@/pages/Notifications").then((m) => ({ default: m.NotificationsPage })),
 )
@@ -81,6 +82,7 @@ export function App() {
                     <Route path="/notifications" element={<NotificationsPage />} />
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/password" element={<PasswordPage />} />
+                    <Route path="/devices" element={<DevicesPage />} />
                   </Route>
                   <Route path="*" element={<NotFoundPage />} />
                 </Routes>

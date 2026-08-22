@@ -14,6 +14,7 @@ import {
   PAGE_SIZE,
   PICKER_PAGE_SIZE,
   useAssignUserRoles,
+  useBatchUserStatus,
   useCreateUser,
   useDeleteUser,
   useImportUsers,
@@ -74,6 +75,8 @@ function UserDirectory({ kind }: { kind: "admin" | "web" }) {
   })
   const needRoles = can(P.roleList) || can(P.userRoles) || can(P.userCreate) || can(P.userUpdate)
   const { data: rolesPage } = useRoles({ pageSize: PICKER_PAGE_SIZE }, needRoles)
+  const batchStatus = useBatchUserStatus()
+  const [picked, setPicked] = useState<number[]>([])
   const users = data?.items ?? []
   const roles = rolesPage?.items ?? []
   const filtered = Boolean(q || gender || status || department || roleId)
@@ -303,6 +306,42 @@ function UserDirectory({ kind }: { kind: "admin" | "web" }) {
               </span>
             ) : null}
           </Can>
+          <Can perm={P.userUpdate}>
+            <Button
+              variant="outline"
+              disabled={picked.length === 0 || batchStatus.isPending}
+              onClick={() =>
+                batchStatus.mutate(
+                  { ids: picked, status: "disabled", kind },
+                  {
+                    onSuccess: () => {
+                      toast.success(t("app.saved"))
+                      setPicked([])
+                    },
+                  },
+                )
+              }
+            >
+              {t("users.batchDisable")}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={picked.length === 0 || batchStatus.isPending}
+              onClick={() =>
+                batchStatus.mutate(
+                  { ids: picked, status: "active", kind },
+                  {
+                    onSuccess: () => {
+                      toast.success(t("app.saved"))
+                      setPicked([])
+                    },
+                  },
+                )
+              }
+            >
+              {t("users.batchEnable")}
+            </Button>
+          </Can>
           <Can perm={P.userCreate}>
             <Button onClick={openCreate}>{isWeb ? t("webUsers.create") : t("users.create")}</Button>
           </Can>
@@ -419,6 +458,7 @@ function UserDirectory({ kind }: { kind: "admin" | "web" }) {
             <TableCaption className="sr-only">{isWeb ? t("webUsers.title") : t("users.title")}</TableCaption>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>ID</TableHead>
                 <TableHead>{t("users.avatar")}</TableHead>
                 <TableHead>{t("users.account")}</TableHead>
@@ -437,10 +477,21 @@ function UserDirectory({ kind }: { kind: "admin" | "web" }) {
             </TableHeader>
             <TableBody>
               {users.length === 0 ? (
-                <EmptyTableRow colSpan={isWeb ? 12 : 14} />
+                <EmptyTableRow colSpan={isWeb ? 13 : 15} />
               ) : (
                 users.map((u) => (
                   <TableRow key={u.id}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={picked.includes(u.id)}
+                        onChange={(e) =>
+                          setPicked((cur) =>
+                            e.target.checked ? [...cur, u.id] : cur.filter((id) => id !== u.id),
+                          )
+                        }
+                      />
+                    </TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">{u.id}</TableCell>
                     <TableCell>
                       <Avatar name={u.nickname || u.username} src={u.avatar} />

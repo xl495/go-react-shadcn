@@ -93,4 +93,29 @@ export const usersApi = {
     return request<UserImportJob>(`/api/v1/users/import${qs({ kind })}`, { method: "POST", body })
   },
   importUserJob: (id: number) => request<UserImportJob>(`/api/v1/users/import-jobs/${id}`),
+  resetUserPassword: (id: number, kind?: string) =>
+    request<{ temporaryPassword: string; mustChangePassword: boolean }>(
+      `/api/v1/users/${id}/reset-password${qs({ kind })}`,
+      { method: "POST" },
+    ),
+  unlockUser: (id: number, kind?: string) =>
+    request<{ unlocked: number }>(`/api/v1/users/${id}/unlock${qs({ kind })}`, { method: "POST" }),
+  batchUserStatus: (body: { ids: number[]; status: string; kind?: string }) =>
+    request<{ updated: number[] }>("/api/v1/users/batch-status", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  onlineSessions: () =>
+    request<
+      Array<{
+        id: number
+        userId: number
+        userKind: string
+        username: string
+        ip: string
+        userAgent: string
+        expiresAt: string
+        createdAt: string
+      }>
+    >("/api/v1/online-sessions"),
 }
