@@ -20,8 +20,11 @@ export function ForgotPasswordPage() {
     api.settings().then(setSettings).catch(() => undefined).finally(() => setSettingsReady(true))
   }, [])
 
+  const closed = Boolean(settings?.maintenance)
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
+    if (closed) return
     setError("")
     setLoading(true)
     try {
@@ -44,6 +47,7 @@ export function ForgotPasswordPage() {
         <div>
           <h1 className="font-display text-[2rem] leading-none tracking-tight">{t("forgot.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("forgot.subtitle")}</p>
+          {closed ? <p className="mt-2 text-sm text-destructive">{t("login.maintenance")}</p> : null}
         </div>
         {done ? (
           <p className="text-sm text-muted-foreground">{t("forgot.sent")}</p>
@@ -66,7 +70,7 @@ export function ForgotPasswordPage() {
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <button
               type="submit"
-              disabled={loading || !settingsReady}
+              disabled={loading || !settingsReady || closed}
               className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
             >
               {loading ? t("forgot.submitting") : t("forgot.submit")}
@@ -89,9 +93,18 @@ export function ResetPasswordPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [settings, setSettings] = useState<AuthSettings | undefined>()
+  const [settingsReady, setSettingsReady] = useState(false)
+
+  useEffect(() => {
+    api.settings().then(setSettings).catch(() => undefined).finally(() => setSettingsReady(true))
+  }, [])
+
+  const closed = Boolean(settings?.maintenance)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
+    if (closed) return
     setError("")
     if (!token) {
       setError(t("reset.invalid"))
@@ -114,6 +127,7 @@ export function ResetPasswordPage() {
         <div>
           <h1 className="font-display text-[2rem] leading-none tracking-tight">{t("reset.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("reset.subtitle")}</p>
+          {closed ? <p className="mt-2 text-sm text-destructive">{t("login.maintenance")}</p> : null}
         </div>
         {!token ? <p className="text-sm text-destructive">{t("reset.invalid")}</p> : null}
         <div className="grid gap-2">
@@ -132,7 +146,7 @@ export function ResetPasswordPage() {
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <button
           type="submit"
-          disabled={loading || !token}
+          disabled={loading || !token || !settingsReady || closed}
           className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
         >
           {loading ? t("reset.submitting") : t("reset.submit")}

@@ -74,6 +74,10 @@ export function AppShell() {
           void logout().then(() => navigate("/login", { replace: true }))
           return
         }
+        if (err instanceof ApiError && err.code === 50330) {
+          setError(t("app.maintenance"))
+          return
+        }
         setError(err instanceof ApiError ? err.message : t("app.loadFailed"))
       })
     return () => {

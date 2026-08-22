@@ -6,6 +6,7 @@ export const en: WebMessages = {
     language: "Language",
     loading: "Loading…",
     loadFailed: "Failed to load",
+    maintenance: "The site is under maintenance. The web app is paused.",
   },
   nav: {
     main: "Main",

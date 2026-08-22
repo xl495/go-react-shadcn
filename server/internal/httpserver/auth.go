@@ -138,6 +138,9 @@ func (a *App) finishLogin(c *gin.Context, user models.User, ip, successDetail st
 
 func (a *App) completeLogin(c *gin.Context, user models.User, ip, successDetail string, recovery []string) {
 	setLoginKind(c, user.Kind)
+	if a.rejectWebKindMaintenance(c, user.Kind) {
+		return
+	}
 	now := time.Now()
 	if isAnomalousLogin(user, ip) {
 		a.recordLoginLog(c, user.Username, "warning", "anomalous ip:"+ip+" prev:"+user.LastLoginIP)

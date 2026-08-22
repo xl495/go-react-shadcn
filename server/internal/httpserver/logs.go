@@ -131,13 +131,13 @@ func (a *App) handleListLoginLogs(c *gin.Context) {
 	q := a.DB.Model(&models.LoginLog{})
 	q = applyPrefix(q, c.Query("username"), "username")
 	q = applyEqual(q, "status", c.Query("status"))
-	total, okCount := countOrFail(c, q, 50082, "failed to list login logs")
+	total, okCount := countOrFail(c, q, CodeListLoginLogs, "failed to list login logs")
 	if !okCount {
 		return
 	}
 	var rows []models.LoginLog
 	if err := q.Order("id desc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50082, "failed to list login logs")
+		fail(c, http.StatusInternalServerError, CodeListLoginLogs, "failed to list login logs")
 		return
 	}
 	ok(c, pageResult[models.LoginLog]{Items: rows, Total: total, Page: p.Page, PageSize: p.PageSize})

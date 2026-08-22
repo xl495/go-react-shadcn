@@ -40,7 +40,7 @@ export function UserDetailPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold tracking-tight">{t("users.detail")}</h2>
         <div className="flex gap-2">
-          <Can perm={P.userUpdate}>
+          <Can perm={P.userUnlock}>
             {user.lockedUntil ? (
               <Button
                 variant="outline"
@@ -55,6 +55,8 @@ export function UserDetailPage() {
                 {t("users.unlock")}
               </Button>
             ) : null}
+          </Can>
+          <Can perm={P.userReset}>
             <Button
               variant="outline"
               size="sm"

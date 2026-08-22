@@ -306,7 +306,7 @@ function UserDirectory({ kind }: { kind: "admin" | "web" }) {
               </span>
             ) : null}
           </Can>
-          <Can perm={P.userUpdate}>
+          <Can perm={P.userBatch}>
             <Button
               variant="outline"
               disabled={picked.length === 0 || batchStatus.isPending}
@@ -314,8 +314,13 @@ function UserDirectory({ kind }: { kind: "admin" | "web" }) {
                 batchStatus.mutate(
                   { ids: picked, status: "disabled", kind },
                   {
-                    onSuccess: () => {
-                      toast.success(t("app.saved"))
+                    onSuccess: (data) => {
+                      const skipped = data.skipped?.length ?? 0
+                      toast.success(
+                        skipped
+                          ? t("users.batchPartial", { updated: data.updated.length, skipped })
+                          : t("app.saved"),
+                      )
                       setPicked([])
                     },
                   },
@@ -331,8 +336,13 @@ function UserDirectory({ kind }: { kind: "admin" | "web" }) {
                 batchStatus.mutate(
                   { ids: picked, status: "active", kind },
                   {
-                    onSuccess: () => {
-                      toast.success(t("app.saved"))
+                    onSuccess: (data) => {
+                      const skipped = data.skipped?.length ?? 0
+                      toast.success(
+                        skipped
+                          ? t("users.batchPartial", { updated: data.updated.length, skipped })
+                          : t("app.saved"),
+                      )
                       setPicked([])
                     },
                   },

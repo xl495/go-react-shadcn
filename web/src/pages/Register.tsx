@@ -26,8 +26,11 @@ export function RegisterPage() {
     api.settings().then(setSettings).catch(() => undefined).finally(() => setSettingsReady(true))
   }, [])
 
+  const closed = Boolean(settings?.maintenance)
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
+    if (closed) return
     setError("")
     setLoading(true)
     try {
@@ -52,6 +55,7 @@ export function RegisterPage() {
   }
 
   async function onGoogle(idToken: string) {
+    if (closed) return
     setError("")
     setLoading(true)
     try {
@@ -78,7 +82,7 @@ export function RegisterPage() {
         <div>
           <h1 className="font-display text-[2rem] leading-none tracking-tight">{t("register.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("register.subtitle")}</p>
-          {settings?.maintenance ? (
+          {closed ? (
             <p className="mt-2 text-sm text-destructive">{t("login.maintenance")}</p>
           ) : null}
         </div>
@@ -91,7 +95,7 @@ export function RegisterPage() {
               clientId={settings?.googleClientId ?? ""}
               locale={locale}
               onCredential={onGoogle}
-              disabled={loading}
+              disabled={loading || closed}
             />
             {passwordOn ? (
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -146,7 +150,7 @@ export function RegisterPage() {
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <button
               type="submit"
-              disabled={loading || !settingsReady}
+              disabled={loading || !settingsReady || closed}
               className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
             >
               {loading ? t("register.submitting") : t("register.submit")}

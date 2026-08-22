@@ -4,6 +4,7 @@ export const zhCN = {
     language: "语言",
     loading: "加载中…",
     loadFailed: "加载失败",
+    maintenance: "系统维护中，用户端暂时无法使用。",
   },
   nav: {
     main: "主导航",

@@ -102,7 +102,7 @@ export const usersApi = {
   unlockUser: (id: number, kind?: string) =>
     request<{ unlocked: number }>(`/api/v1/users/${id}/unlock${qs({ kind })}`, { method: "POST" }),
   batchUserStatus: (body: { ids: number[]; status: string; kind?: string }) =>
-    request<{ updated: number[] }>("/api/v1/users/batch-status", {
+    request<{ updated: number[]; skipped?: number[] }>("/api/v1/users/batch-status", {
       method: "PUT",
       body: JSON.stringify(body),
     }),

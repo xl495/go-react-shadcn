@@ -125,7 +125,7 @@ export function RolesPage() {
                   <Button asChild variant="ghost" size="sm">
                     <Link to={`/roles/${role.id}`}>{t("roles.detail")}</Link>
                   </Button>
-                  <Can perm={P.roleCreate}>
+                  <Can perm={P.roleCopy}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -181,7 +181,7 @@ export function RolesPage() {
                   <Button asChild variant="ghost" size="sm">
                     <Link to={`/roles/${role.id}`}>{t("roles.detail")}</Link>
                   </Button>
-                  <Can perm={P.roleCreate}>
+                  <Can perm={P.roleCopy}>
                     <Button
                       variant="ghost"
                       size="sm"

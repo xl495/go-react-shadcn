@@ -25,8 +25,8 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	if dirty {
 		t.Fatal("expected clean migration state")
 	}
-	if version != 22 {
-		t.Fatalf("version=%d, want 22", version)
+	if version != 23 {
+		t.Fatalf("version=%d, want 23", version)
 	}
 
 	db, err := sql.Open("sqlite", path)
@@ -57,6 +57,11 @@ func TestUpCreatesSchemaAndIsIdempotent(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("op_logs count=%d want 1", count)
+	}
+
+	var idx string
+	if err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name='idx_auth_sessions_online'`).Scan(&idx); err != nil {
+		t.Fatalf("online session index missing: %v", err)
 	}
 }
 

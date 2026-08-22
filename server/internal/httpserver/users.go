@@ -129,20 +129,20 @@ func toUserDTOOpts(u models.User, withPerms bool) userDTO {
 		roles = append(roles, toRoleDTO(r, withPerms))
 	}
 	dto := userDTO{
-		ID:             u.ID,
-		Username:       u.Username,
-		Nickname:       u.Nickname,
-		Avatar:         u.Avatar,
-		Email:          u.Email,
-		Phone:          u.Phone,
-		Gender:         u.Gender,
-		Department:     u.Department,
-		Title:          u.Title,
-		Remark:         u.Remark,
-		Status:         u.Status,
-		Timezone:       u.Timezone,
-		MarketingOptIn: u.MarketingOptIn,
-		EmailVerified:  u.EmailVerified,
+		ID:                 u.ID,
+		Username:           u.Username,
+		Nickname:           u.Nickname,
+		Avatar:             u.Avatar,
+		Email:              u.Email,
+		Phone:              u.Phone,
+		Gender:             u.Gender,
+		Department:         u.Department,
+		Title:              u.Title,
+		Remark:             u.Remark,
+		Status:             u.Status,
+		Timezone:           u.Timezone,
+		MarketingOptIn:     u.MarketingOptIn,
+		EmailVerified:      u.EmailVerified,
 		Kind:               normalizeUserKind(u.Kind),
 		TotpEnabled:        u.TotpEnabled,
 		MustChangePassword: u.MustChangePassword,
@@ -150,9 +150,9 @@ func toUserDTOOpts(u models.User, withPerms bool) userDTO {
 		PendingEmail:       u.PendingEmail,
 		LastLoginAt:        u.LastLoginAt,
 		LastLoginIP:        u.LastLoginIP,
-		Roles:          roles,
-		CreatedAt:      u.CreatedAt,
-		UpdatedAt:      u.UpdatedAt,
+		Roles:              roles,
+		CreatedAt:          u.CreatedAt,
+		UpdatedAt:          u.UpdatedAt,
 	}
 	if withPerms {
 		dto.PermissionCodes = collectCodes(u)
@@ -510,7 +510,7 @@ func (a *App) handleListUserSessions(c *gin.Context) {
 	}
 	var rows []models.AuthSession
 	if err := a.DB.Where("user_kind = ? AND user_id = ?", user.Kind, user.ID).Order("id desc").Limit(50).Find(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeListUsers, "failed to list users")
+		fail(c, http.StatusInternalServerError, CodeListSessions, "failed to list sessions")
 		return
 	}
 	ok(c, rows)
@@ -523,7 +523,7 @@ func (a *App) handleRevokeUserSession(c *gin.Context) {
 	}
 	var row models.AuthSession
 	if err := a.DB.Where("id = ? AND user_kind = ? AND user_id = ?", c.Param("sid"), user.Kind, user.ID).First(&row).Error; err != nil {
-		fail(c, http.StatusNotFound, 40410, "user not found")
+		fail(c, http.StatusNotFound, CodeSessionNotFound, "session not found")
 		return
 	}
 	a.revokeAuthSessionJTI(row.JTI)

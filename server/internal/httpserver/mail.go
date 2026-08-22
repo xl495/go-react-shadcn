@@ -128,6 +128,9 @@ func (a *App) handleResetPassword(c *gin.Context) {
 		return
 	}
 	kind := models.NormalizeUserKind(row.UserKind)
+	if a.rejectWebKindMaintenance(c, kind) {
+		return
+	}
 	var user models.User
 	if err := a.loadAccount(kind, &user, row.UserID); err != nil {
 		fail(c, http.StatusBadRequest, CodeResetTokenInvalid, "invalid or expired reset token")

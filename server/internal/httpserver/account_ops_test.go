@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go-react-shadcn/internal/googleid"
+	"go-react-shadcn/internal/mailer"
 	"go-react-shadcn/internal/models"
 	"go-react-shadcn/internal/seed"
 )
@@ -32,7 +33,7 @@ func TestOwnSessionsCannotKickOthers(t *testing.T) {
 		t.Fatalf("admin sessions: %v %s", err, adminList.Body.String())
 	}
 	stolen := doJSON(t, app, http.MethodDelete, "/api/v1/auth/sessions/"+formatUint(admins[0].ID), viewer, nil)
-	if stolen.Code != http.StatusNotFound {
+	if stolen.Code != http.StatusNotFound || decodeEnv(t, stolen).ErrorCode != CodeSessionNotFound {
 		t.Fatalf("viewer kick admin session: %d %s", stolen.Code, stolen.Body.String())
 	}
 	denied := doJSON(t, app, http.MethodGet, "/api/v1/users/"+formatUint(admins[0].UserID)+"/sessions", viewer, nil)
@@ -185,6 +186,23 @@ func TestBatchStatusHonorsDataScope(t *testing.T) {
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("scoped batch: %d %s", w.Code, w.Body.String())
+	}
+	var batch struct {
+		Updated []uint `json:"updated"`
+		Skipped []uint `json:"skipped"`
+	}
+	if err := json.Unmarshal(decodeEnv(t, w).Data, &batch); err != nil {
+		t.Fatal(err)
+	}
+	foundSkip := false
+	for _, id := range batch.Skipped {
+		if id == adminUser.ID {
+			foundSkip = true
+			break
+		}
+	}
+	if !foundSkip {
+		t.Fatalf("admin id should be skipped: %+v", batch)
 	}
 	var again models.User
 	if err := app.accounts(models.UserKindAdmin).Where("id = ?", adminUser.ID).First(&again).Error; err != nil {
@@ -436,5 +454,70 @@ func TestOwnSessionsMarkCurrent(t *testing.T) {
 	}
 	if current != 1 {
 		t.Fatalf("current sessions=%d want 1 body=%s", current, w.Body.String())
+	}
+}
+
+func TestMaintenanceBlocksWebVerifyAndReset(t *testing.T) {
+	app := testApp(t)
+	var webUser, adminUser models.User
+	if err := app.accounts(models.UserKindWeb).Where("username = ?", seed.MemberUsername).First(&webUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.ViewerUsername).First(&adminUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	rawVerify, hashVerify, err := mailer.NewResetToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawReset, hashReset, err := mailer.NewResetToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawAdmin, hashAdmin, err := mailer.NewResetToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := time.Now().Add(time.Hour)
+	if err := app.DB.Create(&models.PasswordResetToken{
+		UserID: webUser.ID, UserKind: models.UserKindWeb, Purpose: models.TokenPurposeVerify,
+		TokenHash: hashVerify, ExpiresAt: exp,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DB.Create(&models.PasswordResetToken{
+		UserID: webUser.ID, UserKind: models.UserKindWeb, Purpose: models.TokenPurposeReset,
+		TokenHash: hashReset, ExpiresAt: exp,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DB.Create(&models.PasswordResetToken{
+		UserID: adminUser.ID, UserKind: models.UserKindAdmin, Purpose: models.TokenPurposeVerify,
+		TokenHash: hashAdmin, ExpiresAt: exp,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	setCfg(t, app, "app.maintenance", "1")
+	id, ans, _ := issueCaptcha(t, app)
+	forgot := doJSON(t, app, http.MethodPost, "/api/v1/auth/forgot-password", "", map[string]string{
+		"email": "webuser@latch.local", "client": "web", "captchaId": id, "captchaCode": ans,
+	})
+	if forgot.Code != http.StatusServiceUnavailable || decodeEnv(t, forgot).ErrorCode != CodeMaintenance {
+		t.Fatalf("web forgot: %d %s", forgot.Code, forgot.Body.String())
+	}
+	verify := doJSON(t, app, http.MethodPost, "/api/v1/auth/verify-email", "", map[string]string{"token": rawVerify})
+	if verify.Code != http.StatusServiceUnavailable || decodeEnv(t, verify).ErrorCode != CodeMaintenance {
+		t.Fatalf("web verify: %d %s", verify.Code, verify.Body.String())
+	}
+	reset := doJSON(t, app, http.MethodPost, "/api/v1/auth/reset-password", "", map[string]string{
+		"token": rawReset, "newPassword": "webuser-new-99",
+	})
+	if reset.Code != http.StatusServiceUnavailable || decodeEnv(t, reset).ErrorCode != CodeMaintenance {
+		t.Fatalf("web reset: %d %s", reset.Code, reset.Body.String())
+	}
+	adminVerify := doJSON(t, app, http.MethodPost, "/api/v1/auth/verify-email", "", map[string]string{"token": rawAdmin})
+	if adminVerify.Code != http.StatusOK {
+		t.Fatalf("admin verify during maintenance: %d %s", adminVerify.Code, adminVerify.Body.String())
 	}
 }

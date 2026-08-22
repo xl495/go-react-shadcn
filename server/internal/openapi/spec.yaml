@@ -304,6 +304,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnvelopeMenuNodes"
+  /auth/sessions:
+    get:
+      summary: List the current user's login sessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOwnSessions"
+  /auth/sessions/{id}:
+    delete:
+      summary: Revoke one of the current user's sessions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeRevoked"
+  /auth/login-logs:
+    get:
+      summary: Login logs for the current account
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeLoginLogPage"
+  /auth/google/bind:
+    post:
+      summary: Bind a Google account to the current user
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleAuthRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeUser"
+  /auth/google/unbind:
+    post:
+      summary: Unbind Google after password or TOTP confirmation
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleUnbindRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeUser"
   /users:
     get:
       summary: List users (paginated, data-scoped)
@@ -324,6 +395,89 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnvelopeUserPage"
+  /users/batch-status:
+    put:
+      summary: Batch enable or disable users in the actor's data scope
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchStatusRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeBatchStatus"
+  /users/{id}/reset-password:
+    post:
+      summary: Reset a user's password and force a change on next login
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeTemporaryPassword"
+  /users/{id}/unlock:
+    post:
+      summary: Clear login lock on a user
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeUser"
+  /users/{id}/sessions:
+    get:
+      summary: List a user's login sessions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: kind, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOwnSessions"
+  /users/{id}/sessions/{sid}:
+    delete:
+      summary: Revoke one user session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: sid, in: path, required: true, schema: { type: integer } }
+        - { name: kind, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeRevoked"
+  /online-sessions:
+    get:
+      summary: List online sessions across accounts
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOnlineSessions"
   /logs:
     get:
       summary: List operation logs
@@ -400,6 +554,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnvelopeRolePage"
+  /roles/{id}/copy:
+    post:
+      summary: Copy a role and its permissions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyRoleRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeRole"
   /permissions:
     get:
       summary: List permissions
@@ -693,6 +866,7 @@ components:
       required: [email]
       properties:
         email: { type: string }
+        client: { type: string }
         captchaId: { type: string }
         captchaCode: { type: string }
         captchaToken: { type: string }
@@ -709,6 +883,38 @@ components:
         recaptchaSiteKeyV3: { type: string }
         recaptchaSiteKeyV2: { type: string }
         turnstileSiteKey: { type: string }
+        maintenance: { type: boolean }
+    GoogleUnbindRequest:
+      type: object
+      properties:
+        password: { type: string }
+        totpCode: { type: string }
+    BatchStatusRequest:
+      type: object
+      required: [ids, status]
+      properties:
+        ids: { type: array, items: { type: integer } }
+        status: { type: string }
+        kind: { type: string }
+    CopyRoleRequest:
+      type: object
+      required: [name, code]
+      properties:
+        name: { type: string }
+        code: { type: string }
+    AuthSession:
+      type: object
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        userKind: { type: string }
+        username: { type: string }
+        ip: { type: string }
+        userAgent: { type: string }
+        expiresAt: { type: string }
+        revokedAt: { type: string, nullable: true }
+        createdAt: { type: string }
+        current: { type: boolean }
     ResetPasswordRequest:
       type: object
       required: [token, newPassword]
@@ -997,3 +1203,50 @@ components:
               type: object
               properties:
                 reset: { type: boolean }
+    EnvelopeRole:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/Role" }
+    EnvelopeOwnSessions:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: { type: array, items: { $ref: "#/components/schemas/AuthSession" } }
+    EnvelopeOnlineSessions:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: { type: array, items: { $ref: "#/components/schemas/AuthSession" } }
+    EnvelopeRevoked:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                revoked: { type: integer }
+    EnvelopeBatchStatus:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                updated: { type: array, items: { type: integer } }
+                skipped: { type: array, items: { type: integer } }
+    EnvelopeTemporaryPassword:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                temporaryPassword: { type: string }
+                mustChangePassword: { type: boolean }

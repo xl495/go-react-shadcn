@@ -64,10 +64,14 @@ type onlineSessionDTO struct {
 }
 
 func (a *App) rejectWebMaintenance(c *gin.Context, client string) bool {
+	return a.rejectWebKindMaintenance(c, loginClientKind(client))
+}
+
+func (a *App) rejectWebKindMaintenance(c *gin.Context, kind string) bool {
 	if !a.sysOn("app.maintenance", false) {
 		return false
 	}
-	if loginClientKind(client) != models.UserKindWeb {
+	if models.NormalizeUserKind(kind) != models.UserKindWeb {
 		return false
 	}
 	fail(c, http.StatusServiceUnavailable, CodeMaintenance, "the site is under maintenance")
@@ -103,7 +107,7 @@ func (a *App) handleListOwnSessions(c *gin.Context) {
 	}
 	var rows []models.AuthSession
 	if err := a.DB.Where("user_kind = ? AND user_id = ?", user.Kind, user.ID).Order("id desc").Limit(50).Find(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeListUsers, "failed to list users")
+		fail(c, http.StatusInternalServerError, CodeListSessions, "failed to list sessions")
 		return
 	}
 	claims := currentUser(c)
@@ -136,7 +140,7 @@ func (a *App) handleRevokeOwnSession(c *gin.Context) {
 	}
 	var row models.AuthSession
 	if err := a.DB.Where("id = ? AND user_kind = ? AND user_id = ?", c.Param("id"), user.Kind, user.ID).First(&row).Error; err != nil {
-		fail(c, http.StatusNotFound, CodeUserNotFound, "user not found")
+		fail(c, http.StatusNotFound, CodeSessionNotFound, "session not found")
 		return
 	}
 	a.revokeAuthSessionJTI(row.JTI)
@@ -152,13 +156,13 @@ func (a *App) handleOwnLoginLogs(c *gin.Context) {
 	a.flushAuditLogs()
 	p := parsePage(c, 20, 100)
 	q := a.DB.Model(&models.LoginLog{}).Where("username = ? AND user_kind = ?", claims.Username, claimsKind(claims))
-	total, okCount := countOrFail(c, q, 50082, "failed to list login logs")
+	total, okCount := countOrFail(c, q, CodeListLoginLogs, "failed to list login logs")
 	if !okCount {
 		return
 	}
 	var rows []models.LoginLog
 	if err := q.Order("id desc").Offset(p.Offset()).Limit(p.PageSize).Find(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, 50082, "failed to list login logs")
+		fail(c, http.StatusInternalServerError, CodeListLoginLogs, "failed to list login logs")
 		return
 	}
 	ok(c, pageResult[models.LoginLog]{Items: rows, Total: total, Page: p.Page, PageSize: p.PageSize})
@@ -284,13 +288,16 @@ func (a *App) handleBatchUserStatus(c *gin.Context) {
 		return
 	}
 	updated := make([]uint, 0, len(req.IDs))
+	skipped := make([]uint, 0)
 	for _, id := range parseIDs(req.IDs) {
 		q := a.applyUserDataScope(a.accounts(kind), actor, kind)
 		var user models.User
 		if err := q.First(&user, id).Error; err != nil {
+			skipped = append(skipped, id)
 			continue
 		}
 		if err := models.AttachRoles(a.DB, kind, &user); err != nil {
+			skipped = append(skipped, id)
 			continue
 		}
 		if status == "disabled" && kind == models.UserKindAdmin && hasRole(user.Roles, seed.RoleAdmin) {
@@ -322,7 +329,7 @@ func (a *App) handleBatchUserStatus(c *gin.Context) {
 		}
 		updated = append(updated, user.ID)
 	}
-	ok(c, gin.H{"updated": updated})
+	ok(c, gin.H{"updated": updated, "skipped": skipped})
 }
 
 func (a *App) countActiveAdmins(exceptID uint) (int64, error) {
@@ -342,7 +349,7 @@ func (a *App) handleOnlineSessions(c *gin.Context) {
 	now := time.Now()
 	var rows []models.AuthSession
 	if err := a.DB.Where("revoked_at IS NULL AND expires_at > ?", now).Order("id desc").Limit(200).Find(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeListUsers, "failed to list users")
+		fail(c, http.StatusInternalServerError, CodeListSessions, "failed to list sessions")
 		return
 	}
 	adminIDs := map[uint]struct{}{}
