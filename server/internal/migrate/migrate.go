@@ -18,6 +18,10 @@ var files embed.FS
 
 const versionTable = "schema_migrations"
 
+// foldedLegacyMax is the last incremental version folded into 000001_init.
+// Databases already at this version are stamped to 1 without re-running SQL.
+const foldedLegacyMax = 24
+
 func Up(dbPath string) error {
 	db, err := openDB(dbPath)
 	if err != nil {
@@ -37,6 +41,19 @@ func Up(dbPath string) error {
 	steps, err := listUpMigrations()
 	if err != nil {
 		return err
+	}
+	latest := 0
+	if n := len(steps); n > 0 {
+		latest = steps[n-1].version
+	}
+	if current > latest {
+		if current != foldedLegacyMax {
+			return fmt.Errorf("migrate: database is at version %d; folded schema requires version %d or a new database", current, foldedLegacyMax)
+		}
+		if err := stampVersion(db, 1); err != nil {
+			return err
+		}
+		current = 1
 	}
 	for _, step := range steps {
 		if current >= step.version {
@@ -119,6 +136,18 @@ func readVersion(db *sql.DB) (int, bool, error) {
 		return -1, false, err
 	}
 	return version, dirty, nil
+}
+
+func stampVersion(db *sql.DB, version int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	if err := writeVersion(tx, version, false); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func writeVersion(tx *sql.Tx, version int, dirty bool) error {

@@ -11,8 +11,9 @@ import { Label } from "@/components/ui/label"
 
 export function ChangePasswordPage() {
   const { t } = useI18n()
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const changePassword = useChangePassword()
+  const firstSet = Boolean(user?.mustSetPassword)
   const [oldPassword, setOldPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -24,7 +25,7 @@ export function ChangePasswordPage() {
       return
     }
     try {
-      await changePassword.mutateAsync({ oldPassword, newPassword })
+      await changePassword.mutateAsync({ oldPassword: firstSet ? "" : oldPassword, newPassword })
       setOldPassword("")
       setNewPassword("")
       setConfirmPassword("")
@@ -44,10 +45,11 @@ export function ChangePasswordPage() {
       <Card>
         <CardHeader>
           <CardTitle>{t("settings.password")}</CardTitle>
-          <CardDescription>{t("settings.passwordHint")}</CardDescription>
+          <CardDescription>{firstSet ? t("settings.setFirstPassword") : t("settings.passwordHint")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="grid gap-4">
+            {firstSet ? null : (
             <div className="grid gap-1.5">
               <Label htmlFor="old">{t("settings.oldPassword")}</Label>
               <Input
@@ -58,6 +60,7 @@ export function ChangePasswordPage() {
                 onChange={(e) => setOldPassword(e.target.value)}
               />
             </div>
+            )}
             <div className="grid gap-1.5">
               <Label htmlFor="nw">{t("settings.newPassword")}</Label>
               <Input

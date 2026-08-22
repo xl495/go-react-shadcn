@@ -1,4 +1,0 @@
-ALTER TABLE admin_user ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE admin_user ADD COLUMN pending_email TEXT NOT NULL DEFAULT '';
-ALTER TABLE web_user ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE web_user ADD COLUMN pending_email TEXT NOT NULL DEFAULT '';

@@ -730,3 +730,88 @@ func TestGoogleLoginSkipsTakenEmptyEmailFill(t *testing.T) {
 		t.Fatalf("filled taken email: %q", row.Email)
 	}
 }
+
+func TestCancelPendingEmailChange(t *testing.T) {
+	app := testApp(t)
+	viewer := loginOK(t, app, seed.ViewerUsername, seed.ViewerPassword)
+	updated := doJSON(t, app, http.MethodPut, "/api/v1/auth/profile", viewer, map[string]any{
+		"nickname": "李访客", "email": "viewer-cancel@example.com", "phone": "13800000003",
+		"gender": "female", "department": "market", "title": "观察员", "remark": "",
+		"timezone": "Asia/Shanghai",
+	})
+	if updated.Code != http.StatusOK {
+		t.Fatalf("profile: %d %s", updated.Code, updated.Body.String())
+	}
+	var dto userDTO
+	if err := json.Unmarshal(decodeEnv(t, updated).Data, &dto); err != nil || dto.PendingEmail == "" {
+		t.Fatalf("pending: %s", updated.Body.String())
+	}
+	canceled := doJSON(t, app, http.MethodDelete, "/api/v1/auth/pending-email", viewer, nil)
+	if canceled.Code != http.StatusOK {
+		t.Fatalf("cancel: %d %s", canceled.Code, canceled.Body.String())
+	}
+	var after userDTO
+	if err := json.Unmarshal(decodeEnv(t, canceled).Data, &after); err != nil || after.PendingEmail != "" || after.Email != "viewer@latch.local" {
+		t.Fatalf("after cancel: %+v %s", after, canceled.Body.String())
+	}
+	var row models.User
+	if err := app.accounts(models.UserKindAdmin).Where("username = ?", seed.ViewerUsername).First(&row).Error; err != nil || row.PendingEmail != "" {
+		t.Fatalf("db pending=%q err=%v", row.PendingEmail, err)
+	}
+}
+
+func TestGoogleUserCanSetPasswordWithoutOld(t *testing.T) {
+	app := testApp(t)
+	setCfg(t, app, "auth.google_enabled", "1")
+	setCfg(t, app, "auth.google_register_enabled", "1")
+	setCfg(t, app, "auth.google_client_id", "client-1")
+	app.GoogleVerify = stubGoogle{ident: googleid.Identity{
+		Subject: "gid-setpw", Email: "setpw@example.com", EmailVerified: true, Name: "Set PW",
+	}}
+	created := doJSON(t, app, http.MethodPost, "/api/v1/auth/google", "", map[string]string{
+		"idToken": "tok", "client": "web",
+	})
+	if created.Code != http.StatusOK {
+		t.Fatalf("google: %d %s", created.Code, created.Body.String())
+	}
+	var first struct {
+		Token string  `json:"token"`
+		User  userDTO `json:"user"`
+	}
+	if err := json.Unmarshal(decodeEnv(t, created).Data, &first); err != nil || first.Token == "" || !first.User.MustSetPassword {
+		t.Fatalf("dto: %+v %s", first, created.Body.String())
+	}
+	unbind := doJSON(t, app, http.MethodPost, "/api/v1/auth/google/unbind", first.Token, map[string]string{
+		"password": "anything12",
+	})
+	if unbind.Code != http.StatusBadRequest || decodeEnv(t, unbind).ErrorCode != CodeGoogleNeedPassword {
+		t.Fatalf("unbind before password: %d %s", unbind.Code, unbind.Body.String())
+	}
+	setPW := doJSON(t, app, http.MethodPut, "/api/v1/auth/password", first.Token, map[string]string{
+		"newPassword": "GooglePass12a",
+	})
+	if setPW.Code != http.StatusOK {
+		t.Fatalf("set password: %d %s", setPW.Code, setPW.Body.String())
+	}
+	id, answer, _ := issueCaptcha(t, app)
+	login := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username": first.User.Username, "password": "GooglePass12a", "client": "web",
+		"captchaId": id, "captchaCode": answer,
+	})
+	if login.Code != http.StatusOK {
+		t.Fatalf("password login: %d %s", login.Code, login.Body.String())
+	}
+	var second struct {
+		Token string  `json:"token"`
+		User  userDTO `json:"user"`
+	}
+	if err := json.Unmarshal(decodeEnv(t, login).Data, &second); err != nil || second.User.MustSetPassword {
+		t.Fatalf("after set: %+v %s", second, login.Body.String())
+	}
+	denied := doJSON(t, app, http.MethodPut, "/api/v1/auth/password", second.Token, map[string]string{
+		"newPassword": "GooglePass13a",
+	})
+	if denied.Code != http.StatusBadRequest || decodeEnv(t, denied).ErrorCode != CodePasswordRequired {
+		t.Fatalf("second set without old: %d %s", denied.Code, denied.Body.String())
+	}
+}

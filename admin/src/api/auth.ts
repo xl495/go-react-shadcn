@@ -73,4 +73,19 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
+  resendVerify: (body: {
+    email?: string
+    username?: string
+    password?: string
+    captchaId?: string
+    captchaCode?: string
+    captchaToken?: string
+    captchaVersion?: string
+    client?: string
+  }) =>
+    request<{ sent: boolean }>("/api/v1/auth/resend-verify", {
+      method: "POST",
+      body: JSON.stringify({ ...body, client: body.client ?? "web" }),
+    }),
+  cancelPendingEmail: () => request<User>("/api/v1/auth/pending-email", { method: "DELETE" }),
 }

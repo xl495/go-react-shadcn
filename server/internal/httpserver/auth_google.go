@@ -216,17 +216,18 @@ func (a *App) findOrCreateGoogleUser(ident googleid.Identity, kind string) (mode
 		return models.User{}, false, err
 	}
 	user := models.User{
-		Username:       username,
-		PasswordHash:   hash,
-		Nickname:       ident.Name,
-		Avatar:         clip(ident.Picture, 255),
-		Email:          ident.Email,
-		Status:         "active",
-		Timezone:       mailer.DefaultTimezone,
-		MarketingOptIn: false,
-		EmailVerified:  true,
-		Kind:           models.UserKindWeb,
-		GoogleID:       ident.Subject,
+		Username:        username,
+		PasswordHash:    hash,
+		Nickname:        ident.Name,
+		Avatar:          clip(ident.Picture, 255),
+		Email:           ident.Email,
+		Status:          "active",
+		Timezone:        mailer.DefaultTimezone,
+		MarketingOptIn:  false,
+		EmailVerified:   true,
+		Kind:            models.UserKindWeb,
+		GoogleID:        ident.Subject,
+		MustSetPassword: true,
 	}
 	var created bool
 	for attempt := 0; attempt < 3 && !created; attempt++ {

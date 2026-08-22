@@ -23,7 +23,7 @@ export function PasswordPage() {
     }
     setPending(true)
     try {
-      await api.changePassword({ oldPassword, newPassword })
+      await api.changePassword({ oldPassword: user?.mustSetPassword ? "" : oldPassword, newPassword })
       setOldPassword("")
       setNewPassword("")
       setConfirmPassword("")
@@ -42,6 +42,10 @@ export function PasswordPage() {
       {user?.mustChangePassword ? (
         <p className="text-sm text-destructive">{t("password.mustChange")}</p>
       ) : null}
+      {user?.mustSetPassword ? (
+        <p className="text-sm text-muted-foreground">{t("password.mustSet")}</p>
+      ) : null}
+      {user?.mustSetPassword ? null : (
       <div className="grid gap-1.5">
         <label htmlFor="current-password" className="text-sm font-medium">
           {t("password.current")}
@@ -55,6 +59,7 @@ export function PasswordPage() {
           className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </div>
+      )}
       <div className="grid gap-1.5">
         <label htmlFor="new-password" className="text-sm font-medium">
           {t("password.next")}

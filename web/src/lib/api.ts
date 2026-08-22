@@ -138,6 +138,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  resendVerify: (body: {
+    email?: string
+    username?: string
+    password?: string
+    captchaId?: string
+    captchaCode?: string
+    captchaToken?: string
+    captchaVersion?: string
+    client?: string
+  }) =>
+    request<{ sent: boolean }>("/api/v1/auth/resend-verify", {
+      method: "POST",
+      body: JSON.stringify({ ...body, client: body.client ?? "web" }),
+    }),
   login: (body: {
     username: string
     password: string
@@ -192,6 +206,7 @@ export const api = {
     timezone?: string
     marketingOptIn?: boolean
   }) => request<User>("/api/v1/auth/profile", { method: "PUT", body: JSON.stringify(body) }),
+  cancelPendingEmail: () => request<User>("/api/v1/auth/pending-email", { method: "DELETE" }),
   unsubscribe: (token: string) =>
     request<{ unsubscribed: boolean }>("/api/v1/mail/unsubscribe", {
       method: "POST",

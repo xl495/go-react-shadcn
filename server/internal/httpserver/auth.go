@@ -88,12 +88,6 @@ func (a *App) handleLogin(c *gin.Context) {
 		return
 	}
 
-	if !user.EmailVerified && user.Kind == models.UserKindWeb && user.GoogleID == "" {
-		a.recordLoginLog(c, user.Username, "failed", "email unverified")
-		fail(c, http.StatusForbidden, CodeEmailUnverified, "verify your email before signing in")
-		return
-	}
-
 	if user.Status != "active" || !passwd.Match(user.PasswordHash, req.Password) {
 		user.FailedLoginCount++
 		updates := map[string]any{"failed_login_count": user.FailedLoginCount}
@@ -107,6 +101,12 @@ func (a *App) handleLogin(c *gin.Context) {
 		}
 		a.recordLoginLog(c, user.Username, "failed", "invalid credentials")
 		fail(c, http.StatusUnauthorized, 40103, "invalid credentials")
+		return
+	}
+
+	if !user.EmailVerified && user.Kind == models.UserKindWeb && user.GoogleID == "" {
+		a.recordLoginLog(c, user.Username, "failed", "email unverified")
+		fail(c, http.StatusForbidden, CodeEmailUnverified, "verify your email before signing in")
 		return
 	}
 
@@ -283,14 +283,15 @@ func (a *App) handleChangePassword(c *gin.Context) {
 		fail(c, http.StatusBadRequest, 40040, "invalid request body")
 		return
 	}
-	if req.OldPassword == "" || req.NewPassword == "" {
+	canSetWithoutOld := user.MustSetPassword && user.GoogleID != ""
+	if req.NewPassword == "" || (!canSetWithoutOld && req.OldPassword == "") {
 		fail(c, http.StatusBadRequest, 40042, "old and new password required")
 		return
 	}
 	if a.failIfWeakPassword(c, req.NewPassword, user.Username) {
 		return
 	}
-	if !passwd.Match(user.PasswordHash, req.OldPassword) {
+	if !canSetWithoutOld && !passwd.Match(user.PasswordHash, req.OldPassword) {
 		fail(c, http.StatusBadRequest, 40041, "current password is wrong")
 		return
 	}
@@ -303,6 +304,7 @@ func (a *App) handleChangePassword(c *gin.Context) {
 		"password_hash":        hash,
 		"token_version":        user.TokenVersion + 1,
 		"must_change_password": false,
+		"must_set_password":    false,
 	}); err != nil {
 		fail(c, http.StatusInternalServerError, CodeChangePassword, "failed to change password")
 		return

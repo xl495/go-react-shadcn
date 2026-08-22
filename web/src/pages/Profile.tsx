@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react"
+import { Link } from "react-router-dom"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
@@ -75,10 +76,42 @@ function ProfileForm({ user, onSaved }: { user: User; onSaved: (next: User) => v
           className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </label>
-      {user.pendingEmail ? (
+      {user.mustSetPassword ? (
         <p className="text-sm text-muted-foreground">
-          {t("profile.pendingEmail")}: {user.pendingEmail}
+          {t("password.mustSet")}{" "}
+          <Link to="/password" className="text-foreground underline-offset-4 hover:underline">
+            {t("nav.password")}
+          </Link>
         </p>
+      ) : null}
+      {user.pendingEmail ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            {t("profile.pendingEmail")}: {user.pendingEmail}
+          </p>
+          <button
+            type="button"
+            disabled={pending}
+            className="h-8 rounded-md border px-2 text-xs hover:bg-muted disabled:opacity-60"
+            onClick={() => {
+              setError("")
+              setMessage("")
+              setPending(true)
+              void api
+                .cancelPendingEmail()
+                .then((next) => {
+                  onSaved(next)
+                  setMessage(t("profile.saved"))
+                })
+                .catch((err) => {
+                  setError(err instanceof ApiError ? err.message || t("profile.failed") : t("profile.failed"))
+                })
+                .finally(() => setPending(false))
+            }}
+          >
+            {t("profile.cancelPendingEmail")}
+          </button>
+        </div>
       ) : null}
       <div className="grid gap-2 rounded-md border p-3">
         <p className="text-sm font-medium">{t("profile.google")}</p>
@@ -86,7 +119,14 @@ function ProfileForm({ user, onSaved }: { user: User; onSaved: (next: User) => v
         {settings?.googleEnabled ? (
           user.googleBound ? (
             <div className="grid gap-2">
-              {user.totpEnabled ? (
+              {user.mustSetPassword ? (
+                <p className="text-sm text-muted-foreground">
+                  {t("profile.googleNeedPassword")}{" "}
+                  <Link to="/password" className="text-foreground underline-offset-4 hover:underline">
+                    {t("nav.password")}
+                  </Link>
+                </p>
+              ) : user.totpEnabled ? (
                 <label className="grid gap-1.5 text-sm">
                   <span className="text-muted-foreground">{t("profile.googleUnbindTotp")}</span>
                   <input
@@ -109,6 +149,7 @@ function ProfileForm({ user, onSaved }: { user: User; onSaved: (next: User) => v
                   />
                 </label>
               )}
+              {user.mustSetPassword ? null : (
               <button
                 type="button"
                 disabled={pending || (user.totpEnabled ? unbindTotp.trim().length < 6 : !unbindPassword)}
@@ -133,6 +174,7 @@ function ProfileForm({ user, onSaved }: { user: User; onSaved: (next: User) => v
               >
                 {t("profile.googleUnbind")}
               </button>
+              )}
             </div>
           ) : (
             <GoogleSignIn

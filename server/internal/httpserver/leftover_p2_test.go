@@ -117,6 +117,50 @@ func TestRegisterRollsBackWhenMailUnavailable(t *testing.T) {
 	}
 }
 
+func TestUnverifiedLoginNeedsPasswordAndCanResend(t *testing.T) {
+	app := testApp(t)
+	id, answer, _ := issueCaptcha(t, app)
+	created := doJSON(t, app, http.MethodPost, "/api/v1/auth/register", "", map[string]string{
+		"username": "pendingmail", "email": "pendingmail@example.com", "password": "pending12",
+		"client": "web", "captchaId": id, "captchaCode": answer,
+	})
+	if created.Code != http.StatusOK {
+		t.Fatalf("register: %d %s", created.Code, created.Body.String())
+	}
+	idWrong, answerWrong, _ := issueCaptcha(t, app)
+	wrong := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username": "pendingmail", "password": "wrongpass12", "client": "web",
+		"captchaId": idWrong, "captchaCode": answerWrong,
+	})
+	if wrong.Code != http.StatusUnauthorized || decodeEnv(t, wrong).ErrorCode != CodeBadCredentials {
+		t.Fatalf("wrong password: %d %s", wrong.Code, wrong.Body.String())
+	}
+	idLogin, answerLogin, _ := issueCaptcha(t, app)
+	blocked := doJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username": "pendingmail", "password": "pending12", "client": "web",
+		"captchaId": idLogin, "captchaCode": answerLogin,
+	})
+	if blocked.Code != http.StatusForbidden || decodeEnv(t, blocked).ErrorCode != CodeEmailUnverified {
+		t.Fatalf("unverified: %d %s", blocked.Code, blocked.Body.String())
+	}
+	idResend, answerResend, _ := issueCaptcha(t, app)
+	resend := doJSON(t, app, http.MethodPost, "/api/v1/auth/resend-verify", "", map[string]string{
+		"username": "pendingmail", "password": "pending12", "client": "web",
+		"captchaId": idResend, "captchaCode": answerResend,
+	})
+	if resend.Code != http.StatusOK {
+		t.Fatalf("resend: %d %s", resend.Code, resend.Body.String())
+	}
+	idEmail, answerEmail, _ := issueCaptcha(t, app)
+	byEmail := doJSON(t, app, http.MethodPost, "/api/v1/auth/resend-verify", "", map[string]string{
+		"email": "pendingmail@example.com", "client": "web",
+		"captchaId": idEmail, "captchaCode": answerEmail,
+	})
+	if byEmail.Code != http.StatusOK {
+		t.Fatalf("resend email: %d %s", byEmail.Code, byEmail.Body.String())
+	}
+}
+
 func TestTraceIDRejectsNonUUID(t *testing.T) {
 	app := testApp(t)
 	token := loginOK(t, app, seed.AdminUsername, seed.AdminPassword)

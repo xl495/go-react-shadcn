@@ -32,6 +32,7 @@ type userDTO struct {
 	Kind               string    `json:"kind"`
 	TotpEnabled        bool      `json:"totpEnabled"`
 	MustChangePassword bool      `json:"mustChangePassword"`
+	MustSetPassword    bool      `json:"mustSetPassword"`
 	GoogleBound        bool      `json:"googleBound"`
 	LockedUntil        any       `json:"lockedUntil,omitempty"`
 	LastLoginAt        any       `json:"lastLoginAt"`
@@ -146,6 +147,7 @@ func toUserDTOOpts(u models.User, withPerms bool) userDTO {
 		Kind:               normalizeUserKind(u.Kind),
 		TotpEnabled:        u.TotpEnabled,
 		MustChangePassword: u.MustChangePassword,
+		MustSetPassword:    u.MustSetPassword,
 		GoogleBound:        u.GoogleID != "",
 		PendingEmail:       u.PendingEmail,
 		LastLoginAt:        u.LastLoginAt,

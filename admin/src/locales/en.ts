@@ -462,7 +462,9 @@ export const en = {
     loginHistoryHint: "Recent success and failure for this account only",
     pendingEmail: "Pending email",
     pendingEmailHint: "Keep using the current address until the new one is confirmed",
+    cancelPendingEmail: "Cancel pending change",
     passwordChangedRelogin: "Password updated. Sign in again.",
+    setFirstPassword: "This Google account has no password yet. Choose one to enable password sign-in and unbind Google later.",
   },
   users: {
     eyebrow: "Directory",

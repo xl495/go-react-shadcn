@@ -19,6 +19,7 @@ export function LoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
   const [loading, setLoading] = useState(false)
   const [settings, setSettings] = useState<AuthSettings | undefined>()
   const [settingsReady, setSettingsReady] = useState(false)
@@ -28,6 +29,7 @@ export function LoginPage() {
   const [recoveryCode, setRecoveryCode] = useState("")
   const [secret, setSecret] = useState("")
   const [otpauth, setOtpauth] = useState("")
+  const [unverified, setUnverified] = useState(false)
 
   useEffect(() => {
     api.settings().then(setSettings).catch(() => undefined).finally(() => setSettingsReady(true))
@@ -61,10 +63,34 @@ export function LoginPage() {
     e.preventDefault()
     if (closed) return
     setError("")
+    setNotice("")
+    setUnverified(false)
     setLoading(true)
     try {
       const challenge = (await challengeRef.current?.collect()) ?? {}
       await applyResult(await api.login({ username, password, ...challenge }))
+    } catch (err) {
+      if (err instanceof ApiError && err.code === CAPTCHA_FALLBACK_CODE) {
+        challengeRef.current?.showV2()
+      }
+      if (err instanceof ApiError && err.code === 40318) {
+        setUnverified(true)
+      }
+      setError(err instanceof ApiError ? err.message || t("login.failed") : t("login.failed"))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function onResendVerify() {
+    if (closed) return
+    setError("")
+    setNotice("")
+    setLoading(true)
+    try {
+      const challenge = (await challengeRef.current?.collect()) ?? {}
+      await api.resendVerify({ username, password, ...challenge })
+      setNotice(t("login.resent"))
     } catch (err) {
       if (err instanceof ApiError && err.code === CAPTCHA_FALLBACK_CODE) {
         challengeRef.current?.showV2()
@@ -78,6 +104,7 @@ export function LoginPage() {
   async function onGoogle(idToken: string) {
     if (closed) return
     setError("")
+    setNotice("")
     setLoading(true)
     try {
       await applyResult(await api.google({ idToken, client: "web" }))
@@ -208,6 +235,7 @@ export function LoginPage() {
           </Link>
         </div>
         <AuthChallenge ref={challengeRef} settings={settingsReady ? (settings ?? { captchaProvider: "image" }) : undefined} action="login" />
+        {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <button
           type="submit"
@@ -216,6 +244,16 @@ export function LoginPage() {
         >
           {loading ? t("login.submitting") : t("login.submit")}
         </button>
+        {unverified ? (
+          <button
+            type="button"
+            disabled={loading || closed}
+            onClick={() => void onResendVerify()}
+            className="h-10 w-full rounded-md border text-sm font-medium disabled:opacity-60"
+          >
+            {t("login.resendVerify")}
+          </button>
+        ) : null}
         {settings?.registerEnabled !== false || settings?.googleRegisterEnabled ? (
           <p className="text-center text-sm text-muted-foreground">
             {t("login.noAccount")}{" "}

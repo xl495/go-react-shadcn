@@ -7,6 +7,7 @@ export type User = Schema["User"] & {
   totpEnabled?: boolean
   lockedUntil?: string | null
   mustChangePassword?: boolean
+  mustSetPassword?: boolean
   googleBound?: boolean
   pendingEmail?: string
   emailVerifyToken?: string

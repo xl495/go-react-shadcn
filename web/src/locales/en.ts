@@ -38,6 +38,9 @@ export const en: WebMessages = {
     submit: "Sign in",
     submitting: "Signing in…",
     failed: "Sign-in failed",
+    unverified: "Verify your email before signing in.",
+    resendVerify: "Resend verification email",
+    resent: "If that account needs verification, a new message is on the way.",
     maintenance: "The site is under maintenance. Web sign-in is paused.",
     totpTitle: "Two-factor code",
     totpHint: "Enter the 6-digit code from your authenticator app",
@@ -60,6 +63,8 @@ export const en: WebMessages = {
     submitting: "Creating…",
     failed: "Registration failed",
     checkEmail: "Check your email to verify the account, then sign in.",
+    resend: "Resend verification email",
+    resent: "A new verification message is on the way.",
     back: "Back to sign in",
   },
   verify: {
@@ -109,6 +114,7 @@ export const en: WebMessages = {
     save: "Save profile",
     saving: "Saving…",
     pendingEmail: "Pending email (keep using the current address until confirmed)",
+    cancelPendingEmail: "Cancel pending change",
     google: "Google account",
     googleOn: "Bound",
     googleOff: "Not bound",
@@ -117,6 +123,7 @@ export const en: WebMessages = {
     googleUnbindTotp: "Authenticator code",
     googleDisabled: "Google sign-in is off",
     googleMismatch: "Google email must match this account.",
+    googleNeedPassword: "Set a password first, then you can unbind Google.",
   },
   password: {
     title: "Change password",
@@ -129,6 +136,7 @@ export const en: WebMessages = {
     save: "Update password",
     saving: "Saving…",
     mustChange: "An admin reset your password. Change it before continuing.",
+    mustSet: "This Google account has no password yet. Choose one to enable password sign-in.",
   },
   notify: {
     title: "Inbox",

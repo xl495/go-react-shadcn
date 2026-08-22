@@ -26,38 +26,39 @@ type Department struct {
 }
 
 type User struct {
-	ID               uint        `json:"id" gorm:"primaryKey"`
-	Username         string      `json:"username" gorm:"uniqueIndex;size:64;not null"`
-	PasswordHash     string      `json:"-" gorm:"not null"`
-	Nickname         string      `json:"nickname" gorm:"size:64"`
-	Avatar           string      `json:"avatar" gorm:"size:255"`
-	Email            string      `json:"email" gorm:"size:128"`
-	Phone            string      `json:"phone" gorm:"size:32"`
-	Gender           string      `json:"gender" gorm:"size:16"`
-	Department       string      `json:"department" gorm:"size:64"`
-	DepartmentID     *uint       `json:"departmentId" gorm:"index"`
-	Title            string      `json:"title" gorm:"size:64"`
-	Remark           string      `json:"remark" gorm:"size:255"`
-	Status           string      `json:"status" gorm:"size:16;not null;default:active"`
-	TokenVersion     int         `json:"-" gorm:"not null;default:0"`
-	FailedLoginCount int         `json:"-" gorm:"not null;default:0"`
-	LockedUntil      *time.Time  `json:"-"`
-	LastLoginAt      *time.Time  `json:"lastLoginAt"`
-	LastLoginIP      string      `json:"lastLoginIp" gorm:"size:64"`
-	Timezone         string      `json:"timezone" gorm:"size:64;not null;default:Asia/Shanghai"`
-	MarketingOptIn   bool        `json:"marketingOptIn" gorm:"not null;default:false"`
-	EmailVerified    bool        `json:"emailVerified" gorm:"not null;default:false"`
-	Kind             string      `json:"kind" gorm:"-"`
-	GoogleID         string      `json:"-" gorm:"size:64;index"`
-	TotpEnabled         bool       `json:"totpEnabled" gorm:"not null;default:false"`
-	TotpSecret          string     `json:"-" gorm:"size:255"`
-	TotpVerifiedAt      *time.Time `json:"-"`
-	MustChangePassword  bool       `json:"mustChangePassword" gorm:"not null;default:false"`
-	PendingEmail        string     `json:"pendingEmail,omitempty" gorm:"size:128"`
-	CreatedAt        time.Time   `json:"createdAt"`
-	UpdatedAt        time.Time   `json:"updatedAt"`
-	Roles            []Role      `json:"roles,omitempty" gorm:"many2many:user_roles;"`
-	Dept             *Department `json:"dept,omitempty" gorm:"foreignKey:DepartmentID"`
+	ID                 uint        `json:"id" gorm:"primaryKey"`
+	Username           string      `json:"username" gorm:"uniqueIndex;size:64;not null"`
+	PasswordHash       string      `json:"-" gorm:"not null"`
+	Nickname           string      `json:"nickname" gorm:"size:64"`
+	Avatar             string      `json:"avatar" gorm:"size:255"`
+	Email              string      `json:"email" gorm:"size:128"`
+	Phone              string      `json:"phone" gorm:"size:32"`
+	Gender             string      `json:"gender" gorm:"size:16"`
+	Department         string      `json:"department" gorm:"size:64"`
+	DepartmentID       *uint       `json:"departmentId" gorm:"index"`
+	Title              string      `json:"title" gorm:"size:64"`
+	Remark             string      `json:"remark" gorm:"size:255"`
+	Status             string      `json:"status" gorm:"size:16;not null;default:active"`
+	TokenVersion       int         `json:"-" gorm:"not null;default:0"`
+	FailedLoginCount   int         `json:"-" gorm:"not null;default:0"`
+	LockedUntil        *time.Time  `json:"-"`
+	LastLoginAt        *time.Time  `json:"lastLoginAt"`
+	LastLoginIP        string      `json:"lastLoginIp" gorm:"size:64"`
+	Timezone           string      `json:"timezone" gorm:"size:64;not null;default:Asia/Shanghai"`
+	MarketingOptIn     bool        `json:"marketingOptIn" gorm:"not null;default:false"`
+	EmailVerified      bool        `json:"emailVerified" gorm:"not null;default:false"`
+	Kind               string      `json:"kind" gorm:"-"`
+	GoogleID           string      `json:"-" gorm:"size:64;index"`
+	TotpEnabled        bool        `json:"totpEnabled" gorm:"not null;default:false"`
+	TotpSecret         string      `json:"-" gorm:"size:255"`
+	TotpVerifiedAt     *time.Time  `json:"-"`
+	MustChangePassword bool        `json:"mustChangePassword" gorm:"not null;default:false"`
+	MustSetPassword    bool        `json:"mustSetPassword" gorm:"not null;default:false"`
+	PendingEmail       string      `json:"pendingEmail,omitempty" gorm:"size:128"`
+	CreatedAt          time.Time   `json:"createdAt"`
+	UpdatedAt          time.Time   `json:"updatedAt"`
+	Roles              []Role      `json:"roles,omitempty" gorm:"many2many:user_roles;"`
+	Dept               *Department `json:"dept,omitempty" gorm:"foreignKey:DepartmentID"`
 }
 
 func (User) TableName() string { return AdminUserTable }
@@ -152,8 +153,8 @@ func (TotpRecoveryCode) TableName() string { return "totp_recovery_codes" }
 func (NavMenu) TableName() string { return "nav_menu" }
 
 const (
-	NavAudienceAdmin   = "admin"
-	NavAudienceWeb     = "web"
+	NavAudienceAdmin        = "admin"
+	NavAudienceWeb          = "web"
 	TokenPurposeReset       = "reset"
 	TokenPurposeVerify      = "verify"
 	TokenPurposeEmailChange = "email_change"

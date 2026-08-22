@@ -36,6 +36,9 @@ export const zhCN = {
     submit: "登录",
     submitting: "登录中…",
     failed: "登录失败",
+    unverified: "请先验证邮箱再登录。",
+    resendVerify: "重发验证邮件",
+    resent: "如果该账号尚未验证，一封新邮件正在路上。",
     maintenance: "系统维护中，用户端暂时无法登录。",
     totpTitle: "二次验证",
     totpHint: "请输入认证器中的 6 位验证码",
@@ -58,6 +61,8 @@ export const zhCN = {
     submitting: "创建中…",
     failed: "注册失败",
     checkEmail: "请查收邮件完成验证后再登录。",
+    resend: "重发验证邮件",
+    resent: "新的验证邮件已发出。",
     back: "返回登录",
   },
   verify: {
@@ -107,6 +112,7 @@ export const zhCN = {
     save: "保存资料",
     saving: "保存中…",
     pendingEmail: "待验证邮箱（确认前仍用当前邮箱登录）",
+    cancelPendingEmail: "取消这次改绑",
     google: "Google 账号",
     googleOn: "已绑定",
     googleOff: "未绑定",
@@ -115,6 +121,7 @@ export const zhCN = {
     googleUnbindTotp: "验证器验证码",
     googleDisabled: "未开启 Google 登录",
     googleMismatch: "Google 邮箱需与当前账号一致。",
+    googleNeedPassword: "请先设置密码，然后才能解绑 Google。",
   },
   password: {
     title: "修改密码",
@@ -127,6 +134,7 @@ export const zhCN = {
     save: "更新密码",
     saving: "保存中…",
     mustChange: "管理员已重置密码，请先改密后再继续。",
+    mustSet: "这个 Google 账号还没有密码。设置后可用密码登录。",
   },
   notify: {
     title: "消息",

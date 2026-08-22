@@ -18,6 +18,7 @@ export function RegisterPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
   const [pendingEmail, setPendingEmail] = useState("")
   const [loading, setLoading] = useState(false)
   const challengeRef = useRef<AuthChallengeHandle>(null)
@@ -30,8 +31,9 @@ export function RegisterPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (closed) return
+    if (closed || pendingEmail) return
     setError("")
+    setNotice("")
     setLoading(true)
     try {
       const challenge = (await challengeRef.current?.collect()) ?? {}
@@ -57,6 +59,7 @@ export function RegisterPage() {
   async function onGoogle(idToken: string) {
     if (closed) return
     setError("")
+    setNotice("")
     setLoading(true)
     try {
       const result = await api.google({ idToken, client: "web" })
@@ -67,6 +70,25 @@ export function RegisterPage() {
       login(result.token, result.user)
       navigate("/", { replace: true })
     } catch (err) {
+      setError(err instanceof ApiError ? err.message || t("register.failed") : t("register.failed"))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function onResendVerify() {
+    if (closed || !pendingEmail) return
+    setError("")
+    setNotice("")
+    setLoading(true)
+    try {
+      const challenge = (await challengeRef.current?.collect()) ?? {}
+      await api.resendVerify({ email: pendingEmail, ...challenge })
+      setNotice(t("register.resent"))
+    } catch (err) {
+      if (err instanceof ApiError && err.code === CAPTCHA_FALLBACK_CODE) {
+        challengeRef.current?.showV2()
+      }
       setError(err instanceof ApiError ? err.message || t("register.failed") : t("register.failed"))
     } finally {
       setLoading(false)
@@ -87,78 +109,94 @@ export function RegisterPage() {
           ) : null}
         </div>
         {pendingEmail ? (
-          <p className="text-sm text-muted-foreground">{t("register.checkEmail")}</p>
-        ) : null}
-        {googleOn ? (
           <div className="space-y-3">
-            <GoogleSignIn
-              clientId={settings?.googleClientId ?? ""}
-              locale={locale}
-              onCredential={onGoogle}
-              disabled={loading || closed}
-            />
-            {passwordOn ? (
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="h-px flex-1 bg-border" />
-                {t("login.or")}
-                <span className="h-px flex-1 bg-border" />
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {passwordOn ? (
-          <>
-            <div className="grid gap-2">
-              <label htmlFor="username" className="text-sm font-medium">
-                {t("login.username")}
-              </label>
-              <input
-                id="username"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-            <div className="grid gap-2">
-              <label htmlFor="email" className="text-sm font-medium">
-                {t("register.email")}
-              </label>
-              <input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-            <div className="grid gap-2">
-              <label htmlFor="password" className="text-sm font-medium">
-                {t("register.password")}
-              </label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
+            <p className="text-sm text-muted-foreground">{t("register.checkEmail")}</p>
             <AuthChallenge ref={challengeRef} settings={settingsReady ? (settings ?? { captchaProvider: "image" }) : undefined} action="register" />
+            {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <button
-              type="submit"
-              disabled={loading || !settingsReady || closed}
-              className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
+              type="button"
+              disabled={loading || closed}
+              onClick={() => void onResendVerify()}
+              className="h-10 w-full rounded-md border text-sm font-medium disabled:opacity-60"
             >
-              {loading ? t("register.submitting") : t("register.submit")}
+              {t("register.resend")}
             </button>
+          </div>
+        ) : (
+          <>
+            {googleOn ? (
+              <div className="space-y-3">
+                <GoogleSignIn
+                  clientId={settings?.googleClientId ?? ""}
+                  locale={locale}
+                  onCredential={onGoogle}
+                  disabled={loading || closed}
+                />
+                {passwordOn ? (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="h-px flex-1 bg-border" />
+                    {t("login.or")}
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {passwordOn ? (
+              <>
+                <div className="grid gap-2">
+                  <label htmlFor="username" className="text-sm font-medium">
+                    {t("login.username")}
+                  </label>
+                  <input
+                    id="username"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <label htmlFor="email" className="text-sm font-medium">
+                    {t("register.email")}
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <label htmlFor="password" className="text-sm font-medium">
+                    {t("register.password")}
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <AuthChallenge ref={challengeRef} settings={settingsReady ? (settings ?? { captchaProvider: "image" }) : undefined} action="register" />
+                {error ? <p className="text-sm text-destructive">{error}</p> : null}
+                <button
+                  type="submit"
+                  disabled={loading || !settingsReady || closed}
+                  className="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
+                >
+                  {loading ? t("register.submitting") : t("register.submit")}
+                </button>
+              </>
+            ) : error ? (
+              <p className="text-sm text-destructive">{error}</p>
+            ) : null}
           </>
-        ) : error ? (
-          <p className="text-sm text-destructive">{error}</p>
-        ) : null}
+        )}
         <Link to="/login" className="text-sm text-primary underline-offset-4 hover:underline">
           {t("register.back")}
         </Link>

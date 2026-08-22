@@ -253,3 +253,113 @@ func (a *App) handleVerifyEmail(c *gin.Context) {
 	_ = models.AttachRoles(a.DB, kind, &user)
 	a.finishLogin(c, user, c.ClientIP(), "verify-email")
 }
+
+type resendVerifyRequest struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Client   string `json:"client"`
+	challengeInput
+}
+
+func (a *App) handleResendVerify(c *gin.Context) {
+	var req resendVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeInvalidBody, "invalid request body")
+		return
+	}
+	if a.rejectWebMaintenance(c, req.Client) {
+		return
+	}
+	if a.VerifyGuard != nil && !a.VerifyGuard.AllowIP(c.ClientIP()) {
+		fail(c, http.StatusTooManyRequests, CodeVerifyRateLimited, "too many verify requests from this ip")
+		return
+	}
+	email := normalizeEmail(req.Email)
+	action := "register"
+	if email == "" {
+		action = "login"
+	}
+	if !a.requireCaptcha(c, req.challengeInput, action) {
+		return
+	}
+	if email != "" {
+		ok(c, gin.H{"sent": true})
+		var user models.User
+		if err := a.accounts(models.UserKindWeb).Where("lower(email) = ? AND email <> ''", email).First(&user).Error; err != nil {
+			return
+		}
+		user.Kind = models.UserKindWeb
+		if user.EmailVerified || user.GoogleID != "" || user.Status != "active" {
+			return
+		}
+		if err := a.rotateVerifyMail(c, user); err != nil {
+			slog.Error("resend verify", "error", err, "user", user.Username)
+		}
+		return
+	}
+	username := strings.TrimSpace(req.Username)
+	if username == "" || req.Password == "" {
+		fail(c, http.StatusBadRequest, CodeUserPassRequired, "username, email and password required")
+		return
+	}
+	if loginClientKind(req.Client) != models.UserKindWeb {
+		fail(c, http.StatusForbidden, CodeWrongClient, "email registration is only available on the web client")
+		return
+	}
+	var user models.User
+	if err := a.loadAccount(models.UserKindWeb, &user, "username = ?", username); err != nil {
+		_ = passwd.Match(passwd.DummyHash(), req.Password)
+		fail(c, http.StatusUnauthorized, CodeBadCredentials, "invalid credentials")
+		return
+	}
+	if !passwd.Match(user.PasswordHash, req.Password) {
+		fail(c, http.StatusUnauthorized, CodeBadCredentials, "invalid credentials")
+		return
+	}
+	if user.EmailVerified || user.GoogleID != "" {
+		ok(c, gin.H{"sent": true})
+		return
+	}
+	if err := a.rotateVerifyMail(c, user); err != nil {
+		if !a.Cfg.DevMode {
+			a.failMail(c, err)
+			return
+		}
+		slog.Error("resend verify", "error", err, "user", user.Username)
+	}
+	ok(c, gin.H{"sent": true})
+}
+
+func (a *App) rotateVerifyMail(c *gin.Context, user models.User) error {
+	if user.Email == "" || !mailer.ValidAddress(user.Email) {
+		return mailer.ErrInvalidAddr
+	}
+	raw, hash, err := mailer.NewResetToken()
+	if err != nil {
+		return err
+	}
+	_ = a.DB.Where("user_id = ? AND user_kind = ? AND purpose = ? AND used_at IS NULL", user.ID, user.Kind, models.TokenPurposeVerify).
+		Delete(&models.PasswordResetToken{}).Error
+	tok := models.PasswordResetToken{
+		UserID: user.ID, UserKind: user.Kind, Purpose: models.TokenPurposeVerify,
+		TokenHash: hash, ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	if err := a.DB.Create(&tok).Error; err != nil {
+		return err
+	}
+	cfg, _ := mailer.Load(a.DB, a.Cfg.JWTSecret)
+	link, okLink := a.mailPublicLink(cfg.ResetBaseURL, c.GetHeader("Origin"), mailFallbackOrigin(user.Kind), "/verify-email?token="+raw)
+	if !okLink {
+		if a.Cfg.DevMode {
+			return nil
+		}
+		return mailer.ErrIncomplete
+	}
+	subject, body := i18n.VerifyEmailMail(i18n.FromRequest(c.Request), link)
+	_, err = a.enqueueMail(mailer.EnqueueInput{
+		Class: models.MailClassTransactional, User: &user, ToEmail: user.Email,
+		Subject: subject, Body: body,
+	})
+	return err
+}

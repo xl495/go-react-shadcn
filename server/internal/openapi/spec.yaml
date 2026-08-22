@@ -122,6 +122,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnvelopeVerifyEmail"
+  /auth/resend-verify:
+    post:
+      summary: Resend a registration verification email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendVerifyRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeSent"
   /mail/test:
     post:
       summary: Queue a test email using SMTP settings
@@ -279,6 +295,17 @@ paths:
   /auth/me:
     get:
       summary: Current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeUser"
+  /auth/pending-email:
+    delete:
+      summary: Cancel a pending email change
       security: [{ bearerAuth: [] }]
       responses:
         "200":
@@ -689,6 +716,7 @@ components:
         googleBound: { type: boolean }
         totpEnabled: { type: boolean }
         mustChangePassword: { type: boolean }
+        mustSetPassword: { type: boolean }
         lockedUntil: { type: string, nullable: true }
         kind: { type: string, description: "admin or web" }
         lastLoginAt: { type: string, nullable: true }
@@ -948,6 +976,17 @@ components:
       required: [token]
       properties:
         token: { type: string }
+    ResendVerifyRequest:
+      type: object
+      properties:
+        email: { type: string }
+        username: { type: string }
+        password: { type: string }
+        client: { type: string }
+        captchaId: { type: string }
+        captchaCode: { type: string }
+        captchaToken: { type: string }
+        captchaVersion: { type: string }
     RegisterPending:
       type: object
       required: [pending]

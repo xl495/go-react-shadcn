@@ -15,6 +15,7 @@ export type User = {
   marketingOptIn?: boolean
   totpEnabled?: boolean
   mustChangePassword?: boolean
+  mustSetPassword?: boolean
   googleBound?: boolean
 }
 

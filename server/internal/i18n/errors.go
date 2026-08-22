@@ -21,6 +21,7 @@ var errorsEN = map[int]string{
 	40022: "invalid request body",
 	40023: "cannot delete seeded role",
 	40024: "invalid request body",
+	40025: "invalid data scope",
 	40026: "cannot disable the last active admin",
 	40027: "google account email does not match",
 	40028: "set a password before unbinding google",

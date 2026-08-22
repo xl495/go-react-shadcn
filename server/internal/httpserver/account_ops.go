@@ -214,6 +214,7 @@ func (a *App) handleResetUserPassword(c *gin.Context) {
 	if err := a.updateAccount(&user, map[string]any{
 		"password_hash":        hash,
 		"must_change_password": true,
+		"must_set_password":    false,
 		"token_version":        gorm.Expr("token_version + 1"),
 		"failed_login_count":   0,
 		"locked_until":         nil,
@@ -492,6 +493,10 @@ func (a *App) handleGoogleUnbind(c *gin.Context) {
 		ok(c, a.toUserDTO(user))
 		return
 	}
+	if user.MustSetPassword {
+		fail(c, http.StatusBadRequest, CodeGoogleNeedPassword, "set a password before unbinding google")
+		return
+	}
 	var req googleUnbindRequest
 	_ = c.ShouldBindJSON(&req)
 	if !a.confirmSensitiveAction(c, user, req.Password, req.TotpCode) {
@@ -568,6 +573,19 @@ func (a *App) rollbackEmailChange(user *models.User) {
 		Delete(&models.PasswordResetToken{}).Error
 	_ = a.updateAccount(user, map[string]any{"pending_email": ""})
 	user.PendingEmail = ""
+}
+
+func (a *App) handleCancelEmailChange(c *gin.Context) {
+	user, _, err := a.currentAccount(c)
+	if err != nil {
+		fail(c, http.StatusNotFound, CodeUserMissingMe, "user not found")
+		return
+	}
+	if user.PendingEmail != "" {
+		a.rollbackEmailChange(&user)
+	}
+	_ = models.AttachRoles(a.DB, user.Kind, &user)
+	ok(c, a.toUserDTO(user))
 }
 
 func (a *App) confirmSensitiveAction(c *gin.Context, user models.User, password, totpCode string) bool {

@@ -462,7 +462,9 @@ export const zhCN = {
     loginHistoryHint: "仅本账号最近成功或失败",
     pendingEmail: "待验证邮箱",
     pendingEmailHint: "确认前仍用当前邮箱登录",
+    cancelPendingEmail: "取消这次改绑",
     passwordChangedRelogin: "密码已更新，请重新登录。",
+    setFirstPassword: "这个 Google 账号还没有密码。设置后可用密码登录，也可再解绑 Google。",
   },
   users: {
     eyebrow: "名录",

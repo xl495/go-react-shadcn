@@ -67,6 +67,14 @@ export function SettingsPage() {
         <div>
           <h2 className="text-xl font-semibold tracking-tight">{t("settings.title")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("settings.subtitle")}</p>
+          {user?.mustSetPassword ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {t("settings.setFirstPassword")}{" "}
+              <Link to="/settings/password" className="text-foreground underline-offset-4 hover:underline">
+                {t("settings.password")}
+              </Link>
+            </p>
+          ) : null}
         </div>
         <Button asChild variant="outline">
           <Link to="/settings/password">{t("settings.password")}</Link>
@@ -111,9 +119,27 @@ export function SettingsPage() {
                   onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
                 />
                 {key === "email" && user?.pendingEmail ? (
-                  <p className="text-xs text-muted-foreground">
-                    {t("settings.pendingEmail")}: {user.pendingEmail}. {t("settings.pendingEmailHint")}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings.pendingEmail")}: {user.pendingEmail}. {t("settings.pendingEmailHint")}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void api
+                          .cancelPendingEmail()
+                          .then((next) => {
+                            updateUser(next)
+                            toast.success(t("app.saved"))
+                          })
+                          .catch((err) => toast.error(translateApiError(err, t)))
+                      }}
+                    >
+                      {t("settings.cancelPendingEmail")}
+                    </Button>
+                  </div>
                 ) : null}
               </div>
             ))}
@@ -335,7 +361,14 @@ function SecurityCards() {
           {settings.data?.googleEnabled ? (
             user?.googleBound ? (
               <div className="flex flex-wrap items-end gap-2">
-                {user.totpEnabled ? (
+                {user.mustSetPassword ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("settings.setFirstPassword")}{" "}
+                    <Link to="/settings/password" className="text-foreground underline-offset-4 hover:underline">
+                      {t("settings.password")}
+                    </Link>
+                  </p>
+                ) : user.totpEnabled ? (
                   <div className="grid gap-1.5">
                     <Label htmlFor="google-unbind-totp">{t("settings.googleUnbindTotp")}</Label>
                     <Input
@@ -358,6 +391,7 @@ function SecurityCards() {
                     />
                   </div>
                 )}
+                {user.mustSetPassword ? null : (
                 <Button
                   type="button"
                   variant="outline"
@@ -378,6 +412,7 @@ function SecurityCards() {
                 >
                   {t("settings.googleUnbind")}
                 </Button>
+                )}
               </div>
             ) : (
               <GoogleSignIn

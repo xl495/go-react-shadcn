@@ -157,6 +157,7 @@ func (a *App) handleResetPassword(c *gin.Context) {
 			"locked_until":         nil,
 			"failed_login_count":   0,
 			"must_change_password": false,
+			"must_set_password":    false,
 		}).Error; err != nil {
 			return err
 		}
